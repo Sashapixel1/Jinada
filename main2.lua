@@ -1309,22 +1309,22 @@ game:GetService("Players").LocalPlayer.Idled:connect(function()
 end)
 MethodFarm = CFrame.new(0, 10, 10)
 local L_35_ = {
-	Main = L_34_:Tab("Main Farm"),
+	Main = L_34_:Tab("Farm"),
 	Setting = L_34_:Tab("Settings"),
-	Dragon = L_34_:Tab("Dragon Dojo"),
+	Dragon = L_34_:Tab("xyeta"),
 	Status = L_34_:Tab("Status"),
 	SeaEvent = L_34_:Tab("Sea Events"),
 	Kitsune = L_34_:Tab("Kitsune Island"),
 	QuestItem = L_34_:Tab("Quest & Item"),
 	PVP = L_34_:Tab("PVP Combat"),
 	Teleport = L_34_:Tab("Teleport"),
-	ESP = L_34_:Tab("Esp & Stats"),
+	ESP = L_34_:Tab("Esp & nety Stats"),
 	Raid = L_34_:Tab("Raid"),
 	DevilFruit = L_34_:Tab("Devil Fruit"),
 	Misc = L_34_:Tab("Misc"),
 	Mirage = L_34_:Tab("Mirage Island"),
 	RaceV4 = L_34_:Tab("Race V4"),
-	Info = L_34_:Tab("Update Info")
+	Info = L_34_:Tab("Jinada dal wam v rot")
 }
 L_35_.Main:Label("Select Weapon")
 local L_36_ = {
