@@ -1,11 +1,10 @@
-getgenv().Jinada=true
-
-
-L_35_.Setting:Toggle("White Screen", true, function(L_244_arg0)
-	_25msShared.WhiteScreen = L_244_arg0;
-	if _25msShared.WhiteScreen then
-		L_8_:Set3dRenderingEnabled(true)
-	else
-		L_8_:Set3dRenderingEnabled(true)
+spawn(function()
+	while task.wait() do
+		if _25msShared.AlwaysDay then
+			L_8_.Heartbeat:wait()
+			do
+				game:GetService("Lighting").ClockTime = 5
+			end
+		end
 	end
-end);
+end)
