@@ -1297,8 +1297,8 @@ function CheckBossDimension()
 		end
 	end
 end;
-local L_33_ = loadstring(game:HttpGet("https://you.whimper.xyz/sources/CokkaHub/ui.lua"))()
-local L_34_ = L_33_:Window("Cokka Hub 25ms was here", Enum.KeyCode.LeftControl)
+local L_33_ = loadstring(game:HttpGet("https://raw.githubusercontent.com/Sashapixel1/Jinada/6bc9f89a902682850d33e8c7b696e9ab93864bfa/ui.lua"))()
+local L_34_ = L_33_:Window("Jinada Hub", Enum.KeyCode.LeftControl)
 print("|COKKA DEBUG| Anti AFK")
 game:GetService("Players").LocalPlayer.Idled:connect(function()
 	print("|COKKA DEBUG| AFK detected, prevented +1")
