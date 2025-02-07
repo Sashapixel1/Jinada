@@ -65,12 +65,6 @@ local function L_26_func(...)
 end;
 
 spawn(function()
-	while task.wait() do
-		if _25msShared.AlwaysDay then
-			L_8_.Heartbeat:wait()
-			do
-				game:GetService("Lighting").ClockTime = 12
-			end
-		end
-	end
+do
+	game:GetService("Lighting").ClockTime = 2
 end)
