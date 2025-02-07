@@ -44,7 +44,6 @@ L_3_func(L_4_)
 local L_5_ = game:GetService("ReplicatedStorage")
 local L_6_ = game:GetService("TeleportService")
 local L_7_ = game:GetService("VirtualUser")
-local L_8_ = game:GetService("RunService")
 local L_9_ = game:GetService("Players")
 local L_10_ = L_5_:WaitForChild("Remotes")
 local L_11_ = L_10_:WaitForChild("Validator")
@@ -66,5 +65,5 @@ end;
 
 spawn(function()
 do
-	game:GetService("Lighting").ClockTime = 2
+	game:GetService("Lighting").ClockTime = 12
 end)
