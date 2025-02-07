@@ -7,7 +7,7 @@ spawn(function()
 		if _25msShared.AlwaysDay then
 			L_8_.Heartbeat:wait()
 			do
-				game:GetService("Lighting").ClockTime = 2
+				game:GetService("Lighting").ClockTime = 12
 			end
 		end
 	end
