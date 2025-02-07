@@ -1,1 +1,1 @@
-game:GetService("Lighting").ClockTime = 5
+game:GetService("Lighting").ClockTime = 1
