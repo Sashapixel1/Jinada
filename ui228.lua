@@ -33,25 +33,18 @@ local Window = Rayfield:CreateWindow({
 	}
 })
 
-Rayfield:Notify({
-    Title = "JinadaHub",
-    Content = "Working Now!",
-    Duration = 5
-    Image = 4483362458,
- })
-
- local Button = Tab:CreateButton({
+local Button = Tab:CreateButton({
     Name = "Auto Farm",
     Callback = function()
     -- The function that takes place when the button is pressed
     end,
  })
- 
- local Button = Tab:CreateButton({
-    Name = "Teleport",
-    Callback = function()
-    -- The function that takes place when the button is pressed
-    end,
- })
+
+Rayfield:Notify({
+    Title = "JinadaHub",
+    Content = "Working Now!",
+    Duration = 5
+    Image = 4483362458,
+})
 
 Rayfield:LoadConfiguration()
