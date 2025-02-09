@@ -33,6 +33,13 @@ local Window = Rayfield:CreateWindow({
 	}
 })
 
+local Button = Tab:CreateButton({
+    Name = "Auto Farm",
+    Callback = function()
+    -- The function that takes place when the button is pressed
+    end,
+ })
+
 Rayfield:Notify({
     Title = "JinadaHub",
     Content = "Working Now!",
