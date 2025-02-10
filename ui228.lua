@@ -81,4 +81,3 @@ local Slider = Tab:CreateSlider({
     end,
  })
 
- Rayfield:Destroy()
