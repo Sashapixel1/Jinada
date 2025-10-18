@@ -1,245 +1,215 @@
--- TradeServer (ServerScriptService)
--- Менеджер торговых сессий — безопасная серверная логика
+-- AutoTradePress.lua
+-- LocalScript: автоматически добавляет "Dough" в трейд и нажимает "Accept" каждые 2 секунды
+-- Использовать ТОЛЬКО в своей копии игры в Roblox Studio
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
-local REQ_START = ReplicatedStorage:WaitForChild("Trade_RequestStart")
-local REQ_ADD = ReplicatedStorage:WaitForChild("Trade_AddItem")
-local REQ_CONFIRM = ReplicatedStorage:WaitForChild("Trade_Confirm")
-local REQ_CANCEL = ReplicatedStorage:WaitForChild("Trade_Cancel")
+local CHECK_INTERVAL = 0.5       -- как часто сканируем наличие окна трейда (сек)
+local ACTION_INTERVAL = 2        -- интервал между попытками добавить/подтвердить (сек)
+local TRADE_TITLE_TEXT = "TREASURE TRADE" -- заголовок окна трейда (с твоего скрина)
 
--- Допустимые фрукты (можно расширить)
-local allowedFruits = {
-	["Dough"] = true,
-	["Flame"] = true,
-	["Light"] = true,
-	["Ice"] = true,
-}
+-- Утилиты поиска GUI-элементов
 
--- Таблица сессий: key = sessionId (строка), value = {playerA = p1, playerB = p2, offers = {p1 = {...}, p2 = {...}}, confirmed = {p1=false,p2=false}}
-local sessions = {}
-
--- Вспомогательная: создание sessionId
-local function makeSessionId(p1, p2)
-	return p1.UserId .. ":" .. p2.UserId
+-- Нестрогий поиск по тексту (игнорируем регистр)
+local function strContains(a, b)
+	if not a or not b then return false end
+	a = tostring(a):lower()
+	b = tostring(b):lower()
+	return string.find(a, b, 1, true) ~= nil
 end
 
--- Вспомогательная: проверка наличия предмета у игрока (в рюкзаке / character)
-local function playerHasFruit(player, fruitName)
-	if not fruitName then return false end
-	-- Предполагаем, что фрукт представлен как объект (StringValue) в Backpack или в Character
-	local backpack = player:FindFirstChild("Backpack")
-	if backpack then
-		if backpack:FindFirstChild(fruitName) then
-			return true
-		end
-	end
-	-- Ищем в Character
-	local char = player.Character
-	if char and char:FindFirstChild(fruitName) then
-		return true
-	end
-	return false
-end
-
--- Удаление фрукта из игрока (перенос в nil)
-local function removeFruitFromPlayer(player, fruitName)
-	local backpack = player:FindFirstChild("Backpack")
-	if backpack and backpack:FindFirstChild(fruitName) then
-		backpack[fruitName]:Destroy()
-		return true
-	end
-	local char = player.Character
-	if char and char:FindFirstChild(fruitName) then
-		char[fruitName]:Destroy()
-		return true
-	end
-	return false
-end
-
--- Добавление фрукта игроку
-local function giveFruitToPlayer(player, fruitName)
-	-- Создаём StringValue — в реальной игре замените на реальный объект фрукта
-	local backpack = player:FindFirstChild("Backpack") or player:WaitForChild("Backpack")
-	local fruit = Instance.new("StringValue")
-	fruit.Name = fruitName
-	fruit.Parent = backpack
-end
-
--- Создать новую сессию при наличии пары игроков
-local function startSession(initiator, partner)
-	if not initiator or not partner then return end
-	local sid = makeSessionId(initiator, partner)
-	local sidRev = makeSessionId(partner, initiator)
-	if sessions[sid] or sessions[sidRev] then
-		-- Уже есть
-		return sessions[sid] or sessions[sidRev]
-	end
-	local sess = {
-		playerA = initiator,
-		playerB = partner,
-		offers = {},
-		offers[initiator] = {},
-		offers[partner] = {},
-		confirmed = {},
-		confirmed[initiator] = false,
-		confirmed[partner] = false,
-		active = true,
-	}
-	sessions[sid] = sess
-	return sess
-end
-
--- Завершение сессии (отмена/комплит)
-local function endSession(sess)
-	if not sess then return end
-	-- пометим неактивной и уберем из таблицы
-	sess.active = false
-	local sid = makeSessionId(sess.playerA, sess.playerB)
-	sessions[sid] = nil
-end
-
--- Попытка выполнить обмен: когда обе стороны подтвердили
-local function tryExecuteTrade(sess)
-	if not sess or not sess.active then return end
-	local a = sess.playerA
-	local b = sess.playerB
-	if sess.confirmed[a] and sess.confirmed[b] then
-		-- проверяем, что все предметы по-прежнему доступны
-		for _,fruitName in ipairs(sess.offers[a]) do
-			if not playerHasFruit(a, fruitName) then
-				-- отмена, сообщаем
-				endSession(sess)
-				return
+-- Поиск окна трейда: ищем Frame/ScreenGui который содержит TextLabel с текстом TRADE TITLE
+local function findTradeWindow()
+	for _, gui in pairs(playerGui:GetDescendants()) do
+		-- ищем контейнер, у которого есть дочерний TextLabel с нужным заголовком
+		if gui:IsA("GuiObject") then
+			-- проверяем детей этого контейнера
+			for _, child in pairs(gui:GetChildren()) do
+				if child:IsA("TextLabel") or child:IsA("TextButton") then
+					if strContains(child.Text, TRADE_TITLE_TEXT) then
+						-- считаем, что gui — контейнер окна трейда (поднимемся к Frame выше, если нужно)
+						-- возвращаем ближайший Frame-родитель (или сам gui)
+						local container = gui
+						local parent = gui.Parent
+						-- ищем Frame-родителя, чтобы вернуть весь блок окна (если gui — текст)
+						local tries = 0
+						while parent and tries < 5 do
+							if parent:IsA("Frame") or parent:IsA("ScreenGui") then
+								container = parent
+								break
+							end
+							parent = parent.Parent
+							tries = tries + 1
+						end
+						return container
+					end
+				end
 			end
 		end
-		for _,fruitName in ipairs(sess.offers[b]) do
-			if not playerHasFruit(b, fruitName) then
-				endSession(sess)
-				return
-			end
-		end
-
-		-- Выполняем обмен: временно сохраняем списки, удаляем у владельцев, даём новым
-		local aItems = {}
-		for _,n in ipairs(sess.offers[a]) do table.insert(aItems, n) end
-		local bItems = {}
-		for _,n in ipairs(sess.offers[b]) do table.insert(bItems, n) end
-
-		-- Удаляем у а
-		for _,n in ipairs(aItems) do
-			removeFruitFromPlayer(a, n)
-		end
-		-- Удаляем у b
-		for _,n in ipairs(bItems) do
-			removeFruitFromPlayer(b, n)
-		end
-
-		-- Даём bItems игроку a
-		for _,n in ipairs(bItems) do
-			giveFruitToPlayer(a, n)
-		end
-		-- Даём aItems игроку b
-		for _,n in ipairs(aItems) do
-			giveFruitToPlayer(b, n)
-		end
-
-		-- Завершаем сессию
-		endSession(sess)
-
-		-- (опционально) можно отправить игрокам RemoteEvent/Notification о завершении
 	end
+	return nil
 end
 
--- Обработчики RemoteEvents
-
-REQ_START.OnServerEvent:Connect(function(player, partnerUserId)
-	-- partnerUserId должен быть число (UserId) или nil
-	if type(partnerUserId) ~= "number" then return end
-	local partner = Players:GetPlayerByUserId(partnerUserId)
-	if not partner then return end
-	local sess = startSession(player, partner)
-	-- Можно уведомить игроков, что сессия создана — но клиенту достаточно знать, что старт успешен
-end)
-
-REQ_ADD.OnServerEvent:Connect(function(player, fruitName)
-	-- Игрок просит добавить fruitName в своё предложение
-	if type(fruitName) ~= "string" then return end
-	if not allowedFruits[fruitName] then return end
-
-	-- Найти сессию игрока (в которой он участвует)
-	local playerSess = nil
-	for _,sess in pairs(sessions) do
-		if sess.playerA == player or sess.playerB == player then
-			playerSess = sess
-			break
-		end
-	end
-	if not playerSess or not playerSess.active then return end
-
-	-- проверяем, что игрок действительно владеет фруктом
-	if not playerHasFruit(player, fruitName) then
-		return
-	end
-
-	-- Добавляем в предложение (если ещё нет)
-	local offers = playerSess.offers[player]
-	if not offers then
-		playerSess.offers[player] = {fruitName}
-	else
-		-- избегаем дублей
-		for _,n in ipairs(offers) do
-			if n == fruitName then
-				return
+-- Поиск кнопки Accept внутри окна трейда
+local function findAcceptButton(tradeWindow)
+	if not tradeWindow then return nil end
+	for _, obj in pairs(tradeWindow:GetDescendants()) do
+		if obj:IsA("TextButton") or obj:IsA("ImageButton") then
+			-- проверим текст (для TextButton) и имя (fallback)
+			local textOk = (obj:IsA("TextButton") and strContains(obj.Text, "Accept"))
+			local nameOk = strContains(obj.Name, "Accept") or strContains(obj.Name, "accept")
+			if textOk or nameOk then
+				return obj
 			end
 		end
-		table.insert(offers, fruitName)
 	end
+	return nil
+end
 
-	-- Сброс подтверждений при изменении предложения
-	playerSess.confirmed[playerSess.playerA] = false
-	playerSess.confirmed[playerSess.playerB] = false
-end)
-
-REQ_CONFIRM.OnServerEvent:Connect(function(player)
-	-- Игрок подтверждает/подтверждает своё текущее предложение
-	-- Найти сессию игрока
-	local playerSess = nil
-	for _,sess in pairs(sessions) do
-		if sess.playerA == player or sess.playerB == player then
-			playerSess = sess
-			break
+-- Поиск кнопки/иконки Dough в PlayerGui (инвентарь/панель)
+-- Ищем по имени ("Dough") / тексту / Tooltip и т.п.
+local function findDoughButton()
+	for _, obj in pairs(playerGui:GetDescendants()) do
+		if obj:IsA("TextButton") or obj:IsA("ImageButton") or obj:IsA("ImageLabel") then
+			-- проверим текстовое поле (если есть) или имя
+			local text = nil
+			if obj:IsA("TextButton") then text = obj.Text end
+			-- также может быть label рядом — проверим имя/атрибуты
+			if (text and strContains(text, "Dough")) or strContains(obj.Name, "Dough") or strContains(obj:GetFullName(), "Dough") then
+				return obj
+			end
 		end
 	end
-	if not playerSess or not playerSess.active then return end
+	-- Если не нашли в PlayerGui, попробуем проверить Inventory как отдельный ScreenGui
+	return nil
+end
 
-	playerSess.confirmed[player] = true
+-- Проверка: открыт ли трейд и существует ли Accept
+local function isTradeActive(tradeWindow, acceptBtn)
+	-- tradeWindow должен быть валидным и в дереве PlayerGui
+	return tradeWindow and tradeWindow.Parent and tradeWindow:IsDescendantOf(playerGui) and acceptBtn and acceptBtn.Parent and acceptBtn:IsDescendantOf(tradeWindow)
+end
 
-	-- если обе подтверждены — выполняем
-	tryExecuteTrade(playerSess)
-end)
+-- Функция для "клика" по GUI-элементу: Activate для кнопок; если нет — пробуем :Fire("MouseButton1Click")
+local function clickGuiButton(btn)
+	if not btn then return false end
+	-- безопасно: проверим, можно ли вызвать Activate (доступно для GuiButton в LocalScript)
+	local success, err = pcall(function()
+		if btn.Activate then
+			btn:Activate()
+		else
+			-- Попытка эмулировать событие (в некоторых GUI :MouseButton1Click можно вызвать)
+			if btn.MouseButton1Click then
+				btn.MouseButton1Click:Fire()
+			end
+		end
+	end)
+	if not success then
+		warn("Не удалось активировать кнопку:", err)
+	end
+	return success
+end
 
-REQ_CANCEL.OnServerEvent:Connect(function(player)
-	-- игрок отменил сессию
-	local playerSess
-	for _,sess in pairs(sessions) do
-		if sess.playerA == player or sess.playerB == player then
-			playerSess = sess
-			break
+-- Основной контроллер автоматизации
+local autoRunning = false
+local autoThread = nil
+
+local function startAutoTradeLoop()
+	if autoRunning then return end
+	autoRunning = true
+
+	autoThread = coroutine.create(function()
+		while autoRunning do
+			-- Найдём окно трейда
+			local tradeWindow = findTradeWindow()
+			if tradeWindow then
+				local acceptBtn = findAcceptButton(tradeWindow)
+				local doughBtn = findDoughButton()
+
+				-- Если нашли кнопку Dough — кликнем по ней (попытка добавить в трейд)
+				if doughBtn then
+					pcall(function() clickGuiButton(doughBtn) end)
+				else
+					-- альтернативно: проверим бекенды (Backpack) — если в Backpack есть StringValue("Dough"), мы можем логировать
+					-- но добавление предмета в трейд в большинстве реализаций делается через GUI-клик
+					-- поэтому если не найдено — предупредим в Output
+					-- warn("Dough button not found in PlayerGui")
+				end
+
+				-- Если нашли Accept — нажмём
+				if acceptBtn then
+					pcall(function() clickGuiButton(acceptBtn) end)
+				else
+					-- warn("Accept button not found in trade window")
+				end
+
+				-- Ждём пока окно трейда не закроется или интервал
+				local t0 = tick()
+				while tick() - t0 < ACTION_INTERVAL do
+					wait(0.1)
+					-- если окно закрылось — прервём
+					if not findTradeWindow() then break end
+				end
+			else
+				-- окно трейда не открыто — ожидаем
+				wait(CHECK_INTERVAL)
+			end
+		end
+	end)
+	coroutine.resume(autoThread)
+end
+
+local function stopAutoTradeLoop()
+	autoRunning = false
+	autoThread = nil
+end
+
+-- Авто-старт: при нахождении окна трейда запускаем цикл; когда окно закрыто — останавливаем
+-- Чтобы не запускать многократно, используем RunService.Heartbeat для частого сканирования
+local scanning = false
+local function startScanner()
+	if scanning then return end
+	scanning = true
+	coroutine.wrap(function()
+		while scanning do
+			local tradeWindow = findTradeWindow()
+			if tradeWindow and not autoRunning then
+				print("[AutoTrade] Торговое окно найдено — запускаю автодействия")
+				startAutoTradeLoop()
+			elseif not tradeWindow and autoRunning then
+				print("[AutoTrade] Торговое окно закрылось — останавливаю автодействия")
+				stopAutoTradeLoop()
+			end
+			wait(CHECK_INTERVAL)
+		end
+	end)()
+end
+
+local function stopScanner()
+	scanning = false
+	stopAutoTradeLoop()
+end
+
+-- Стартуем сканер при загрузке скрипта
+startScanner()
+
+-- Простая привязка: по нажатию клавиши (например, T) можно включать/выключать автосканер (удобно при тестировании)
+local UserInputService = game:GetService("UserInputService")
+local toggleKey = Enum.KeyCode.T
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == toggleKey then
+		if scanning then
+			stopScanner()
+			print("[AutoTrade] Сканер остановлен (T)")
+		else
+			startScanner()
+			print("[AutoTrade] Сканер запущен (T)")
 		end
 	end
-	if not playerSess then return end
-	endSession(playerSess)
 end)
 
--- Удаление сессии при выходе игрока
-Players.PlayerRemoving:Connect(function(player)
-	for sid,sess in pairs(sessions) do
-		if sess.playerA == player or sess.playerB == player then
-			endSession(sess)
-		end
-	end
-end)
-
-print("TradeServer loaded.")
+print("AutoTradePress loaded.")
