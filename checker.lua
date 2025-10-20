@@ -5,7 +5,6 @@ local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local sendEvent = ReplicatedStorage:WaitForChild("SendWebhookEvent")
 
 -- Сбор данных: используем несколько мест, которые ты указал
 local function collectPlayerData()
@@ -122,16 +121,6 @@ frame.BackgroundTransparency = 0.15
 frame.BorderSizePixel = 0
 frame.Parent = screenGui
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -12, 0, 34)
-title.Position = UDim2.new(0, 6, 0, 6)
-title.BackgroundTransparency = 1
-title.Font = Enum.Font.SourceSansBold
-title.TextSize = 20
-title.Text = "Account Info & Discord Webhook"
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = frame
-
 local function makeLabel(yOffset)
     local lbl = Instance.new("TextLabel")
     lbl.Size = UDim2.new(1, -12, 0, 20)
@@ -152,22 +141,9 @@ local fruitsLabel = makeLabel(infoStartY + 72)
 local statsLabel = makeLabel(infoStartY + 96)
 statsLabel.TextWrapped = true
 
--- Webhook input
-local webhookBox = Instance.new("TextBox")
-webhookBox.Size = UDim2.new(1, -12, 0, 26)
-webhookBox.Position = UDim2.new(0, 6, 0, 200)
-webhookBox.BackgroundTransparency = 0.1
-webhookBox.ClearTextOnFocus = false
-webhookBox.PlaceholderText = "Вставьте Discord Webhook URL сюда"
-webhookBox.Text = ""
-webhookBox.Font = Enum.Font.SourceSans
-webhookBox.TextSize = 14
-webhookBox.Parent = frame
-
 local sendBtn = Instance.new("TextButton")
 sendBtn.Size = UDim2.new(0, 120, 0, 30)
 sendBtn.Position = UDim2.new(0, 6, 0, 236)
-sendBtn.Text = "Отправить на Webhook"
 sendBtn.Font = Enum.Font.SourceSansBold
 sendBtn.TextSize = 14
 sendBtn.Parent = frame
@@ -197,37 +173,6 @@ local function updateUI()
     end
     statsLabel.Text = statsText
 end
-
--- отправка серверу
-local function sendToWebhook(webhookUrl, payload)
-    if not webhookUrl or webhookUrl == "" then
-        statusLabel.Text = "Введите URL Webhook"
-        return
-    end
-    statusLabel.Text = "Отправка..."
-    -- Отправляем: аргументы: player не нужно передавать — сервер получит авто. Но RemoteEvent требует: FireServer(arg1, arg2)
-    sendEvent:FireServer(webhookUrl, payload)
-end
-
--- Ответ от сервера (результат отправки)
-sendEvent.OnClientEvent:Connect(function(success, message)
-    if success then
-        statusLabel.Text = "Отправлено успешно"
-    else
-        statusLabel.Text = "Ошибка: " .. tostring(message)
-    end
-end)
-
--- Кнопки
-refreshBtn.MouseButton1Click:Connect(function()
-    updateUI()
-    statusLabel.Text = "Обновлено"
-end)
-
-sendBtn.MouseButton1Click:Connect(function()
-    local d = collectPlayerData()
-    sendToWebhook(webhookBox.Text, d)
-end)
 
 -- Начальное обновление
 updateUI()
