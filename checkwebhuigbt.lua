@@ -58,15 +58,53 @@ local function collectPlayerData()
 		end
 	end
 
-	-- Надёжный скан ReplicatedStorage на предмет "фруктов"
 local function scanReplicatedStorage()
     local RS = ReplicatedStorage
     local found = {}
-    local add = function(name)
-        if type(name) == "string" and name ~= "" then
+    local function add(name)
+        if type(name) == "string" and name ~= "" and #name < 50 then
             found[name] = true
         end
     end
+
+    local directCandidates = {"Inventory", "PlayerInventory", "DevilFruits", "Fruits", "Backpack", "Items"}
+    for _, cname in ipairs(directCandidates) do
+        local node = RS:FindFirstChild(cname)
+        if node then
+            for _, child in ipairs(node:GetChildren()) do
+                if child:IsA("Tool") or child:IsA("Model") then
+                    add(child.Name)
+                elseif child:IsA("StringValue") then
+                    add(child.Value)
+                elseif child:IsA("ObjectValue") and child.Value then
+                    add(child.Value.Name)
+                end
+            end
+        end
+    end
+
+    local MAX_CHECK = 1500
+    local checked = 0
+    for _, inst in ipairs(RS:GetDescendants()) do
+        checked += 1
+        if checked > MAX_CHECK then break end
+
+        if inst:IsA("Tool") or inst:IsA("Model") then
+            add(inst.Name)
+        elseif inst:IsA("StringValue") then
+            add(inst.Value)
+        elseif inst:IsA("ObjectValue") and inst.Value then
+            add(inst.Value.Name)
+        elseif inst.Name:lower():find("fruit") or inst.Name:find("devil") then
+            add(inst.Name)
+        end
+    end
+
+    local out = {}
+    for k,_ in pairs(found) do table.insert(out, k) end
+    table.sort(out)
+    return out
+end
 
 	-- Stats
 	local stats = getNested(player, {"Data", "Stats"})
