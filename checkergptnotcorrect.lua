@@ -51,7 +51,7 @@ local function collectPlayerData()
     -- DevilFruits: из Data.DevilFruits (Folder/StringValue) и из Backpack (инструменты)
     local fruits = {}
 
-    local df = getNested(player, {"Data", "DevilFruits"}) or getNested(player, {"Data", "Devilfruit"}) or getNested(player, {"Data", "Devil Fruit"})
+    local df = getNested(player, {"Data", "stats", "DevilFruits"}) or getNested(player, {"Data", "Devilfruit"}) or getNested(player, {"Data", "stats", "Devil Fruit"})
     if df then
         if df:IsA("Folder") or df:IsA("Instance") then
             for _, c in ipairs(df:GetChildren()) do
