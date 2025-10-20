@@ -19,7 +19,6 @@ local function getNested(root, parts)
 	return cur
 end
 
--- ---------- Новый сканер GUI фруктов ----------
 local function scanPlayerGUIFruits()
 	local fruitsFound = {}
 	local pathsToCheck = {
@@ -29,29 +28,39 @@ local function scanPlayerGUIFruits()
 	}
 
 	local function addFruit(name)
-		if type(name) == "string" and name:match("%w+%-%w+") then
+		if type(name) == "string" and name:match("^[A-Z][a-z]+%-[A-Z][a-z]+$") then
 			fruitsFound[name] = true
 		end
 	end
 
-	for _, pathName in ipairs(pathsToCheck) do
-		local folder = playerGui:FindFirstChild(pathName)
-		if folder then
-			for _, obj in ipairs(folder:GetDescendants()) do
-				-- Проверяем текстовые поля
-				if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-					local text = obj.Text or ""
-					if text:match("%w+%-%w+") then
-						addFruit(text)
+	for _, rootName in ipairs(pathsToCheck) do
+		local root = playerGui:FindFirstChild(rootName)
+		if not root then continue end
+
+		for _, obj in ipairs(root:GetDescendants()) do
+			-- ищем текст в любом дочернем элементе плитки
+			if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+				local text = obj.Text or ""
+				if text:match("%a+%-%a+") then
+					addFruit(text)
+				end
+			elseif obj:IsA("StringValue") and type(obj.Value) == "string" and obj.Value:match("%a+%-%a+") then
+				addFruit(obj.Value)
+			elseif obj:IsA("ObjectValue") and obj.Value and type(obj.Value.Name) == "string" and obj.Value.Name:match("%a+%-%a+") then
+				addFruit(obj.Value.Name)
+			else
+				-- если это контейнер плитки (Tile-*, Slot-*), проверяем потомков
+				if obj.Name:match("^Tile%-%d+") or obj.Name:match("^Slot%-%d+") or obj.Name:match("^Fruit%-%d+") then
+					for _, sub in ipairs(obj:GetDescendants()) do
+						if sub:IsA("TextLabel") or sub:IsA("TextButton") then
+							local txt = sub.Text or ""
+							if txt:match("%a+%-%a+") then
+								addFruit(txt)
+							end
+						elseif sub:IsA("StringValue") and type(sub.Value) == "string" and sub.Value:match("%a+%-%a+") then
+							addFruit(sub.Value)
+						end
 					end
-				end
-				-- Иногда название хранится в атрибуте или свойстве Name
-				if obj.Name and obj.Name:match("%w+%-%w+") then
-					addFruit(obj.Name)
-				end
-				-- Иногда в ObjectValue / StringValue
-				if obj:IsA("StringValue") and type(obj.Value) == "string" and obj.Value:match("%w+%-%w+") then
-					addFruit(obj.Value)
 				end
 			end
 		end
