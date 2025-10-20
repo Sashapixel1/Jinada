@@ -4,7 +4,6 @@
 -- НЕ делает внешних HTTP-запросов.
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -25,58 +24,56 @@ local function getNested(root, parts)
 	return cur
 end
 
--- ---------- Оптимизированный сканер фруктов ----------
-local function scanReplicatedStorage()
-	local RS = ReplicatedStorage
-	local found = {}
+-- ---------- Новый сканер инвентаря (по PlayerGui) ----------
+local function scanPlayerGUIFruits()
+	local fruitsFound = {}
+	local pathsToCheck = {
+		"Inventory",
+		"FruitInventory",
+		"InventoryContainer",
+	}
 
-	local function add(name)
-		if type(name) == "string" and name:match("^%w+%-%w+$") and #name < 40 then
-			found[name] = true
+	local function addFruit(name)
+		if type(name) == "string" and name:match("^%w+%-%w+$") then
+			fruitsFound[name] = true
 		end
 	end
 
-	local searchRoots = {"Inventory", "PlayerInventory", "DevilFruits", "Fruits", "Backpack", "Items"}
-	for _, rootName in ipairs(searchRoots) do
-		local root = RS:FindFirstChild(rootName)
-		if root then
-			for _, child in ipairs(root:GetDescendants()) do
-				if child:IsA("Tool") or child:IsA("Model") or child:IsA("Folder") then
-					add(child.Name)
-				elseif child:IsA("StringValue") and type(child.Value) == "string" then
-					add(child.Value)
+	for _, pathName in ipairs(pathsToCheck) do
+		local folder = playerGui:FindFirstChild(pathName)
+		if folder then
+			for _, obj in ipairs(folder:GetDescendants()) do
+				-- Проверяем текст или имя
+				if obj:IsA("TextLabel") or obj:IsA("TextButton") then
+					if obj.Text and obj.Text:match("^%w+%-%w+$") then
+						addFruit(obj.Text)
+					end
+				elseif obj.Name and obj.Name:match("^%w+%-%w+$") then
+					addFruit(obj.Name)
 				end
 			end
 		end
 	end
 
-	-- fallback: если не нашли ничего, проверить всё RS, но только по паттерну X-X
-	if next(found) == nil then
-		for _, inst in ipairs(RS:GetDescendants()) do
-			if type(inst.Name) == "string" and inst.Name:match("^%w+%-%w+$") and #inst.Name < 40 then
-				add(inst.Name)
-			end
-		end
+	local fruits = {}
+	for name in pairs(fruitsFound) do
+		table.insert(fruits, name)
 	end
-
-	local out = {}
-	for k in pairs(found) do
-		table.insert(out, k)
-	end
-	table.sort(out)
-	return out
+	table.sort(fruits)
+	return fruits
 end
 
--- ---------- Сбор данных игрока ----------
+-- ---------- Сбор данных ----------
 local function collectPlayerData()
 	local data = {}
 	data.Name = player.Name or "Unknown"
 	data.Beli = 0
 	data.Race = "Unknown"
 	data.BackpackFruits = {}
-	data.ReplicatedInventory = {}
+	data.GUIFruits = {}
 	data.Stats = {}
 
+	-- Beli
 	local leader = player:FindFirstChild("leaderstats")
 	if leader then
 		local b = leader:FindFirstChild("Beli") or leader:FindFirstChild("beli")
@@ -85,6 +82,7 @@ local function collectPlayerData()
 	local bnode = getNested(player, {"Data", "Beli"}) or getNested(player, {"Data", "beli"})
 	if bnode and type(bnode.Value) ~= "nil" then data.Beli = bnode.Value end
 
+	-- Race
 	if player.GetAttribute then
 		local r = player:GetAttribute("Race") or player:GetAttribute("race")
 		if r then data.Race = r end
@@ -92,7 +90,7 @@ local function collectPlayerData()
 	local rn = getNested(player, {"Data", "Race"}) or getNested(player, {"Data", "race"})
 	if rn and type(rn.Value) ~= "nil" then data.Race = rn.Value end
 
-	-- Backpack (то, что реально у игрока)
+	-- Backpack (инвентарь инструментов)
 	local backpack = player:FindFirstChild("Backpack")
 	if backpack then
 		for _, it in ipairs(backpack:GetChildren()) do
@@ -104,12 +102,12 @@ local function collectPlayerData()
 		end
 	end
 
-	-- ReplicatedStorage scan (только фрукты)
-	local ok, repList = pcall(scanReplicatedStorage)
-	if ok and type(repList) == "table" then
-		data.ReplicatedInventory = repList
+	-- GUI (реальные фрукты из интерфейса)
+	local ok, fruits = pcall(scanPlayerGUIFruits)
+	if ok and fruits then
+		data.GUIFruits = fruits
 	else
-		data.ReplicatedInventory = {}
+		data.GUIFruits = {}
 	end
 
 	-- Stats
@@ -147,11 +145,13 @@ local function formatData(data)
 	end
 	table.insert(lines, "")
 
-	table.insert(lines, "-- ReplicatedStorage (фрукты) --")
-	if #data.ReplicatedInventory > 0 then
-		for _, v in ipairs(data.ReplicatedInventory) do table.insert(lines, "- " .. v) end
+	table.insert(lines, "-- GUI Inventory (реальные фрукты) --")
+	if #data.GUIFruits > 0 then
+		for _, v in ipairs(data.GUIFruits) do
+			table.insert(lines, "- " .. v)
+		end
 	else
-		table.insert(lines, "(не найдено)")
+		table.insert(lines, "(фрукты не найдены в интерфейсе)")
 	end
 	table.insert(lines, "")
 
@@ -250,8 +250,8 @@ local function createUI()
 	local function refresh()
 		local ok, data = pcall(collectPlayerData)
 		if not ok or not data then
-			content.Text = "Ошибка при сборе данных: "..tostring(data)
-			status.Text = "Ошибка: "..tostring(data)
+			content.Text = "Ошибка при сборе данных: " .. tostring(data)
+			status.Text = "Ошибка: " .. tostring(data)
 			return
 		end
 		local txt = formatData(data)
@@ -261,12 +261,10 @@ local function createUI()
 		local height = math.max(textBounds.Y + 24, 20)
 		content.Size = UDim2.new(1, -20, 0, height)
 		scroll.CanvasSize = UDim2.new(0, 0, 0, height + 32)
-
-		status.Text = "Последнее обновление: "..os.date("%Y-%m-%d %H:%M:%S")
+		status.Text = "Последнее обновление: " .. os.date("%Y-%m-%d %H:%M:%S")
 	end
 
 	refreshBtn.MouseButton1Click:Connect(refresh)
-
 	copyBtn.MouseButton1Click:Connect(function()
 		refresh()
 		if type(setclipboard) == "function" then
@@ -275,7 +273,6 @@ local function createUI()
 			task.delay(1.2, function() if copyBtn then copyBtn.Text = "Скопировать отчёт" end end)
 		end
 	end)
-
 	consoleBtn.MouseButton1Click:Connect(function()
 		refresh()
 		print("=== Account Info (client) ===")
