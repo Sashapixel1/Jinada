@@ -58,15 +58,15 @@ local function collectPlayerData()
 		end
 	end
 
-	-- ReplicatedStorage поиск фруктов
-	for _, folderName in ipairs({"Love-Love", "Creation-Creation", "Smoke-Smoke", "Dough-Dough"}) do
-		local folder = ReplicatedStorage
-		if folder then
-			for _, child in ipairs(folder) do
-				table.insert(data.ReplicatedInventory, child.Name)
-			end
-		end
-	end
+	-- Надёжный скан ReplicatedStorage на предмет "фруктов"
+local function scanReplicatedStorage()
+    local RS = ReplicatedStorage
+    local found = {}
+    local add = function(name)
+        if type(name) == "string" and name ~= "" then
+            found[name] = true
+        end
+    end
 
 	-- Stats
 	local stats = getNested(player, {"Data", "Stats"})
