@@ -25,64 +25,55 @@ local function getNested(root, parts)
 	return cur
 end
 
--- ---------- Новый вариант scanReplicatedStorage ----------
+-- ---------- Оптимизированный сканер фруктов ----------
 local function scanReplicatedStorage()
 	local RS = ReplicatedStorage
 	local found = {}
+
 	local function add(name)
-		if type(name) == "string" and name ~= "" and #name < 50 then
+		if type(name) == "string" and name:match("^%w+%-%w+$") and #name < 40 then
 			found[name] = true
 		end
 	end
 
-	local directCandidates = {"Inventory", "PlayerInventory", "DevilFruits", "Fruits", "Backpack", "Items"}
-	for _, cname in ipairs(directCandidates) do
-		local node = RS:FindFirstChild(cname)
-		if node then
-			for _, child in ipairs(node:GetChildren()) do
-				if child:IsA("Tool") or child:IsA("Model") then
+	local searchRoots = {"Inventory", "PlayerInventory", "DevilFruits", "Fruits", "Backpack", "Items"}
+	for _, rootName in ipairs(searchRoots) do
+		local root = RS:FindFirstChild(rootName)
+		if root then
+			for _, child in ipairs(root:GetDescendants()) do
+				if child:IsA("Tool") or child:IsA("Model") or child:IsA("Folder") then
 					add(child.Name)
-				elseif child:IsA("StringValue") then
+				elseif child:IsA("StringValue") and type(child.Value) == "string" then
 					add(child.Value)
-				elseif child:IsA("ObjectValue") and child.Value then
-					add(child.Value.Name)
 				end
 			end
 		end
 	end
 
-	local MAX_CHECK = 1500
-	local checked = 0
-	for _, inst in ipairs(RS:GetDescendants()) do
-		checked += 1
-		if checked > MAX_CHECK then break end
-
-		if inst:IsA("Tool") or inst:IsA("Model") then
-			add(inst.Name)
-		elseif inst:IsA("StringValue") then
-			add(inst.Value)
-		elseif inst:IsA("ObjectValue") and inst.Value then
-			add(inst.Value.Name)
-		elseif inst.Name:lower():find("fruit") or inst.Name:find("devil") then
-			add(inst.Name)
+	-- fallback: если не нашли ничего, проверить всё RS, но только по паттерну X-X
+	if next(found) == nil then
+		for _, inst in ipairs(RS:GetDescendants()) do
+			if type(inst.Name) == "string" and inst.Name:match("^%w+%-%w+$") and #inst.Name < 40 then
+				add(inst.Name)
+			end
 		end
 	end
 
 	local out = {}
-	for k,_ in pairs(found) do table.insert(out, k) end
+	for k in pairs(found) do
+		table.insert(out, k)
+	end
 	table.sort(out)
 	return out
 end
 
--- ---------- Остальной код без изменений ----------
-
+-- ---------- Сбор данных игрока ----------
 local function collectPlayerData()
 	local data = {}
 	data.Name = player.Name or "Unknown"
 	data.Beli = 0
 	data.Race = "Unknown"
 	data.BackpackFruits = {}
-	data.GUIInventory = {}
 	data.ReplicatedInventory = {}
 	data.Stats = {}
 
@@ -101,29 +92,19 @@ local function collectPlayerData()
 	local rn = getNested(player, {"Data", "Race"}) or getNested(player, {"Data", "race"})
 	if rn and type(rn.Value) ~= "nil" then data.Race = rn.Value end
 
+	-- Backpack (то, что реально у игрока)
 	local backpack = player:FindFirstChild("Backpack")
 	if backpack then
 		for _, it in ipairs(backpack:GetChildren()) do
-			if it:IsA("Tool") or it:IsA("Model") or it:IsA("HopperBin") then
-				table.insert(data.BackpackFruits, it.Name)
-			end
-		end
-	end
-
-	local guiBack = playerGui:FindFirstChild("Backpack")
-	if guiBack then
-		local inv = guiBack:FindFirstChild("Inventory")
-		if inv then
-			for _, ch in ipairs(inv:GetChildren()) do
-				if ch:IsA("TextLabel") and ch.Text and ch.Text ~= "" then
-					table.insert(data.GUIInventory, ch.Text)
-				elseif ch.Name and ch.Name ~= "" then
-					table.insert(data.GUIInventory, ch.Name)
+			if it:IsA("Tool") or it:IsA("Model") then
+				if it.Name:match("^%w+%-%w+$") then
+					table.insert(data.BackpackFruits, it.Name)
 				end
 			end
 		end
 	end
 
+	-- ReplicatedStorage scan (только фрукты)
 	local ok, repList = pcall(scanReplicatedStorage)
 	if ok and type(repList) == "table" then
 		data.ReplicatedInventory = repList
@@ -131,6 +112,7 @@ local function collectPlayerData()
 		data.ReplicatedInventory = {}
 	end
 
+	-- Stats
 	local statsRoot = getNested(player, {"Data", "Stats"}) or getNested(player, {"Stats"}) or getNested(player, {"Data"})
 	if statsRoot then
 		if statsRoot:FindFirstChild("Stats") then statsRoot = statsRoot:FindFirstChild("Stats") end
@@ -149,6 +131,7 @@ local function collectPlayerData()
 	return data
 end
 
+-- ---------- Формат отчёта ----------
 local function formatData(data)
 	local lines = {}
 	table.insert(lines, ("=== Account Info — %s ==="):format(tostring(data.Name or "Unknown")))
@@ -156,7 +139,7 @@ local function formatData(data)
 	table.insert(lines, ("Race: %s"):format(tostring(data.Race or "Unknown")))
 	table.insert(lines, "")
 
-	table.insert(lines, "-- Backpack (tools) --")
+	table.insert(lines, "-- Backpack (фрукты) --")
 	if #data.BackpackFruits > 0 then
 		table.insert(lines, table.concat(data.BackpackFruits, ", "))
 	else
@@ -164,17 +147,9 @@ local function formatData(data)
 	end
 	table.insert(lines, "")
 
-	table.insert(lines, "-- GUI Inventory --")
-	if #data.GUIInventory > 0 then
-		table.insert(lines, table.concat(data.GUIInventory, ", "))
-	else
-		table.insert(lines, "(не найдено)")
-	end
-	table.insert(lines, "")
-
-	table.insert(lines, "-- ReplicatedStorage (scan) --")
+	table.insert(lines, "-- ReplicatedStorage (фрукты) --")
 	if #data.ReplicatedInventory > 0 then
-		for _, v in ipairs(data.ReplicatedInventory) do table.insert(lines, "- "..v) end
+		for _, v in ipairs(data.ReplicatedInventory) do table.insert(lines, "- " .. v) end
 	else
 		table.insert(lines, "(не найдено)")
 	end
@@ -182,7 +157,7 @@ local function formatData(data)
 
 	table.insert(lines, "-- Stats --")
 	local anyStats = false
-	for k,v in pairs(data.Stats or {}) do
+	for k, v in pairs(data.Stats or {}) do
 		anyStats = true
 		table.insert(lines, string.format("%s — Exp: %s  Level: %s", tostring(k), tostring(v.Exp or 0), tostring(v.Level or 0)))
 	end
@@ -217,18 +192,9 @@ local function createUI()
 	title.Text = "Account Checker (локально)"
 	title.Parent = frame
 
-	local webhookBox = Instance.new("TextBox")
-	webhookBox.Size = UDim2.new(1, -24, 0, 28)
-	webhookBox.Position = UDim2.new(0, 12, 0, 52)
-	webhookBox.BackgroundColor3 = Color3.fromRGB(45,45,45)
-	webhookBox.TextColor3 = Color3.fromRGB(235,235,235)
-	webhookBox.PlaceholderText = "Webhook URL (необязательно; не используется автоматически)"
-	webhookBox.ClearTextOnFocus = false
-	webhookBox.Parent = frame
-
 	local refreshBtn = Instance.new("TextButton")
 	refreshBtn.Size = UDim2.new(0, 140, 0, 34)
-	refreshBtn.Position = UDim2.new(0, 12, 0, 92)
+	refreshBtn.Position = UDim2.new(0, 12, 0, 52)
 	refreshBtn.Text = "Обновить"
 	refreshBtn.Font = Enum.Font.SourceSansBold
 	refreshBtn.TextSize = 16
@@ -236,7 +202,7 @@ local function createUI()
 
 	local copyBtn = Instance.new("TextButton")
 	copyBtn.Size = UDim2.new(0, 190, 0, 34)
-	copyBtn.Position = UDim2.new(0, 164, 0, 92)
+	copyBtn.Position = UDim2.new(0, 164, 0, 52)
 	copyBtn.Text = "Скопировать отчёт"
 	copyBtn.Font = Enum.Font.SourceSansBold
 	copyBtn.TextSize = 16
@@ -244,23 +210,19 @@ local function createUI()
 
 	local consoleBtn = Instance.new("TextButton")
 	consoleBtn.Size = UDim2.new(0, 210, 0, 34)
-	consoleBtn.Position = UDim2.new(0, 366, 0, 92)
+	consoleBtn.Position = UDim2.new(0, 366, 0, 52)
 	consoleBtn.Text = "Показать в Output"
 	consoleBtn.Font = Enum.Font.SourceSans
 	consoleBtn.TextSize = 16
 	consoleBtn.Parent = frame
 
 	local scroll = Instance.new("ScrollingFrame")
-	scroll.Size = UDim2.new(1, -24, 1, -150)
-	scroll.Position = UDim2.new(0, 12, 0, 138)
+	scroll.Size = UDim2.new(1, -24, 1, -100)
+	scroll.Position = UDim2.new(0, 12, 0, 100)
 	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 	scroll.ScrollBarThickness = 8
 	scroll.BackgroundColor3 = Color3.fromRGB(20,20,20)
 	scroll.Parent = frame
-
-	local uiList = Instance.new("UIListLayout")
-	uiList.Padding = UDim.new(0, 6)
-	uiList.Parent = scroll
 
 	local content = Instance.new("TextLabel")
 	content.Size = UDim2.new(1, -20, 0, 10)
@@ -276,7 +238,7 @@ local function createUI()
 
 	local status = Instance.new("TextLabel")
 	status.Size = UDim2.new(1, -24, 0, 20)
-	status.Position = UDim2.new(0, 12, 1, -34)
+	status.Position = UDim2.new(0, 12, 1, -24)
 	status.BackgroundTransparency = 1
 	status.Font = Enum.Font.SourceSansItalic
 	status.TextSize = 12
@@ -303,27 +265,15 @@ local function createUI()
 		status.Text = "Последнее обновление: "..os.date("%Y-%m-%d %H:%M:%S")
 	end
 
-	refreshBtn.MouseButton1Click:Connect(function()
-		refresh()
-		refreshBtn.Text = "Обновлено"
-		task.delay(1.2, function() if refreshBtn then refreshBtn.Text = "Обновить" end end)
-	end)
+	refreshBtn.MouseButton1Click:Connect(refresh)
 
 	copyBtn.MouseButton1Click:Connect(function()
 		refresh()
-		local txt = content.Text or ""
 		if type(setclipboard) == "function" then
-			local suc, err = pcall(function() setclipboard(txt) end)
-			if suc then
-				copyBtn.Text = "✅ Скопировано"
-			else
-				copyBtn.Text = "Ошибка"
-				warn("setclipboard error:", err)
-			end
-		else
-			copyBtn.Text = "Clipboard недоступен"
+			pcall(function() setclipboard(content.Text) end)
+			copyBtn.Text = "✅ Скопировано"
+			task.delay(1.2, function() if copyBtn then copyBtn.Text = "Скопировать отчёт" end end)
 		end
-		task.delay(1.6, function() if copyBtn then copyBtn.Text = "Скопировать отчёт" end end)
 	end)
 
 	consoleBtn.MouseButton1Click:Connect(function()
@@ -331,16 +281,10 @@ local function createUI()
 		print("=== Account Info (client) ===")
 		print(content.Text)
 		consoleBtn.Text = "✅ Напечатано"
-		task.delay(1.4, function() if consoleBtn then consoleBtn.Text = "Показать в Output" end end)
+		task.delay(1.2, function() if consoleBtn then consoleBtn.Text = "Показать в Output" end end)
 	end)
 
 	refresh()
-	task.spawn(function()
-		while player and player.Parent do
-			task.wait(5)
-			pcall(refresh)
-		end
-	end)
 end
 
 local ok, err = pcall(createUI)
