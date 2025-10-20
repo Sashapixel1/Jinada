@@ -1,21 +1,11 @@
 -- AccountInfoUI (LocalScript)
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ReplicatedStorage = game:GetService("Players").LocalPlayer.PlayerGui.Backpack.Inventory 
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local sendEvent = ReplicatedStorage:WaitForChild("SendWebhookEvent")
-
--- Helper: безопасно получить путь child->child по массиву имён
-local function getNested(root, parts)
-    local cur = root
-    for _, name in ipairs(parts) do
-        if not cur then return nil end
-        cur = cur:FindFirstChild(name)
-    end
-    return cur
-end
 
 -- Сбор данных: используем несколько мест, которые ты указал
 local function collectPlayerData()
@@ -30,7 +20,7 @@ local function collectPlayerData()
         if b and b.Value then beliVal = b.Value end
     end
     if not beliVal then
-        local bnode = getNested(player, {"Data", "Beli"})
+        local bnode = getNested(player, {"Data", "stats", "Beli"})
         if bnode and bnode.Value ~= nil then beliVal = bnode.Value end
     end
     data.Beli = beliVal or 0
@@ -38,7 +28,7 @@ local function collectPlayerData()
     -- Race (возможно атрибут или Data.Race)
     local race = player:GetAttribute and player:GetAttribute("Race")
     if not race then
-        local rn = getNested(player, {"Data", "Race"})
+        local rn = getNested(player, {"Data", "stats", "Race"})
         if rn then
             race = rn.Value or tostring(rn)
         end
@@ -49,7 +39,7 @@ local function collectPlayerData()
     local fruits = {}
 
     -- 1) Проверка Data.DevilFruits
-    local df = getNested(player, {"Data", "DevilFruits"})
+    local df = getNested(player, {"Data", "stats", "DevilFruits"})
     if df then
         -- если это Folder — перечислим имена дочерних объектов
         if df:IsA("Folder") then
