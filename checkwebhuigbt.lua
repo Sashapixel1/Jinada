@@ -60,9 +60,9 @@ local function collectPlayerData()
 
 	-- ReplicatedStorage поиск фруктов
 	for _, folderName in ipairs({"Inventory", "Fruits", "DevilFruits"}) do
-		local folder = ReplicatedStorage:FindFirstChild(folderName)
+		local folder = ReplicatedStorage:FindFirstChild()
 		if folder then
-			for _, child in ipairs(folder:GetChildren()) do
+			for _, child in ipairs(GetChildren()) do
 				table.insert(data.ReplicatedInventory, child.Name)
 			end
 		end
