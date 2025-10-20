@@ -8,11 +8,6 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 -- ---------- Вспомогательные функции ----------
-local function safeFind(parent, name)
-	if not parent then return nil end
-	return parent:FindFirstChild(name)
-end
-
 local function getNested(root, parts)
 	if not root then return nil end
 	local cur = root
@@ -24,7 +19,7 @@ local function getNested(root, parts)
 	return cur
 end
 
--- ---------- Новый сканер инвентаря (по PlayerGui) ----------
+-- ---------- Новый сканер GUI фруктов ----------
 local function scanPlayerGUIFruits()
 	local fruitsFound = {}
 	local pathsToCheck = {
@@ -34,7 +29,7 @@ local function scanPlayerGUIFruits()
 	}
 
 	local function addFruit(name)
-		if type(name) == "string" and name:match("^%w+%-%w+$") then
+		if type(name) == "string" and name:match("%w+%-%w+") then
 			fruitsFound[name] = true
 		end
 	end
@@ -43,13 +38,20 @@ local function scanPlayerGUIFruits()
 		local folder = playerGui:FindFirstChild(pathName)
 		if folder then
 			for _, obj in ipairs(folder:GetDescendants()) do
-				-- Проверяем текст или имя
+				-- Проверяем текстовые поля
 				if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-					if obj.Text and obj.Text:match("^%w+%-%w+$") then
-						addFruit(obj.Text)
+					local text = obj.Text or ""
+					if text:match("%w+%-%w+") then
+						addFruit(text)
 					end
-				elseif obj.Name and obj.Name:match("^%w+%-%w+$") then
+				end
+				-- Иногда название хранится в атрибуте или свойстве Name
+				if obj.Name and obj.Name:match("%w+%-%w+") then
 					addFruit(obj.Name)
+				end
+				-- Иногда в ObjectValue / StringValue
+				if obj:IsA("StringValue") and type(obj.Value) == "string" and obj.Value:match("%w+%-%w+") then
+					addFruit(obj.Value)
 				end
 			end
 		end
@@ -95,7 +97,7 @@ local function collectPlayerData()
 	if backpack then
 		for _, it in ipairs(backpack:GetChildren()) do
 			if it:IsA("Tool") or it:IsA("Model") then
-				if it.Name:match("^%w+%-%w+$") then
+				if it.Name:match("%w+%-%w+") then
 					table.insert(data.BackpackFruits, it.Name)
 				end
 			end
@@ -145,7 +147,7 @@ local function formatData(data)
 	end
 	table.insert(lines, "")
 
-	table.insert(lines, "-- GUI Inventory (реальные фрукты) --")
+	table.insert(lines, "-- GUI Inventory (фрукты) --")
 	if #data.GUIFruits > 0 then
 		for _, v in ipairs(data.GUIFruits) do
 			table.insert(lines, "- " .. v)
