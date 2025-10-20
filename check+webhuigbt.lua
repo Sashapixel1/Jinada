@@ -1,0 +1,166 @@
+-- AccountInfo GUI — безопасная версия
+-- Показывает данные о персонаже и копирует их в буфер обмена
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Вспомогательная функция
+local function getNested(root, parts)
+	if not root then return nil end
+	local cur = root
+	for _, name in ipairs(parts) do
+		cur = cur:FindFirstChild(name)
+		if not cur then return nil end
+	end
+	return cur
+end
+
+-- Сбор информации об игроке
+local function collectPlayerData()
+	local data = {}
+	data.Name = player.Name
+	data.Beli = 0
+	data.Race = "Unknown"
+	data.Stats = {}
+	data.BackpackFruits = {}
+	data.GUIInventory = {}
+	data.ReplicatedInventory = {}
+
+	-- Beli
+	local beliNode = getNested(player, {"Data", "Beli"})
+	if beliNode and beliNode.Value then data.Beli = beliNode.Value end
+
+	-- Race
+	local raceNode = getNested(player, {"Data", "Race"})
+	if raceNode and raceNode.Value then data.Race = raceNode.Value end
+
+	-- Backpack
+	local backpack = player:FindFirstChild("Backpack")
+	if backpack then
+		for _, item in ipairs(backpack:GetChildren()) do
+			if item:IsA("Tool") or item:IsA("Model") then
+				table.insert(data.BackpackFruits, item.Name)
+			end
+		end
+	end
+
+	-- GUI Inventory
+	local guiBackpack = playerGui:FindFirstChild("Backpack")
+	if guiBackpack then
+		local inv = guiBackpack:FindFirstChild("Inventory")
+		if inv then
+			for _, child in ipairs(inv:GetChildren()) do
+				table.insert(data.GUIInventory, child.Name)
+			end
+		end
+	end
+
+	-- ReplicatedStorage поиск фруктов
+	for _, folderName in ipairs({"Inventory", "Fruits", "DevilFruits"}) do
+		local folder = ReplicatedStorage:FindFirstChild(folderName)
+		if folder then
+			for _, child in ipairs(folder:GetChildren()) do
+				table.insert(data.ReplicatedInventory, child.Name)
+			end
+		end
+	end
+
+	-- Stats
+	local stats = getNested(player, {"Data", "Stats"})
+	if stats then
+		for _, s in ipairs(stats:GetChildren()) do
+			local exp = s:FindFirstChild("Exp")
+			local lvl = s:FindFirstChild("Level")
+			data.Stats[s.Name] = {
+				Exp = exp and exp.Value or 0,
+				Level = lvl and lvl.Value or 0
+			}
+		end
+	end
+
+	return data
+end
+
+-- Конвертация таблицы в текст
+local function formatData(data)
+	local text = {}
+	table.insert(text, "=== Account Info ===")
+	table.insert(text, "Player: " .. data.Name)
+	table.insert(text, "Beli: " .. tostring(data.Beli))
+	table.insert(text, "Race: " .. tostring(data.Race))
+	table.insert(text, "\n-- Backpack Fruits --")
+	table.insert(text, table.concat(data.BackpackFruits, ", "))
+	table.insert(text, "\n-- GUI Inventory --")
+	table.insert(text, table.concat(data.GUIInventory, ", "))
+	table.insert(text, "\n-- ReplicatedStorage Fruits --")
+	table.insert(text, table.concat(data.ReplicatedInventory, ", "))
+	table.insert(text, "\n-- Stats --")
+	for name, st in pairs(data.Stats) do
+		table.insert(text, string.format("%s: Exp %s, Level %s", name, st.Exp, st.Level))
+	end
+	return table.concat(text, "\n")
+end
+
+-- ---------- UI ----------
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AccountInfoUI"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = playerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 500, 0, 420)
+frame.Position = UDim2.new(0, 20, 0, 20)
+frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+frame.BorderSizePixel = 0
+frame.Parent = screenGui
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 36)
+title.BackgroundTransparency = 1
+title.Text = "Account Info"
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 22
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Parent = frame
+
+-- Поле для Webhook
+local webhookBox = Instance.new("TextBox")
+webhookBox.PlaceholderText = "Webhook URL (необязательно)"
+webhookBox.Size = UDim2.new(1, -20, 0, 28)
+webhookBox.Position = UDim2.new(0, 10, 0, 46)
+webhookBox.ClearTextOnFocus = false
+webhookBox.Text = ""
+webhookBox.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+webhookBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+webhookBox.Parent = frame
+
+-- Кнопка копирования
+local copyButton = Instance.new("TextButton")
+copyButton.Text = "Скопировать отчёт"
+copyButton.Size = UDim2.new(0, 180, 0, 32)
+copyButton.Position = UDim2.new(0, 10, 0, 84)
+copyButton.BackgroundColor3 = Color3.fromRGB(80, 120, 255)
+copyButton.TextColor3 = Color3.new(1, 1, 1)
+copyButton.Font = Enum.Font.SourceSansBold
+copyButton.TextSize = 18
+copyButton.Parent = frame
+
+-- Кнопка "Отправить"
+local sendButton = Instance.new("TextButton")
+sendButton.Text = "Отправить отчёт (в консоль)"
+sendButton.Size = UDim2.new(0, 220, 0, 32)
+sendButton.Position = UDim2.new(0, 200, 0, 84)
+sendButton.BackgroundColor3 = Color3.fromRGB(80, 255, 120)
+sendButton.TextColor3 = Color3.new(0, 0, 0)
+sendButton.Font = Enum.Font.SourceSansBold
+sendButton.TextSize = 18
+sendButton.Parent = frame
+
+-- Поле с отчётом
+local reportBox = Instance.new("TextBox")
+reportBox.MultiLine = true
+reportBox.TextWrapped = false
+reportBox.Clea
