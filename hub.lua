@@ -1,5 +1,5 @@
 -- Auto Cursed Dual Katana — простая версия без Rayfield
--- Можно запускать в оффлайн-копии / через инжектор
+-- Версия 2.2 — без телепорта к CDK altar, с логом ответа StartQuest
 
 ---------------------
 -- ПЕРЕМЕННЫЕ
@@ -22,12 +22,11 @@ local LocalPlayer = Players.LocalPlayer
 local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 ---------------------
--- ЛОКАЦИИ
+-- ЛОКАЦИИ (используются только для Tushita/Yama)
 ---------------------
 local Locations = {
     Tushita = CFrame.new(-10238.8759765625, 389.7912902832, -9549.7939453125),
-    Yama = CFrame.new(-9489.2168, 142.130066, 5567.14697),
-    CDKAltar = CFrame.new(-9717.33203125, 375.1759338378906, -10160.1455078125),
+    Yama    = CFrame.new(-9489.2168, 142.130066, 5567.14697),
 }
 
 ---------------------
@@ -45,11 +44,8 @@ local function AddLog(msg)
     if #StatusLogs > MaxLogs then
         table.remove(StatusLogs, #StatusLogs)
     end
-
-    -- обновляем текст в GUI
     if LogsText then
-        local all = table.concat(StatusLogs, "\n")
-        LogsText.Text = all
+        LogsText.Text = table.concat(StatusLogs, "\n")
     end
 end
 
@@ -100,21 +96,20 @@ local function HasItemInInventory(itemName)
                 return true
             end
         end
+    else
+        if not ok then
+            AddLog("Ошибка getInventory: "..tostring(invData))
+        end
     end
 
     return false
 end
 
-local function HasTushita()
-    return HasItemInInventory("Tushita")
-end
-
-local function HasYama()
-    return HasItemInInventory("Yama")
-end
-
+local function HasTushita() return HasItemInInventory("Tushita") end
+local function HasYama()    return HasItemInInventory("Yama") end
 local function HasCDK()
-    return HasItemInInventory("Cursed Dual Katana") or HasItemInInventory("Cursed Dual Katana [CDK]")
+    return HasItemInInventory("Cursed Dual Katana")
+        or HasItemInInventory("Cursed Dual Katana [CDK]")
 end
 
 local function CheckCDKQuestProgress()
@@ -124,6 +119,9 @@ local function CheckCDKQuestProgress()
 
     if ok and type(result) == "table" then
         return result
+    end
+    if not ok then
+        AddLog("Ошибка CDKQuest Progress: "..tostring(result))
     end
     return nil
 end
@@ -143,7 +141,7 @@ local function TryLoadItem(itemName)
 end
 
 ---------------------
--- ТЕЛЕПОРТ
+-- ТЕЛЕПОРТ (для Tushita/Yama)
 ---------------------
 local function SimpleTeleport(targetCFrame, locationName)
     if IsTeleporting then
@@ -170,7 +168,11 @@ local function SimpleTeleport(targetCFrame, locationName)
     if travelTime < 5 then travelTime = 5 end
     if travelTime > 120 then travelTime = 120 end
 
-    local tween = TweenService:Create(hrp, TweenInfo.new(travelTime, Enum.EasingStyle.Linear), {CFrame = targetCFrame})
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(travelTime, Enum.EasingStyle.Linear),
+        {CFrame = targetCFrame}
+    )
     tween:Play()
 
     local start = tick()
@@ -284,7 +286,7 @@ local function FarmYama()
 end
 
 ---------------------
--- ФАРМ CDK
+-- ФАРМ CDK (БЕЗ ТЕЛЕПОРТА!)
 ---------------------
 local function FarmCDK()
     UpdateStatus("Добыча CDK...")
@@ -300,17 +302,13 @@ local function FarmCDK()
         return true
     end
 
-    if not SimpleTeleport(Locations.CDKAltar, "CDK Altar") then
-        return false
-    end
+    AddLog("Запуск квеста CDK (без телепорта)...")
 
-    wait(2)
-    AddLog("Запуск квеста CDK...")
-
-    -- дополнительный Progress (можно убрать, но не мешает)
-    pcall(function()
-        remote:InvokeServer("CDKQuest", "Progress", "CursedKatana")
+    -- для логов выводим и прогресс, и результат StartQuest
+    local progOk, progRes = pcall(function()
+        return remote:InvokeServer("CDKQuest", "Progress", "CursedKatana")
     end)
+    AddLog("Ответ CDKQuest Progress: "..tostring(progOk and progRes or progRes))
 
     local ok, res = pcall(function()
         return remote:InvokeServer("CDKQuest", "StartQuest", "CursedKatana")
@@ -319,10 +317,11 @@ local function FarmCDK()
     if not ok then
         AddLog("Ошибка StartQuest CDK: "..tostring(res))
         return false
+    else
+        AddLog("Ответ StartQuest CDK: "..tostring(res))
     end
 
     UpdateStatus("Квест CDK...")
-
     for i = 1, 300 do
         if HasCDK() then
             AddLog("ПОЛУЧЕНА CURSED DUAL KATANA!")
@@ -380,7 +379,7 @@ local function CreateGui()
     SpeedLabel.TextColor3 = Color3.new(1,1,1)
     SpeedLabel.Font = Enum.Font.SourceSans
     SpeedLabel.TextSize = 14
-    SpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SpeedLabel.TextXAlignment = Enum.TextX_ALIGNMENT.Left
     SpeedLabel.Text = "Скорость: "..TeleportSpeed
     SpeedLabel.Parent = MainFrame
 
@@ -391,7 +390,7 @@ local function CreateGui()
     StatusLabel.TextColor3 = Color3.new(1,1,1)
     StatusLabel.Font = Enum.Font.SourceSans
     StatusLabel.TextSize = 14
-    StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    StatusLabel.TextXAlignment = Enum.TextX_ALIGNMENT.Left
     StatusLabel.Text = "Статус: "..CurrentStatus
     StatusLabel.Parent = MainFrame
 
@@ -402,7 +401,7 @@ local function CreateGui()
     UptimeLabel.TextColor3 = Color3.new(1,1,1)
     UptimeLabel.Font = Enum.Font.SourceSans
     UptimeLabel.TextSize = 14
-    UptimeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    UptimeLabel.TextXAlignment = Enum.TextX_ALIGNMENT.Left
     UptimeLabel.Text = "Время работы: 00:00:00"
     UptimeLabel.Parent = MainFrame
 
@@ -429,8 +428,8 @@ local function CreateGui()
     LogsText.TextColor3 = Color3.new(1,1,1)
     LogsText.Font = Enum.Font.Code
     LogsText.TextSize = 12
-    LogsText.TextXAlignment = Enum.TextXAlignment.Left
-    LogsText.TextYAlignment = Enum.TextYAlignment.Top
+    LogsText.TextXAlignment = Enum.TextX_ALIGNMENT.Left
+    LogsText.TextYAlignment = Enum.TextY_ALIGNMENT.Top
     LogsText.TextWrapped = false
     LogsText.Text = ""
     LogsText.Parent = scroll
@@ -459,7 +458,6 @@ end
 CreateGui()
 AddLog("Скрипт CDK загружен. Нажми кнопку 'Авто CDK'.")
 
--- обновление статуса / аптайма
 spawn(function()
     while wait(1) do
         if UptimeLabel then
@@ -471,7 +469,6 @@ spawn(function()
     end
 end)
 
--- основной цикл автоквеста
 spawn(function()
     while wait(2) do
         if AutoCursedKatana then
