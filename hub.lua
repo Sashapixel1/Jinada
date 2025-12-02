@@ -1,5 +1,5 @@
 -- Auto Cursed Dual Katana Script by NoxHub
--- Version 2.0 (Combined Teleport & Auto Farm)
+-- Version 2.1 (Fixed Inventory Checker)
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -14,6 +14,8 @@ local IsTeleporting = false
 
 -- Services
 local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 -- Locations
 local Locations = {
@@ -50,6 +52,99 @@ function GetUptime()
     local minutes = math.floor((totalSeconds % 3600) / 60)
     local seconds = totalSeconds % 60
     return string.format("%02d:%02d:%02d", hours, minutes, seconds)
+end
+
+-- ПРАВИЛЬНЫЙ чекер инвентаря из предоставленного скрипта
+function HasItemInInventory(itemName)
+    -- Сначала проверяем в бэкпаке
+    local player = game.Players.LocalPlayer
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack and backpack:FindFirstChild(itemName) then
+        return true
+    end
+    
+    -- Проверяем в руках
+    local character = player.Character
+    if character and character:FindFirstChild(itemName) then
+        return true
+    end
+    
+    -- Проверяем через getInventory (как в предоставленном скрипте)
+    local ok, invData = pcall(function() 
+        return remote:InvokeServer("getInventory") 
+    end)
+    
+    if ok and type(invData) == "table" then
+        for _, item in ipairs(invData) do
+            local name = item.Name or item.name or tostring(item)
+            if name == itemName then
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
+function HasTushita()
+    return HasItemInInventory("Tushita")
+end
+
+function HasYama()
+    return HasItemInInventory("Yama")
+end
+
+function HasCDK()
+    return HasItemInInventory("Cursed Dual Katana") or HasItemInInventory("Cursed Dual Katana [CDK]")
+end
+
+-- Проверка через CDKQuest (дополнительная проверка)
+function CheckCDKQuestProgress()
+    local success, result = pcall(function()
+        return remote:InvokeServer("CDKQuest", "Progress")
+    end)
+    
+    if success and type(result) == "table" then
+        return result
+    end
+    return nil
+end
+
+-- Полная проверка CDK статуса
+function GetFullCDKStatus()
+    local status = {
+        Tushita = false,
+        Yama = false,
+        CDK = false
+    }
+    
+    -- Проверяем через инвентарь
+    status.Tushita = HasTushita()
+    status.Yama = HasYama()
+    status.CDK = HasCDK()
+    
+    -- Дополнительная проверка через CDKQuest
+    local questProgress = CheckCDKQuestProgress()
+    if questProgress then
+        status.Tushita = status.Tushita or (questProgress[1] == true)
+        status.Yama = status.Yama or (questProgress[2] == true)
+        status.CDK = status.CDK or (questProgress[3] == true)
+    end
+    
+    return status
+end
+
+function TryLoadItem(itemName)
+    local success = pcall(function()
+        return remote:InvokeServer("LoadItem", itemName)
+    end)
+    
+    if success then
+        wait(1)
+        return HasItemInInventory(itemName)
+    end
+    
+    return false
 end
 
 -- Телепорт функция (из нашего рабочего скрипта)
@@ -157,48 +252,6 @@ function CancelTeleport()
     AddLog("⏸️ Запрошена отмена телепорта")
 end
 
--- Inventory Functions
-function HasItem(itemName)
-    local success = pcall(function()
-        if game.Players.LocalPlayer.Character:FindFirstChild(itemName) then
-            return true
-        end
-        
-        if game.Players.LocalPlayer.Backpack:FindFirstChild(itemName) then
-            return true
-        end
-        
-        return false
-    end)
-    
-    return success or false
-end
-
-function HasTushita()
-    return HasItem("Tushita")
-end
-
-function HasYama()
-    return HasItem("Yama")
-end
-
-function HasCDK()
-    return HasItem("Cursed Dual Katana") or HasItem("Cursed Dual Katana [CDK]")
-end
-
-function TryLoadItem(itemName)
-    local success = pcall(function()
-        game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("LoadItem", itemName)
-    end)
-    
-    if success then
-        wait(1)
-        return HasItem(itemName)
-    end
-    
-    return false
-end
-
 -- Combat Functions
 function Attack()
     game:GetService("VirtualUser"):Button1Down(Vector2.new(0,0))
@@ -208,7 +261,7 @@ end
 
 function AutoHaki()
     if not game.Players.LocalPlayer.Character:FindFirstChild("HasBuso") then
-        game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
+        remote:InvokeServer("Buso")
     end
 end
 
@@ -217,12 +270,19 @@ function FarmTushita()
     UpdateStatus("Добыча Tushita...")
     
     -- Проверяем, есть ли уже
-    if HasTushita() or TryLoadItem("Tushita") then
+    if HasTushita() then
         AddLog("✅ Уже есть Tushita")
         return true
     end
     
+    -- Пробуем загрузить из хранилища
+    if TryLoadItem("Tushita") then
+        AddLog("✅ Tushita загружена из хранилища")
+        return true
+    end
+    
     -- Телепорт
+    AddLog("🚀 Телепорт к Tushita...")
     local success = SimpleTeleport(Locations.Tushita, "Tushita")
     if not success then
         AddLog("❌ Ошибка телепорта к Tushita")
@@ -234,15 +294,15 @@ function FarmTushita()
     -- Начинаем испытание
     AddLog("Начинаю испытание Tushita...")
     local trialSuccess = pcall(function()
-        return game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CDKQuest", "StartTrial", "Tushita")
+        return remote:InvokeServer("CDKQuest", "StartTrial", "Tushita")
     end)
     
     if trialSuccess then
         AddLog("✅ Испытание Tushita начато")
         UpdateStatus("Прохождение испытания Tushita...")
         
-        -- Ждем получения Tushita
-        for i = 1, 60 do
+        -- Ждем получения Tushita (до 2 минут)
+        for i = 1, 120 do
             if HasTushita() then
                 AddLog("✅ Получена Tushita!")
                 return true
@@ -260,12 +320,19 @@ function FarmYama()
     UpdateStatus("Добыча Yama...")
     
     -- Проверяем, есть ли уже
-    if HasYama() or TryLoadItem("Yama") then
+    if HasYama() then
         AddLog("✅ Уже есть Yama")
         return true
     end
     
+    -- Пробуем загрузить из хранилища
+    if TryLoadItem("Yama") then
+        AddLog("✅ Yama загружена из хранилища")
+        return true
+    end
+    
     -- Телепорт
+    AddLog("🚀 Телепорт к Yama...")
     local success = SimpleTeleport(Locations.Yama, "Yama")
     if not success then
         AddLog("❌ Ошибка телепорта к Yama")
@@ -277,15 +344,15 @@ function FarmYama()
     -- Начинаем испытание
     AddLog("Начинаю испытание Yama...")
     local trialSuccess = pcall(function()
-        return game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CDKQuest", "StartTrial", "Yama")
+        return remote:InvokeServer("CDKQuest", "StartTrial", "Yama")
     end)
     
     if trialSuccess then
         AddLog("✅ Испытание Yama начато")
         UpdateStatus("Прохождение испытания Yama...")
         
-        -- Ждем получения Yama
-        for i = 1, 60 do
+        -- Ждем получения Yama (до 2 минут)
+        for i = 1, 120 do
             if HasYama() then
                 AddLog("✅ Получена Yama!")
                 return true
@@ -305,6 +372,7 @@ function FarmCDK()
     -- Проверяем, есть ли обе катаны
     if not (HasTushita() and HasYama()) then
         AddLog("❌ Нужны обе катаны: Tushita и Yama")
+        AddLog("Tushita: " .. tostring(HasTushita()) .. ", Yama: " .. tostring(HasYama()))
         return false
     end
     
@@ -315,6 +383,7 @@ function FarmCDK()
     end
     
     -- Телепорт
+    AddLog("🚀 Телепорт к CDK Altar...")
     local success = SimpleTeleport(Locations.CDKAltar, "CDK Altar")
     if not success then
         AddLog("❌ Ошибка телепорта к CDK Altar")
@@ -326,15 +395,15 @@ function FarmCDK()
     -- Начинаем квест
     AddLog("Начинаю квест CDK...")
     local questSuccess = pcall(function()
-        return game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CDKQuest", "StartQuest", "CursedKatana")
+        return remote:InvokeServer("CDKQuest", "StartQuest", "CursedKatana")
     end)
     
     if questSuccess then
         AddLog("✅ Квест CDK начат")
         UpdateStatus("Прохождение квеста CDK...")
         
-        -- Ждем получения CDK
-        for i = 1, 120 do
+        -- Ждем получения CDK (до 5 минут)
+        for i = 1, 300 do
             if HasCDK() then
                 AddLog("🎉 ПОЛУЧЕНА CURSED DUAL KATANA!")
                 return true
@@ -419,7 +488,7 @@ local Toggle = MainTab:CreateToggle({
     end,
 })
 
--- Speed Slider (используется в SimpleTeleport)
+-- Speed Slider
 local SpeedSlider = MainTab:CreateSlider({
     Name = "Скорость телепорта",
     Range = {100, 400},
@@ -442,6 +511,48 @@ local SpeedSlider = MainTab:CreateSlider({
 
 -- Ручное управление
 MainTab:CreateSection("Ручное управление")
+
+-- Функция проверки инвентаря с детальной информацией
+local function CheckInventoryDetailed()
+    -- Получаем полный статус
+    local fullStatus = GetFullCDKStatus()
+    
+    -- Проверяем через инвентарь
+    local hasTushitaInv = HasTushita()
+    local hasYamaInv = HasYama()
+    local hasCDKInv = HasCDK()
+    
+    -- Проверяем через CDKQuest
+    local questProgress = CheckCDKQuestProgress()
+    
+    local message = "📦 ДЕТАЛЬНАЯ ПРОВЕРКА ИНВЕНТАРЯ:\n\n"
+    message = message .. "✅ Проверено через инвентарь:\n"
+    message = message .. "   Tushita: " .. tostring(hasTushitaInv) .. "\n"
+    message = message .. "   Yama: " .. tostring(hasYamaInv) .. "\n"
+    message = message .. "   CDK: " .. tostring(hasCDKInv) .. "\n\n"
+    
+    if questProgress then
+        message = message .. "✅ Проверено через CDKQuest:\n"
+        message = message .. "   Tushita: " .. tostring(questProgress[1]) .. "\n"
+        message = message .. "   Yama: " .. tostring(questProgress[2]) .. "\n"
+        message = message .. "   CDK: " .. tostring(questProgress[3]) .. "\n\n"
+    else
+        message = message .. "⚠️ CDKQuest не доступен\n\n"
+    end
+    
+    message = message .. "📊 ИТОГОВЫЙ СТАТУС:\n"
+    message = message .. "   Tushita: " .. tostring(fullStatus.Tushita) .. "\n"
+    message = message .. "   Yama: " .. tostring(fullStatus.Yama) .. "\n"
+    message = message .. "   CDK: " .. tostring(fullStatus.CDK)
+    
+    AddLog("Проверка инвентаря выполнена")
+    Rayfield:Notify({
+        Title = "Детальная проверка",
+        Content = message,
+        Duration = 8,
+        Image = 4483362458
+    })
+end
 
 -- Ручные телепорты
 MainTab:CreateButton({
@@ -502,43 +613,8 @@ MainTab:CreateButton({
 })
 
 MainTab:CreateButton({
-    Name = "Телепорт к Sea Beast",
-    Callback = function()
-        CancelTeleport()
-        UpdateStatus("Ручной телепорт к Sea Beast")
-        local success = SimpleTeleport(Locations.SeaBeast, "Sea Beast")
-        
-        if success then
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Успешно телепортирован к Sea Beast",
-                Duration = 3,
-                Image = 4483362458
-            })
-        end
-        UpdateStatus("Готов")
-    end
-})
-
--- Инвентарь
-MainTab:CreateButton({
-    Name = "Проверить инвентарь",
-    Callback = function()
-        local hasT = HasTushita()
-        local hasY = HasYama()
-        local hasC = HasCDK()
-        
-        local message = string.format("Tushita: %s, Yama: %s, CDK: %s", 
-            tostring(hasT), tostring(hasY), tostring(hasC))
-        
-        AddLog("📦 Проверка инвентаря: " .. message)
-        Rayfield:Notify({
-            Title = "Инвентарь",
-            Content = message,
-            Duration = 5,
-            Image = 4483362458
-        })
-    end
+    Name = "Проверить инвентарь (детально)",
+    Callback = CheckInventoryDetailed
 })
 
 MainTab:CreateButton({
@@ -608,12 +684,7 @@ MainTab:CreateSection("Информация")
 
 MainTab:CreateParagraph({
     Title = "Как использовать:",
-    Content = "1. Установите скорость 100-150 (безопасно)\n2. Включите автофарм CDK\n3. Используйте ручные кнопки для тестов\n4. Требуется: 2000+ уровень, Third Sea"
-})
-
-MainTab:CreateParagraph({
-    Title = "Процесс фарма:",
-    Content = "1. Получить Tushita (испытание)\n2. Получить Yama (испытание)\n3. Объединить в CDK Altar\n4. Получить Cursed Dual Katana"
+    Content = "1. Установите скорость 100-150 (безопасно)\n2. Проверьте инвентарь\n3. Включите автофарм CDK\n4. Используйте ручные кнопки для тестов\n5. Требуется: 2000+ уровень, Third Sea"
 })
 
 -- Создаем статус панель
@@ -655,7 +726,8 @@ spawn(function()
         if AutoCursedKatana then
             pcall(function()
                 -- Проверяем, есть ли уже CDK
-                if HasCDK() then
+                local hasCDK = HasCDK()
+                if hasCDK then
                     AddLog("🎉 УЖЕ ЕСТЬ CURSED DUAL KATANA!")
                     AutoCursedKatana = false
                     Toggle:Set(false)
@@ -725,6 +797,7 @@ spawn(function()
                     end
                 else
                     AddLog("❌ Отсутствует Tushita или Yama")
+                    AddLog("Tushita: " .. tostring(HasTushita()) .. ", Yama: " .. tostring(HasYama()))
                     UpdateStatus("Нет катаны")
                 end
             end)
@@ -735,14 +808,15 @@ end)
 -- Информация о скрипте
 StatusTab:CreateSection("Информация")
 StatusTab:CreateParagraph({
-    Title = "Auto CDK Farm v2.0",
-    Content = "Объединенный телепорт и автофарм\nРабочий телепорт из версии 3.1\nБезопасная скорость 100-150\nМакс время телепорта: 120 сек"
+    Title = "Auto CDK Farm v2.1",
+    Content = "Исправленный чекер инвентаря\nОбъединенный телепорт и автофарм\nБезопасная скорость 100-150\nПравильная проверка через getInventory"
 })
 
 -- Инициализация
 AddLog("✅ Скрипт загружен успешно!")
 AddLog("⚡ Начальная скорость: " .. TeleportSpeed .. " юнитов/сек")
 AddLog("📍 Доступно 4 точки телепорта")
+AddLog("📦 Исправленный чекер инвентаря")
 AddLog("⚠️ Рекомендуемая скорость: 100-150 для безопасности")
 UpdateStatus("Готов")
 
