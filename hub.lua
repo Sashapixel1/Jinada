@@ -352,4 +352,177 @@ local function CreateGui()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 24)
     title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    title.Text = "Auto Cursed Du
+    title.Text = "Auto Cursed Dual Katana"
+    title.TextColor3 = Color3.new(1,1,1)
+    title.Font = Enum.Font.SourceSansBold
+    title.TextSize = 18
+    title.Parent = MainFrame
+
+    ToggleButton = Instance.new("TextButton")
+    ToggleButton.Size = UDim2.new(0, 140, 0, 30)
+    ToggleButton.Position = UDim2.new(0, 10, 0, 30)
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    ToggleButton.TextColor3 = Color3.new(1,1,1)
+    ToggleButton.Font = Enum.Font.SourceSansBold
+    ToggleButton.TextSize = 16
+    ToggleButton.Text = "Авто CDK: OFF"
+    ToggleButton.Parent = MainFrame
+
+    StatusLabel = Instance.new("TextLabel")
+    StatusLabel.Size = UDim2.new(1, -20, 0, 20)
+    StatusLabel.Position = UDim2.new(0, 10, 0, 65)
+    StatusLabel.BackgroundTransparency = 1
+    StatusLabel.TextColor3 = Color3.new(1,1,1)
+    StatusLabel.Font = Enum.Font.SourceSans
+    StatusLabel.TextSize = 14
+    StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    StatusLabel.Text = "Статус: "..CurrentStatus
+    StatusLabel.Parent = MainFrame
+
+    UptimeLabel = Instance.new("TextLabel")
+    UptimeLabel.Size = UDim2.new(1, -20, 0, 20)
+    UptimeLabel.Position = UDim2.new(0, 10, 0, 85)
+    UptimeLabel.BackgroundTransparency = 1
+    UptimeLabel.TextColor3 = Color3.new(1,1,1)
+    UptimeLabel.Font = Enum.Font.SourceSans
+    UptimeLabel.TextSize = 14
+    UptimeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    UptimeLabel.Text = "Время работы: 00:00:00"
+    UptimeLabel.Parent = MainFrame
+
+    SpeedLabel = Instance.new("TextLabel")
+    SpeedLabel.Size = UDim2.new(1, -20, 0, 20)
+    SpeedLabel.Position = UDim2.new(0, 10, 0, 105)
+    SpeedLabel.BackgroundTransparency = 1
+    SpeedLabel.TextColor3 = Color3.new(1,1,1)
+    SpeedLabel.Font = Enum.Font.SourceSans
+    SpeedLabel.TextSize = 14
+    SpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SpeedLabel.Text = "Скорость: "..TeleportSpeed
+    SpeedLabel.Parent = MainFrame
+
+    local LogsFrame = Instance.new("Frame")
+    LogsFrame.Size = UDim2.new(1, -20, 0, 130)
+    LogsFrame.Position = UDim2.new(0, 10, 0, 130)
+    LogsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    LogsFrame.BorderSizePixel = 0
+    LogsFrame.Parent = MainFrame
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -4, 1, -4)
+    scroll.Position = UDim2.new(0, 2, 0, 2)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.CanvasSize = UDim2.new(0,0,5,0)
+    scroll.ScrollBarThickness = 4
+    scroll.Parent = LogsFrame
+
+    LogsText = Instance.new("TextLabel")
+    LogsText.Size = UDim2.new(1, -4, 0, 20)
+    LogsText.Position = UDim2.new(0, 0, 0, 0)
+    LogsText.BackgroundTransparency = 1
+    LogsText.TextColor3 = Color3.new(1,1,1)
+    LogsText.Font = Enum.Font.Code
+    LogsText.TextSize = 12
+    LogsText.TextXAlignment = Enum.TextXAlignment.Left
+    LogsText.TextYAlignment = Enum.TextYAlignment.Top
+    LogsText.TextWrapped = false
+    LogsText.Text = ""
+    LogsText.Parent = scroll
+
+    ToggleButton.MouseButton1Click:Connect(function()
+        AutoCursedKatana = not AutoCursedKatana
+        if AutoCursedKatana then
+            StartTime = os.time()
+            ToggleButton.Text = "Авто CDK: ON"
+            ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+            AddLog("Автофарм CDK включен")
+            UpdateStatus("Запуск...")
+        else
+            ToggleButton.Text = "Авто CDK: OFF"
+            ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            AddLog("Автофарм CDK выключен")
+            UpdateStatus("Остановлен")
+            CancelTeleport()
+        end
+    end)
+end
+
+---------------------
+-- ЛУПЫ
+---------------------
+CreateGui()
+AddLog("Скрипт CDK загружен. Нажми кнопку 'Авто CDK'.")
+
+spawn(function()
+    while wait(1) do
+        if UptimeLabel then
+            UptimeLabel.Text = "Время работы: "..GetUptime()
+        end
+        if SpeedLabel then
+            SpeedLabel.Text = "Скорость: "..TeleportSpeed
+        end
+    end
+end)
+
+spawn(function()
+    while wait(2) do
+        if AutoCursedKatana then
+            pcall(function()
+                if HasCDK() then
+                    AddLog("Уже есть Cursed Dual Katana — остановка.")
+                    AutoCursedKatana = false
+                    if ToggleButton then
+                        ToggleButton.Text = "Авто CDK: OFF"
+                        ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+                    end
+                    UpdateStatus("Завершено")
+                    return
+                end
+
+                AddLog("=== НАЧАЛО ЦИКЛА CDK ===")
+
+                if not HasTushita() then
+                    AddLog("--- ФАРМ TUSHITA ---")
+                    if not FarmTushita() then
+                        AddLog("Не удалось получить Tushita")
+                        UpdateStatus("Ошибка Tushita")
+                        return
+                    end
+                else
+                    AddLog("Tushita уже есть")
+                end
+
+                if not AutoCursedKatana then return end
+
+                if not HasYama() then
+                    AddLog("--- ФАРМ YAMA ---")
+                    if not FarmYama() then
+                        AddLog("Не удалось получить Yama")
+                        UpdateStatus("Ошибка Yama")
+                        return
+                    end
+                else
+                    AddLog("Yama уже есть")
+                end
+
+                if not AutoCursedKatana then return end
+
+                AddLog("--- ФАРМ CDK ---")
+                local got = FarmCDK()
+                if got then
+                    AddLog("CURSED DUAL KATANA ПОЛУЧЕНА!")
+                    AutoCursedKatana = false
+                    if ToggleButton then
+                        ToggleButton.Text = "Авто CDK: OFF"
+                        ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+                    end
+                    UpdateStatus("Завершено")
+                else
+                    AddLog("Не удалось получить CDK — повтор через цикл")
+                    UpdateStatus("Повтор...")
+                end
+            end)
+        end
+    end
+end)
