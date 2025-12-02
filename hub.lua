@@ -1,16 +1,16 @@
--- Mini CDK Checker & Teleporter Script
--- Version 1.1 (Fixed CDK Altar & Faster Teleport)
+-- Mini CDK Teleporter Script
+-- Version 2.0 (Simple Teleport)
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "CDK Checker & Teleporter",
-    LoadingTitle = "Cursed Katana Tools",
+    Name = "CDK Teleporter",
+    LoadingTitle = "Cursed Katana Teleport",
     LoadingSubtitle = "by NoxHub",
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "NoxHub",
-        FileName = "CDKChecker"
+        FileName = "CDKTeleporter"
     },
     Discord = {
         Enabled = false,
@@ -24,97 +24,21 @@ local MainTab = Window:CreateTab("Main", 4483362458)
 local StatusTab = Window:CreateTab("Status", 4483362458)
 
 -- Variables
-local TeleportSpeed = 300 -- Увеличил скорость телепорта
+local TeleportSpeed = 300
 local TweenService = game:GetService("TweenService")
 local StopTween = false
 
--- Правильные координаты (проверенные)
+-- Правильные координаты
 local Locations = {
     Tushita = CFrame.new(-10238.8759765625, 389.7912902832, -9549.7939453125),
     Yama = CFrame.new(-9489.2168, 142.130066, 5567.14697),
-    -- Правильные координаты для CDK Altar
     CDKAltar = CFrame.new(-9713.7255859375, 332.039306640625, -10169.1767578125),
-    -- Альтернативные координаты для CDK
-    CDKAltar2 = CFrame.new(-9709.8876953125, 332.039306640625, -10165.560546875),
-    CDKAltar3 = CFrame.new(-9717.33203125, 332.039306640625, -10160.1455078125)
+    SeaBeast = CFrame.new(-9752.6689453125, 331.55419921875, -10240.32421875)
 }
 
 -- Status Logs
 local StatusLogs = {}
-local MaxLogs = 20
-
--- Функции для работы с инвентарем
-function GetInventoryData()
-    local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_")
-    local inventoryData = {}
-    
-    local success, result = pcall(function()
-        return remote:InvokeServer("getInventory")
-    end)
-    
-    if success and type(result) == "table" then
-        for _, item in ipairs(result) do
-            local itemName = item.Name or tostring(item)
-            inventoryData[itemName] = true
-        end
-    end
-    
-    return inventoryData
-end
-
-function GetItemFromStorage(itemName)
-    local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_")
-    local success = pcall(function()
-        return remote:InvokeServer("LoadItem", itemName)
-    end)
-    return success
-end
-
--- Правильная проверка наличия предметов
-function HasItemInInventory(itemName)
-    -- Проверяем в бэкпаке
-    if game.Players.LocalPlayer.Backpack:FindFirstChild(itemName) then
-        return true
-    end
-    
-    -- Проверяем в руках
-    if game.Players.LocalPlayer.Character:FindFirstChild(itemName) then
-        return true
-    end
-    
-    -- Проверяем через getInventory
-    local inventory = GetInventoryData()
-    if inventory[itemName] then
-        return true
-    end
-    
-    return false
-end
-
-function HasTushita()
-    return HasItemInInventory("Tushita")
-end
-
-function HasYama()
-    return HasItemInInventory("Yama")
-end
-
-function HasCDK()
-    return HasItemInInventory("Cursed Dual Katana") or HasItemInInventory("Cursed Dual Katana [CDK]")
-end
-
--- Функция для проверки прогресса CDKQuest
-function GetCDKProgress()
-    local remote = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("CommF_")
-    local success, result = pcall(function()
-        return remote:InvokeServer("CDKQuest", "Progress")
-    end)
-    
-    if success and type(result) == "table" then
-        return result
-    end
-    return nil
-end
+local MaxLogs = 15
 
 -- Логирование
 function AddLog(message)
@@ -129,16 +53,11 @@ function AddLog(message)
     UpdateLogDisplay()
 end
 
--- Улучшенный телепорт с отменой
-function CancelCurrentTeleport()
-    StopTween = true
-    wait(0.1)
-    StopTween = false
-end
-
--- Функция безопасного телепорта с несколькими попытками для CDK Altar
-function SafeTeleportTo(targetCFrame, locationName)
-    CancelCurrentTeleport()
+-- Упрощенный телепорт без разделения на части
+function SimpleTeleport(targetCFrame, locationName)
+    if StopTween then
+        StopTween = false
+    end
     
     local player = game.Players.LocalPlayer
     local character = player.Character
@@ -152,407 +71,244 @@ function SafeTeleportTo(targetCFrame, locationName)
     local currentPos = hrp.Position
     local targetPos = targetCFrame.Position
     
+    -- Проверяем дистанцию
     local distance = (currentPos - targetPos).Magnitude
-    AddLog(string.format("Телепорт к %s: %.0f юнитов", locationName, distance))
+    AddLog(string.format("Дистанция до %s: %.0f юнитов", locationName, distance))
     
-    -- Для очень дальних локаций используем requestEntrance
+    -- Если слишком далеко, используем requestEntrance
     if distance > 5000 then
         AddLog("Большая дистанция, использую fast travel...")
         
+        local entranceVector = Vector3.new(targetPos.X, targetPos.Y, targetPos.Z)
+        
         if string.find(locationName, "Tushita") then
-            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance", 
-                Vector3.new(-10238.8759765625, 389.7912902832, -9549.7939453125))
+            entranceVector = Vector3.new(-10238.8759765625, 389.7912902832, -9549.7939453125)
         elseif string.find(locationName, "Yama") then
-            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",
-                Vector3.new(-9489.2168, 142.130066, 5567.14697))
-        elseif string.find(locationName, "CDK") then
-            -- Для CDK Altar можно телепортироваться к Sea Beast
-            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance",
-                Vector3.new(-9752.6689453125, 331.55419921875, -10240.32421875))
+            entranceVector = Vector3.new(-9489.2168, 142.130066, 5567.14697)
+        elseif string.find(locationName, "CDK") or string.find(locationName, "Sea") then
+            entranceVector = Vector3.new(-9752.6689453125, 331.55419921875, -10240.32421875)
         end
         
-        wait(2)
-        distance = (hrp.Position - targetPos).Magnitude
-    end
-    
-    -- Если все еще далеко, используем промежуточные точки
-    if distance > 1000 then
-        local steps = math.ceil(distance / 800) -- Большие шаги для скорости
-        AddLog(string.format("Использую %d шагов", steps))
+        local success = pcall(function()
+            game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("requestEntrance", entranceVector)
+        end)
         
-        local direction = (targetPos - hrp.Position).Unit
-        
-        for step = 1, steps do
-            if StopTween then
-                AddLog("Телепорт отменен")
-                return false
-            end
-            
-            local stepTarget = hrp.Position + (direction * 800)
-            local stepCFrame = CFrame.new(stepTarget) * CFrame.Angles(0, hrp.CFrame:ToEulerAnglesXYZ().Y, 0)
-            
-            local stepTime = 800 / TeleportSpeed
-            if stepTime < 0.5 then stepTime = 0.5 end
-            
-            local tween = TweenService:Create(hrp,
-                TweenInfo.new(stepTime, Enum.EasingStyle.Linear),
-                {CFrame = stepCFrame}
-            )
-            
-            tween:Play()
-            
-            local startTime = tick()
-            while tick() - startTime < stepTime do
-                if StopTween then
-                    tween:Cancel()
-                    return false
-                end
-                wait()
-            end
-            
-            tween:Cancel()
+        if success then
+            AddLog("Fast travel выполнен успешно")
+            wait(2) -- Даем время для телепорта
+        else
+            AddLog("Ошибка fast travel")
         end
+        
+        -- Обновляем позицию после fast travel
+        currentPos = hrp.Position
+        distance = (currentPos - targetPos).Magnitude
+        AddLog(string.format("Новая дистанция: %.0f юнитов", distance))
     end
     
-    -- Финальный точный телепорт
-    local finalTime = distance / TeleportSpeed
-    if finalTime < 0.5 then finalTime = 0.5 end
-    if finalTime > 3 then finalTime = 3 end
+    -- Вычисляем время твина
+    local travelTime = distance / TeleportSpeed
     
-    AddLog(string.format("Финальный подход: %.1f сек", finalTime))
+    -- Ограничиваем время твина
+    if travelTime < 1 then travelTime = 1 end
+    if travelTime > 10 then travelTime = 10 end
     
+    AddLog(string.format("Начинаю телепорт: %.1f секунд", travelTime))
+    
+    -- Создаем твин
     local tween = TweenService:Create(hrp,
-        TweenInfo.new(finalTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        TweenInfo.new(travelTime, Enum.EasingStyle.Linear),
         {CFrame = targetCFrame}
     )
     
+    -- Запускаем твин
     tween:Play()
     
+    -- Ждем завершения или отмены
     local startTime = tick()
-    while tick() - startTime < finalTime do
+    while tick() - startTime < travelTime do
         if StopTween then
             tween:Cancel()
+            AddLog("Телепорт отменен")
             return false
         end
-        wait()
+        wait(0.1)
     end
     
+    -- Принудительно устанавливаем конечную позицию
     tween:Cancel()
-    hrp.CFrame = targetCFrame
+    pcall(function()
+        hrp.CFrame = targetCFrame
+    end)
     
-    AddLog("Телепорт успешно завершен")
+    AddLog("Телепорт завершен успешно")
     return true
 end
 
--- Специальная функция для телепорта к CDK Altar (пробует несколько точек)
-function TeleportToCDKAltar()
-    CancelCurrentTeleport()
+-- Телепорт к Tushita
+function TeleportToTushita()
+    StopTween = false
+    AddLog("Телепорт к Tushita...")
     
-    AddLog("Пытаюсь найти CDK Altar...")
+    local success = SimpleTeleport(Locations.Tushita, "Tushita")
     
-    -- Пробуем несколько точек
-    local cdkLocations = {
-        {name = "Основная точка", cframe = Locations.CDKAltar},
-        {name = "Альтернатива 1", cframe = Locations.CDKAltar2},
-        {name = "Альтернатива 2", cframe = Locations.CDKAltar3}
-    }
-    
-    for _, location in ipairs(cdkLocations) do
-        AddLog("Пробую " .. location.name .. "...")
-        
-        local success = SafeTeleportTo(location.cframe, "CDK Altar")
-        if success then
-            wait(1)
-            
-            -- Проверяем что мы действительно у алтаря
-            local playerPos = game.Players.LocalPlayer.Character.HumanoidRootPart.Position
-            local altarPos = location.cframe.Position
-            local checkDistance = (playerPos - altarPos).Magnitude
-            
-            if checkDistance < 50 then
-                AddLog("Успешно телепортировался к CDK Altar!")
-                return true
-            else
-                AddLog("Не на месте, пробую следующую точку...")
-            end
-        end
-        
-        wait(1)
+    if success then
+        Rayfield:Notify({
+            Title = "Телепорт",
+            Content = "Успешно телепортирован к Tushita",
+            Duration = 3,
+            Image = 4483362458
+        })
+    else
+        Rayfield:Notify({
+            Title = "Телепорт",
+            Content = "Ошибка телепорта к Tushita",
+            Duration = 3,
+            Image = 4483362458
+        })
     end
+end
+
+-- Телепорт к Yama
+function TeleportToYama()
+    StopTween = false
+    AddLog("Телепорт к Yama...")
     
-    AddLog("Не удалось найти CDK Altar")
-    return false
+    local success = SimpleTeleport(Locations.Yama, "Yama")
+    
+    if success then
+        Rayfield:Notify({
+            Title = "Телепорт",
+            Content = "Успешно телепортирован к Yama",
+            Duration = 3,
+            Image = 4483362458
+        })
+    else
+        Rayfield:Notify({
+            Title = "Телепорт",
+            Content = "Ошибка телепорта к Yama",
+            Duration = 3,
+            Image = 4483362458
+        })
+    end
+end
+
+-- Телепорт к CDK Altar
+function TeleportToCDKAltar()
+    StopTween = false
+    AddLog("Телепорт к CDK Altar...")
+    
+    local success = SimpleTeleport(Locations.CDKAltar, "CDK Altar")
+    
+    if success then
+        Rayfield:Notify({
+            Title = "Телепорт",
+            Content = "Успешно телепортирован к CDK Altar",
+            Duration = 3,
+            Image = 4483362458
+        })
+    else
+        Rayfield:Notify({
+            Title = "Телепорт",
+            Content = "Ошибка телепорта к CDK Altar",
+            Duration = 3,
+            Image = 4483362458
+        })
+    end
+end
+
+-- Телепорт к Sea Beast
+function TeleportToSeaBeast()
+    StopTween = false
+    AddLog("Телепорт к Sea Beast...")
+    
+    local success = SimpleTeleport(Locations.SeaBeast, "Sea Beast")
+    
+    if success then
+        Rayfield:Notify({
+            Title = "Телепорт",
+            Content = "Успешно телепортирован к Sea Beast",
+            Duration = 3,
+            Image = 4483362458
+        })
+    else
+        Rayfield:Notify({
+            Title = "Телепорт",
+            Content = "Ошибка телепорта к Sea Beast",
+            Duration = 3,
+            Image = 4483362458
+        })
+    end
+end
+
+-- Отмена телепорта
+function CancelTeleport()
+    StopTween = true
+    AddLog("Телепорт отменен")
+    
+    Rayfield:Notify({
+        Title = "Телепорт",
+        Content = "Текущий телепорт отменен",
+        Duration = 2,
+        Image = 4483362458
+    })
 end
 
 -- Создаем UI элементы
 
 local SpeedSlider = MainTab:CreateSlider({
     Name = "Скорость телепорта",
-    Range = {200, 400}, -- Увеличил диапазон
+    Range = {200, 400},
     Increment = 10,
     Suffix = "ед/сек",
     CurrentValue = TeleportSpeed,
     Flag = "TeleportSpeed",
     Callback = function(Value)
         TeleportSpeed = Value
-        AddLog("Скорость телепорта установлена: " .. Value)
+        AddLog("Скорость телепорта: " .. Value)
     end,
 })
 
--- Секция проверки инвентаря
-MainTab:CreateSection("Проверка CDK")
-
--- Функция для проверки CDK
-local function CheckCDKStatus()
-    AddLog("=== Проверка CDK ===")
-    
-    -- Проверяем через инвентарь
-    local hasTushitaInv = HasTushita()
-    local hasYamaInv = HasYama()
-    local hasCDKInv = HasCDK()
-    
-    -- Проверяем через CDKQuest
-    local progress = GetCDKProgress()
-    
-    AddLog("Через инвентарь:")
-    AddLog("  Tushita: " .. tostring(hasTushitaInv))
-    AddLog("  Yama: " .. tostring(hasYamaInv))
-    AddLog("  CDK: " .. tostring(hasCDKInv))
-    
-    if progress then
-        AddLog("Через CDKQuest:")
-        AddLog("  Tushita: " .. tostring(progress[1]))
-        AddLog("  Yama: " .. tostring(progress[2]))
-        AddLog("  CDK: " .. tostring(progress[3]))
-    else
-        AddLog("CDKQuest не отвечает или недоступен")
-    end
-    
-    -- Определяем окончательный статус
-    local finalStatus = {}
-    finalStatus.Tushita = hasTushitaInv or (progress and progress[1] == true)
-    finalStatus.Yama = hasYamaInv or (progress and progress[2] == true)
-    finalStatus.CDK = hasCDKInv or (progress and progress[3] == true)
-    
-    AddLog("=== Окончательный статус ===")
-    AddLog("Tushita: " .. tostring(finalStatus.Tushita))
-    AddLog("Yama: " .. tostring(finalStatus.Yama))
-    AddLog("CDK: " .. tostring(finalStatus.CDK))
-    
-    if finalStatus.CDK then
-        Rayfield:Notify({
-            Title = "CDK Статус",
-            Content = "✅ У вас уже есть Cursed Dual Katana!",
-            Duration = 5,
-            Image = 4483362458
-        })
-    elseif finalStatus.Tushita and finalStatus.Yama then
-        Rayfield:Notify({
-            Title = "CDK Статус",
-            Content = "📋 Есть Tushita и Yama, можно фармить CDK",
-            Duration = 5,
-            Image = 4483362458
-        })
-    else
-        local missing = {}
-        if not finalStatus.Tushita then table.insert(missing, "Tushita") end
-        if not finalStatus.Yama then table.insert(missing, "Yama") end
-        
-        Rayfield:Notify({
-            Title = "CDK Статус",
-            Content = "❌ Отсутствует: " .. table.concat(missing, ", "),
-            Duration = 5,
-            Image = 4483362458
-        })
-    end
-end
-
--- Кнопки проверки
-MainTab:CreateButton({
-    Name = "Проверить CDK статус",
-    Callback = CheckCDKStatus
-})
-
-MainTab:CreateButton({
-    Name = "Загрузить Tushita из хранилища",
-    Callback = function()
-        AddLog("Загружаю Tushita...")
-        if GetItemFromStorage("Tushita") then
-            wait(1)
-            if HasTushita() then
-                AddLog("Tushita загружена успешно")
-                Rayfield:Notify({
-                    Title = "Загрузка",
-                    Content = "Tushita загружена из хранилища",
-                    Duration = 3,
-                    Image = 4483362458
-                })
-            else
-                AddLog("Tushita не найдена в хранилище")
-            end
-        else
-            AddLog("Ошибка загрузки Tushita")
-        end
-    end
-})
-
-MainTab:CreateButton({
-    Name = "Загрузить Yama из хранилища",
-    Callback = function()
-        AddLog("Загружаю Yama...")
-        if GetItemFromStorage("Yama") then
-            wait(1)
-            if HasYama() then
-                AddLog("Yama загружена успешно")
-                Rayfield:Notify({
-                    Title = "Загрузка",
-                    Content = "Yama загружена из хранилища",
-                    Duration = 3,
-                    Image = 4483362458
-                })
-            else
-                AddLog("Yama не найдена в хранилище")
-            end
-        else
-            AddLog("Ошибка загрузки Yama")
-        end
-    end
-})
-
 -- Секция телепортов
-MainTab:CreateSection("Телепорты")
+MainTab:CreateSection("Телепорты CDK")
 
 MainTab:CreateButton({
-    Name = "Телепорт к Tushita (Hydra Island)",
-    Callback = function()
-        CancelCurrentTeleport()
-        AddLog("Телепорт к Tushita...")
-        
-        local success = SafeTeleportTo(Locations.Tushita, "Tushita")
-        
-        if success then
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Успешно телепортирован к Tushita",
-                Duration = 3,
-                Image = 4483362458
-            })
-        else
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Ошибка телепорта к Tushita",
-                Duration = 3,
-                Image = 4483362458
-            })
-        end
-    end
+    Name = "Телепорт к Tushita",
+    Callback = TeleportToTushita
 })
 
 MainTab:CreateButton({
-    Name = "Телепорт к Yama (Haunted Castle)",
-    Callback = function()
-        CancelCurrentTeleport()
-        AddLog("Телепорт к Yama...")
-        
-        local success = SafeTeleportTo(Locations.Yama, "Yama")
-        
-        if success then
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Успешно телепортирован к Yama",
-                Duration = 3,
-                Image = 4483362458
-            })
-        else
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Ошибка телепорта к Yama",
-                Duration = 3,
-                Image = 4483362458
-            })
-        end
-    end
+    Name = "Телепорт к Yama",
+    Callback = TeleportToYama
 })
 
 MainTab:CreateButton({
     Name = "Телепорт к CDK Altar",
-    Callback = function()
-        CancelCurrentTeleport()
-        AddLog("Телепорт к CDK Altar...")
-        
-        local success = TeleportToCDKAltar()
-        
-        if success then
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Успешно телепортирован к CDK Altar",
-                Duration = 3,
-                Image = 4483362458
-            })
-        else
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Не удалось найти CDK Altar",
-                Duration = 3,
-                Image = 4483362458
-            })
-        end
-    end
+    Callback = TeleportToCDKAltar
 })
 
 MainTab:CreateButton({
-    Name = "Телепорт к Sea Beast (рядом с CDK)",
-    Callback = function()
-        CancelCurrentTeleport()
-        AddLog("Телепорт к Sea Beast...")
-        
-        local seaBeastPos = CFrame.new(-9752.6689453125, 331.55419921875, -10240.32421875)
-        local success = SafeTeleportTo(seaBeastPos, "Sea Beast")
-        
-        if success then
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Успешно телепортирован к Sea Beast",
-                Duration = 3,
-                Image = 4483362458
-            })
-        else
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Ошибка телепорта к Sea Beast",
-                Duration = 3,
-                Image = 4483362458
-            })
-        end
-    end
+    Name = "Телепорт к Sea Beast",
+    Callback = TeleportToSeaBeast
 })
 
 MainTab:CreateButton({
     Name = "Отмена телепорта",
-    Callback = function()
-        CancelCurrentTeleport()
-        AddLog("Текущий телепорт отменен")
-        Rayfield:Notify({
-            Title = "Телепорт",
-            Content = "Телепорт отменен",
-            Duration = 2,
-            Image = 4483362458
-        })
-    end
+    Callback = CancelTeleport
 })
 
--- Секция информации
+-- Информация
 MainTab:CreateSection("Информация")
 
 MainTab:CreateParagraph({
     Title = "Как использовать:",
-    Content = "1. Проверьте статус CDK\n2. Загрузите мечи если нужно\n3. Используйте телепорты (скорость 300)\n4. Для CDK Altar используйте Sea Beast если не находит"
+    Content = "1. Выберите цель телепорта\n2. Настройте скорость (рекомендуется 300)\n3. Нажмите кнопку телепорта\n4. Используйте 'Отмена' если нужно\n\nСкорость 300 юнитов/сек безопасна для античита"
 })
 
 -- Создаем статус панель
-local StatusLabel = StatusTab:CreateLabel("Статус: Готов")
-local LogsSection = StatusTab:CreateSection("Логи")
-local LogsContainer = StatusTab:CreateParagraph({Title = "Лог действий", Content = "Ожидание..."})
+StatusTab:CreateLabel("Статус: Готов к телепорту")
+local LogsSection = StatusTab:CreateSection("Логи телепорта")
+local LogsContainer = StatusTab:CreateParagraph({Title = "Логи действий", Content = "Ожидание..."})
 
 function UpdateLogDisplay()
     local logText = ""
@@ -562,13 +318,6 @@ function UpdateLogDisplay()
     
     LogsContainer:Set({Title = "Логи (" .. #StatusLogs .. " записей)", Content = logText})
 end
-
--- Автообновление логов
-spawn(function()
-    while wait(1) do
-        UpdateLogDisplay()
-    end
-end)
 
 -- Кнопка очистки логов
 StatusTab:CreateButton({
@@ -580,17 +329,24 @@ StatusTab:CreateButton({
     end
 })
 
+-- Автообновление логов
+spawn(function()
+    while wait(1) do
+        UpdateLogDisplay()
+    end
+end)
+
 -- Информация о скрипте
-StatusTab:CreateSection("Информация о скрипте")
+StatusTab:CreateSection("Информация")
 StatusTab:CreateParagraph({
-    Title = "CDK Checker & Teleporter v1.1",
-    Content = "Скорость телепорта: " .. TeleportSpeed .. "\nФикс CDK Altar\nУлучшенный телепорт"
+    Title = "CDK Teleporter v2.0",
+    Content = "Упрощенный телепорт\nСкорость: " .. TeleportSpeed .. "\nБезопасно для античита"
 })
 
 -- Инициализация
 AddLog("Скрипт загружен успешно!")
-AddLog("Скорость телепорта: " .. TeleportSpeed)
-AddLog("Используйте кнопки телепорта")
+AddLog("Текущая скорость телепорта: " .. TeleportSpeed)
+AddLog("Готов к телепорту")
 
 -- Загружаем конфигурацию
 Rayfield:LoadConfiguration()
