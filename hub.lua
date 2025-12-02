@@ -1,45 +1,31 @@
--- Simple CDK Teleporter
--- Version 3.1 (2 Minute Max Teleport)
+-- Auto Cursed Dual Katana Script by NoxHub
+-- Version 2.0 (Combined Teleport & Auto Farm)
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
-local Window = Rayfield:CreateWindow({
-    Name = "CDK Teleporter",
-    LoadingTitle = "Cursed Katana Teleport",
-    LoadingSubtitle = "by NoxHub",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "NoxHub",
-        FileName = "CDKTeleporter"
-    },
-    Discord = {
-        Enabled = false,
-        Invite = "noxhub",
-        RememberJoins = true
-    },
-    KeySystem = false,
-})
-
-local MainTab = Window:CreateTab("Main", 4483362458)
-local StatusTab = Window:CreateTab("Status", 4483362458)
-
 -- Variables
-local TeleportSpeed = 150 -- Начальная безопасная скорость
-local TweenService = game:GetService("TweenService")
+local AutoCursedKatana = false
+local CurrentStatus = "Idle"
+local LastUpdate = os.time()
+local StartTime = os.time()
+local TeleportSpeed = 150
 local StopTween = false
 local IsTeleporting = false
 
--- Правильные координаты
+-- Services
+local TweenService = game:GetService("TweenService")
+
+-- Locations
 local Locations = {
     Tushita = CFrame.new(-10238.8759765625, 389.7912902832, -9549.7939453125),
     Yama = CFrame.new(-9489.2168, 142.130066, 5567.14697),
-    CDKAltar = CFrame.new(-9713.7255859375, 332.039306640625, -10169.1767578125),
+    CDKAltar = CFrame.new(-9717.33203125, 375.1759338378906, -10160.1455078125),
     SeaBeast = CFrame.new(-9752.6689453125, 331.55419921875, -10240.32421875)
 }
 
 -- Status Logs
 local StatusLogs = {}
-local MaxLogs = 15
+local MaxLogs = 20
 
 -- Логирование
 function AddLog(message)
@@ -50,11 +36,23 @@ function AddLog(message)
     if #StatusLogs > MaxLogs then
         table.remove(StatusLogs, #StatusLogs)
     end
-    
-    UpdateLogDisplay()
 end
 
--- Простой безопасный телепорт
+function UpdateStatus(newStatus)
+    CurrentStatus = newStatus
+    AddLog("Статус: "..newStatus)
+    LastUpdate = os.time()
+end
+
+function GetUptime()
+    local totalSeconds = os.time() - StartTime
+    local hours = math.floor(totalSeconds / 3600)
+    local minutes = math.floor((totalSeconds % 3600) / 60)
+    local seconds = totalSeconds % 60
+    return string.format("%02d:%02d:%02d", hours, minutes, seconds)
+end
+
+-- Телепорт функция (из нашего рабочего скрипта)
 function SimpleTeleport(targetCFrame, locationName)
     if IsTeleporting then
         AddLog("Уже выполняется телепорт, дождитесь завершения")
@@ -116,7 +114,7 @@ function SimpleTeleport(targetCFrame, locationName)
     while tick() - startTime < travelTime do
         if StopTween then
             tween:Cancel()
-            AddLog("❌ Телепорт отменен пользователем")
+            AddLog("❌ Телепорт отменен")
             IsTeleporting = false
             return false
         end
@@ -126,7 +124,7 @@ function SimpleTeleport(targetCFrame, locationName)
         local progress = math.floor((elapsed / travelTime) * 100)
         local remaining = math.floor(travelTime - elapsed)
         
-        if progress % 10 == 0 then -- Обновляем каждые 10%
+        if progress % 20 == 0 then -- Обновляем каждые 20%
             AddLog(string.format("📊 Прогресс: %d%% (осталось: %d сек)", progress, remaining))
         end
         
@@ -154,110 +152,274 @@ function SimpleTeleport(targetCFrame, locationName)
     return true
 end
 
--- Функции телепорта (используют глобальную TeleportSpeed)
-function TeleportToTushita()
-    AddLog("🚀 Запуск телепорта к Tushita...")
-    
-    local success = SimpleTeleport(Locations.Tushita, "Tushita")
-    
-    if success then
-        Rayfield:Notify({
-            Title = "Телепорт",
-            Content = "Успешно телепортирован к Tushita",
-            Duration = 5,
-            Image = 4483362458
-        })
-    elseif not IsTeleporting then
-        Rayfield:Notify({
-            Title = "Телепорт",
-            Content = "Ошибка телепорта к Tushita",
-            Duration = 5,
-            Image = 4483362458
-        })
-    end
-end
-
-function TeleportToYama()
-    AddLog("🚀 Запуск телепорта к Yama...")
-    
-    local success = SimpleTeleport(Locations.Yama, "Yama")
-    
-    if success then
-        Rayfield:Notify({
-            Title = "Телепорт",
-            Content = "Успешно телепортирован к Yama",
-            Duration = 5,
-            Image = 4483362458
-        })
-    elseif not IsTeleporting then
-        Rayfield:Notify({
-            Title = "Телепорт",
-            Content = "Ошибка телепорта к Yama",
-            Duration = 5,
-            Image = 4483362458
-        })
-    end
-end
-
-function TeleportToCDKAltar()
-    AddLog("🚀 Запуск телепорта к CDK Altar...")
-    
-    local success = SimpleTeleport(Locations.CDKAltar, "CDK Altar")
-    
-    if success then
-        Rayfield:Notify({
-            Title = "Телепорт",
-            Content = "Успешно телепортирован к CDK Altar",
-            Duration = 5,
-            Image = 4483362458
-        })
-    elseif not IsTeleporting then
-        Rayfield:Notify({
-            Title = "Телепорт",
-            Content = "Ошибка телепорта к CDK Altar",
-            Duration = 5,
-            Image = 4483362458
-        })
-    end
-end
-
-function TeleportToSeaBeast()
-    AddLog("🚀 Запуск телепорта к Sea Beast...")
-    
-    local success = SimpleTeleport(Locations.SeaBeast, "Sea Beast")
-    
-    if success then
-        Rayfield:Notify({
-            Title = "Телепорт",
-            Content = "Успешно телепортирован к Sea Beast",
-            Duration = 5,
-            Image = 4483362458
-        })
-    elseif not IsTeleporting then
-        Rayfield:Notify({
-            Title = "Телепорт",
-            Content = "Ошибка телепорта к Sea Beast",
-            Duration = 5,
-            Image = 4483362458
-        })
-    end
-end
-
 function CancelTeleport()
     StopTween = true
     AddLog("⏸️ Запрошена отмена телепорта")
-    
-    Rayfield:Notify({
-        Title = "Телепорт",
-        Content = "Отмена текущего телепорта",
-        Duration = 3,
-        Image = 4483362458
-    })
 end
 
--- Создаем UI элементы
+-- Inventory Functions
+function HasItem(itemName)
+    local success = pcall(function()
+        if game.Players.LocalPlayer.Character:FindFirstChild(itemName) then
+            return true
+        end
+        
+        if game.Players.LocalPlayer.Backpack:FindFirstChild(itemName) then
+            return true
+        end
+        
+        return false
+    end)
+    
+    return success or false
+end
 
--- Ползунок скорости
+function HasTushita()
+    return HasItem("Tushita")
+end
+
+function HasYama()
+    return HasItem("Yama")
+end
+
+function HasCDK()
+    return HasItem("Cursed Dual Katana") or HasItem("Cursed Dual Katana [CDK]")
+end
+
+function TryLoadItem(itemName)
+    local success = pcall(function()
+        game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("LoadItem", itemName)
+    end)
+    
+    if success then
+        wait(1)
+        return HasItem(itemName)
+    end
+    
+    return false
+end
+
+-- Combat Functions
+function Attack()
+    game:GetService("VirtualUser"):Button1Down(Vector2.new(0,0))
+    wait(0.1)
+    game:GetService("VirtualUser"):Button1Up(Vector2.new(0,0))
+end
+
+function AutoHaki()
+    if not game.Players.LocalPlayer.Character:FindFirstChild("HasBuso") then
+        game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("Buso")
+    end
+end
+
+-- Farming Functions
+function FarmTushita()
+    UpdateStatus("Добыча Tushita...")
+    
+    -- Проверяем, есть ли уже
+    if HasTushita() or TryLoadItem("Tushita") then
+        AddLog("✅ Уже есть Tushita")
+        return true
+    end
+    
+    -- Телепорт
+    local success = SimpleTeleport(Locations.Tushita, "Tushita")
+    if not success then
+        AddLog("❌ Ошибка телепорта к Tushita")
+        return false
+    end
+    
+    wait(2)
+    
+    -- Начинаем испытание
+    AddLog("Начинаю испытание Tushita...")
+    local trialSuccess = pcall(function()
+        return game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CDKQuest", "StartTrial", "Tushita")
+    end)
+    
+    if trialSuccess then
+        AddLog("✅ Испытание Tushita начато")
+        UpdateStatus("Прохождение испытания Tushita...")
+        
+        -- Ждем получения Tushita
+        for i = 1, 60 do
+            if HasTushita() then
+                AddLog("✅ Получена Tushita!")
+                return true
+            end
+            wait(1)
+        end
+    else
+        AddLog("❌ Ошибка начала испытания Tushita")
+    end
+    
+    return HasTushita()
+end
+
+function FarmYama()
+    UpdateStatus("Добыча Yama...")
+    
+    -- Проверяем, есть ли уже
+    if HasYama() or TryLoadItem("Yama") then
+        AddLog("✅ Уже есть Yama")
+        return true
+    end
+    
+    -- Телепорт
+    local success = SimpleTeleport(Locations.Yama, "Yama")
+    if not success then
+        AddLog("❌ Ошибка телепорта к Yama")
+        return false
+    end
+    
+    wait(2)
+    
+    -- Начинаем испытание
+    AddLog("Начинаю испытание Yama...")
+    local trialSuccess = pcall(function()
+        return game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CDKQuest", "StartTrial", "Yama")
+    end)
+    
+    if trialSuccess then
+        AddLog("✅ Испытание Yama начато")
+        UpdateStatus("Прохождение испытания Yama...")
+        
+        -- Ждем получения Yama
+        for i = 1, 60 do
+            if HasYama() then
+                AddLog("✅ Получена Yama!")
+                return true
+            end
+            wait(1)
+        end
+    else
+        AddLog("❌ Ошибка начала испытания Yama")
+    end
+    
+    return HasYama()
+end
+
+function FarmCDK()
+    UpdateStatus("Добыча CDK...")
+    
+    -- Проверяем, есть ли обе катаны
+    if not (HasTushita() and HasYama()) then
+        AddLog("❌ Нужны обе катаны: Tushita и Yama")
+        return false
+    end
+    
+    -- Проверяем, есть ли уже CDK
+    if HasCDK() then
+        AddLog("✅ Уже есть Cursed Dual Katana!")
+        return true
+    end
+    
+    -- Телепорт
+    local success = SimpleTeleport(Locations.CDKAltar, "CDK Altar")
+    if not success then
+        AddLog("❌ Ошибка телепорта к CDK Altar")
+        return false
+    end
+    
+    wait(2)
+    
+    -- Начинаем квест
+    AddLog("Начинаю квест CDK...")
+    local questSuccess = pcall(function()
+        return game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("CDKQuest", "StartQuest", "CursedKatana")
+    end)
+    
+    if questSuccess then
+        AddLog("✅ Квест CDK начат")
+        UpdateStatus("Прохождение квеста CDK...")
+        
+        -- Ждем получения CDK
+        for i = 1, 120 do
+            if HasCDK() then
+                AddLog("🎉 ПОЛУЧЕНА CURSED DUAL KATANA!")
+                return true
+            end
+            wait(1)
+        end
+    else
+        AddLog("❌ Ошибка начала квеста CDK")
+    end
+    
+    return HasCDK()
+end
+
+-- Теперь создаем окно и UI элементы
+
+local Window = Rayfield:CreateWindow({
+    Name = "Auto Cursed Dual Katana",
+    LoadingTitle = "Cursed Katana Farm",
+    LoadingSubtitle = "by NoxHub",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "NoxHub",
+        FileName = "CursedKatana"
+    },
+    Discord = {
+        Enabled = false,
+        Invite = "noxhub",
+        RememberJoins = true
+    },
+    KeySystem = false,
+})
+
+local MainTab = Window:CreateTab("Main", 4483362458)
+local StatusTab = Window:CreateTab("Status", 4483362458)
+
+-- UI Update Function
+function UpdateLogDisplay()
+    if StatusLabel then
+        StatusLabel:Set("Статус: " .. CurrentStatus)
+    end
+    if UptimeLabel then
+        UptimeLabel:Set("Время работы: " .. GetUptime())
+    end
+    
+    if LogsContainer then
+        local logText = ""
+        for i, log in ipairs(StatusLogs) do
+            logText = logText .. log .. "\n"
+        end
+        LogsContainer:Set({Title = "Логи (" .. #StatusLogs .. " записей)", Content = logText})
+    end
+end
+
+-- Main Toggle
+local Toggle = MainTab:CreateToggle({
+    Name = "Автофарм CDK",
+    CurrentValue = false,
+    Flag = "AutoCDK",
+    Callback = function(Value)
+        AutoCursedKatana = Value
+        if Value then
+            StartTime = os.time()
+            AddLog("🚀 Автофарм CDK ЗАПУЩЕН")
+            UpdateStatus("Запуск...")
+            Rayfield:Notify({
+                Title = "Автофарм CDK",
+                Content = "Начинаю фарм Cursed Dual Katana",
+                Duration = 5,
+                Image = 4483362458
+            })
+        else
+            CancelTeleport()
+            AddLog("🛑 Автофарм CDK ОСТАНОВЛЕН")
+            UpdateStatus("Остановлен")
+            Rayfield:Notify({
+                Title = "Автофарм CDK",
+                Content = "Фарм остановлен",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
+    end,
+})
+
+-- Speed Slider (используется в SimpleTeleport)
 local SpeedSlider = MainTab:CreateSlider({
     Name = "Скорость телепорта",
     Range = {100, 400},
@@ -278,32 +440,167 @@ local SpeedSlider = MainTab:CreateSlider({
     end,
 })
 
--- Секция телепортов
-MainTab:CreateSection("Телепорты CDK")
+-- Ручное управление
+MainTab:CreateSection("Ручное управление")
 
+-- Ручные телепорты
 MainTab:CreateButton({
     Name = "Телепорт к Tushita",
-    Callback = TeleportToTushita
+    Callback = function()
+        CancelTeleport()
+        UpdateStatus("Ручной телепорт к Tushita")
+        local success = SimpleTeleport(Locations.Tushita, "Tushita")
+        
+        if success then
+            Rayfield:Notify({
+                Title = "Телепорт",
+                Content = "Успешно телепортирован к Tushita",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
+        UpdateStatus("Готов")
+    end
 })
 
 MainTab:CreateButton({
     Name = "Телепорт к Yama",
-    Callback = TeleportToYama
+    Callback = function()
+        CancelTeleport()
+        UpdateStatus("Ручной телепорт к Yama")
+        local success = SimpleTeleport(Locations.Yama, "Yama")
+        
+        if success then
+            Rayfield:Notify({
+                Title = "Телепорт",
+                Content = "Успешно телепортирован к Yama",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
+        UpdateStatus("Готов")
+    end
 })
 
 MainTab:CreateButton({
     Name = "Телепорт к CDK Altar",
-    Callback = TeleportToCDKAltar
+    Callback = function()
+        CancelTeleport()
+        UpdateStatus("Ручной телепорт к CDK Altar")
+        local success = SimpleTeleport(Locations.CDKAltar, "CDK Altar")
+        
+        if success then
+            Rayfield:Notify({
+                Title = "Телепорт",
+                Content = "Успешно телепортирован к CDK Altar",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
+        UpdateStatus("Готов")
+    end
 })
 
 MainTab:CreateButton({
     Name = "Телепорт к Sea Beast",
-    Callback = TeleportToSeaBeast
+    Callback = function()
+        CancelTeleport()
+        UpdateStatus("Ручной телепорт к Sea Beast")
+        local success = SimpleTeleport(Locations.SeaBeast, "Sea Beast")
+        
+        if success then
+            Rayfield:Notify({
+                Title = "Телепорт",
+                Content = "Успешно телепортирован к Sea Beast",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
+        UpdateStatus("Готов")
+    end
+})
+
+-- Инвентарь
+MainTab:CreateButton({
+    Name = "Проверить инвентарь",
+    Callback = function()
+        local hasT = HasTushita()
+        local hasY = HasYama()
+        local hasC = HasCDK()
+        
+        local message = string.format("Tushita: %s, Yama: %s, CDK: %s", 
+            tostring(hasT), tostring(hasY), tostring(hasC))
+        
+        AddLog("📦 Проверка инвентаря: " .. message)
+        Rayfield:Notify({
+            Title = "Инвентарь",
+            Content = message,
+            Duration = 5,
+            Image = 4483362458
+        })
+    end
+})
+
+MainTab:CreateButton({
+    Name = "Загрузить Tushita из хранилища",
+    Callback = function()
+        AddLog("📥 Загружаю Tushita из хранилища...")
+        if TryLoadItem("Tushita") then
+            AddLog("✅ Tushita загружена успешно")
+            Rayfield:Notify({
+                Title = "Загрузка",
+                Content = "Tushita загружена из хранилища",
+                Duration = 3,
+                Image = 4483362458
+            })
+        else
+            AddLog("❌ Ошибка загрузки Tushita")
+            Rayfield:Notify({
+                Title = "Загрузка",
+                Content = "Ошибка загрузки Tushita",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
+    end
+})
+
+MainTab:CreateButton({
+    Name = "Загрузить Yama из хранилища",
+    Callback = function()
+        AddLog("📥 Загружаю Yama из хранилища...")
+        if TryLoadItem("Yama") then
+            AddLog("✅ Yama загружена успешно")
+            Rayfield:Notify({
+                Title = "Загрузка",
+                Content = "Yama загружена из хранилища",
+                Duration = 3,
+                Image = 4483362458
+            })
+        else
+            AddLog("❌ Ошибка загрузки Yama")
+            Rayfield:Notify({
+                Title = "Загрузка",
+                Content = "Ошибка загрузки Yama",
+                Duration = 3,
+                Image = 4483362458
+            })
+        end
+    end
 })
 
 MainTab:CreateButton({
     Name = "Отмена телепорта",
-    Callback = CancelTeleport
+    Callback = function()
+        CancelTeleport()
+        AddLog("⏸️ Отмена телепорта")
+        Rayfield:Notify({
+            Title = "Телепорт",
+            Content = "Телепорт отменен",
+            Duration = 2,
+            Image = 4483362458
+        })
+    end
 })
 
 -- Информация
@@ -311,39 +608,21 @@ MainTab:CreateSection("Информация")
 
 MainTab:CreateParagraph({
     Title = "Как использовать:",
-    Content = "1. Установите скорость (рекомендуется 100-150)\n2. Нажмите кнопку нужного телепорта\n3. Ждите завершения (макс 2 минуты)\n4. Используйте 'Отмена' при необходимости\n\n📊 Скорость влияет на все телепорты!"
+    Content = "1. Установите скорость 100-150 (безопасно)\n2. Включите автофарм CDK\n3. Используйте ручные кнопки для тестов\n4. Требуется: 2000+ уровень, Third Sea"
 })
 
 MainTab:CreateParagraph({
-    Title = "Важные настройки:",
-    Content = "• Скорость: 100-400 юнитов/сек\n• Минимальное время: 5 секунд\n• Максимальное время: 120 секунд (2 минуты)\n• Рекомендуемая скорость: 100-150"
+    Title = "Процесс фарма:",
+    Content = "1. Получить Tushita (испытание)\n2. Получить Yama (испытание)\n3. Объединить в CDK Altar\n4. Получить Cursed Dual Katana"
 })
 
 -- Создаем статус панель
-local StatusLabel = StatusTab:CreateLabel("Статус: Ожидание")
-local SpeedLabel = StatusTab:CreateLabel("Текущая скорость: " .. TeleportSpeed .. " юнитов/сек")
+local StatusLabel = StatusTab:CreateLabel("Статус: " .. CurrentStatus)
+local UptimeLabel = StatusTab:CreateLabel("Время работы: " .. GetUptime())
+local SpeedLabel = StatusTab:CreateLabel("Скорость: " .. TeleportSpeed .. " юнитов/сек")
 
-local LogsSection = StatusTab:CreateSection("Логи телепорта")
+StatusTab:CreateSection("Логи")
 local LogsContainer = StatusTab:CreateParagraph({Title = "Логи действий", Content = "Ожидание..."})
-
-function UpdateLogDisplay()
-    local logText = ""
-    for i, log in ipairs(StatusLogs) do
-        logText = logText .. log .. "\n"
-    end
-    
-    LogsContainer:Set({Title = "Логи (" .. #StatusLogs .. " записей)", Content = logText})
-end
-
--- Функция обновления статуса
-function UpdateStatus()
-    if IsTeleporting then
-        StatusLabel:Set("Статус: Телепортируется...")
-    else
-        StatusLabel:Set("Статус: Готов к телепорту")
-    end
-    SpeedLabel:Set("Текущая скорость: " .. TeleportSpeed .. " юнитов/сек")
-end
 
 -- Кнопка очистки логов
 StatusTab:CreateButton({
@@ -359,23 +638,113 @@ StatusTab:CreateButton({
 spawn(function()
     while wait(0.5) do
         UpdateLogDisplay()
-        UpdateStatus()
+        
+        if IsTeleporting then
+            StatusLabel:Set("Статус: Телепортируется...")
+        else
+            StatusLabel:Set("Статус: " .. CurrentStatus)
+        end
+        UptimeLabel:Set("Время работы: " .. GetUptime())
+        SpeedLabel:Set("Скорость: " .. TeleportSpeed .. " юнитов/сек")
+    end
+end)
+
+-- Main Auto Farm Loop
+spawn(function()
+    while wait(2) do
+        if AutoCursedKatana then
+            pcall(function()
+                -- Проверяем, есть ли уже CDK
+                if HasCDK() then
+                    AddLog("🎉 УЖЕ ЕСТЬ CURSED DUAL KATANA!")
+                    AutoCursedKatana = false
+                    Toggle:Set(false)
+                    UpdateStatus("Завершено")
+                    Rayfield:Notify({
+                        Title = "Автофарм CDK",
+                        Content = "Уже есть Cursed Dual Katana!",
+                        Duration = 5,
+                        Image = 4483362458
+                    })
+                    return
+                end
+                
+                AddLog("=== НАЧАЛО ФАРМА CDK ===")
+                
+                -- Фармим Tushita
+                if not HasTushita() then
+                    AddLog("--- ФАРМ TUSHITA ---")
+                    local gotTushita = FarmTushita()
+                    
+                    if not gotTushita then
+                        AddLog("❌ Не удалось получить Tushita")
+                        UpdateStatus("Ошибка Tushita")
+                        return
+                    end
+                else
+                    AddLog("✅ Уже есть Tushita")
+                end
+                
+                if not AutoCursedKatana then return end
+                
+                -- Фармим Yama
+                if not HasYama() then
+                    AddLog("--- ФАРМ YAMA ---")
+                    local gotYama = FarmYama()
+                    
+                    if not gotYama then
+                        AddLog("❌ Не удалось получить Yama")
+                        UpdateStatus("Ошибка Yama")
+                        return
+                    end
+                else
+                    AddLog("✅ Уже есть Yama")
+                end
+                
+                if not AutoCursedKatana then return end
+                
+                -- Фармим CDK
+                if HasTushita() and HasYama() then
+                    AddLog("--- ФАРМ CDK ---")
+                    local gotCDK = FarmCDK()
+                    
+                    if gotCDK then
+                        AddLog("🎉 CURSED DUAL KATANA ПОЛУЧЕНА!")
+                        AutoCursedKatana = false
+                        Toggle:Set(false)
+                        UpdateStatus("Завершено")
+                        Rayfield:Notify({
+                            Title = "Автофарм CDK",
+                            Content = "ПОЛУЧЕНА Cursed Dual Katana!",
+                            Duration = 10,
+                            Image = 4483362458
+                        })
+                    else
+                        AddLog("⚠️ Не удалось получить CDK, пробую снова...")
+                        UpdateStatus("Повтор CDK...")
+                    end
+                else
+                    AddLog("❌ Отсутствует Tushita или Yama")
+                    UpdateStatus("Нет катаны")
+                end
+            end)
+        end
     end
 end)
 
 -- Информация о скрипте
 StatusTab:CreateSection("Информация")
 StatusTab:CreateParagraph({
-    Title = "Simple CDK Teleporter v3.1",
-    Content = "Чистый телепорт без fast travel\nМакс время: 120 секунд\nСкорость: 100-400 юнитов/сек"
+    Title = "Auto CDK Farm v2.0",
+    Content = "Объединенный телепорт и автофарм\nРабочий телепорт из версии 3.1\nБезопасная скорость 100-150\nМакс время телепорта: 120 сек"
 })
 
 -- Инициализация
 AddLog("✅ Скрипт загружен успешно!")
 AddLog("⚡ Начальная скорость: " .. TeleportSpeed .. " юнитов/сек")
-AddLog("⏰ Максимальное время телепорта: 120 секунд")
 AddLog("📍 Доступно 4 точки телепорта")
 AddLog("⚠️ Рекомендуемая скорость: 100-150 для безопасности")
+UpdateStatus("Готов")
 
 -- Загружаем конфигурацию
 Rayfield:LoadConfiguration()
