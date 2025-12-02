@@ -1,108 +1,99 @@
--- Auto Cursed Dual Katana Script by NoxHub
--- Version 2.2 (Fixed Inventory Checker + SafeInvoke)
+-- Auto Cursed Dual Katana — простая версия без Rayfield
+-- Можно запускать в оффлайн-копии / через инжектор
 
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
--- Variables
+---------------------
+-- ПЕРЕМЕННЫЕ
+---------------------
 local AutoCursedKatana = false
 local CurrentStatus = "Idle"
-local LastUpdate = os.time()
 local StartTime = os.time()
 local TeleportSpeed = 150
 local StopTween = false
 local IsTeleporting = false
 
--- Services
+---------------------
+-- СЕРВИСЫ
+---------------------
+local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local remoteFolder = ReplicatedStorage:WaitForChild("Remotes")
-local remote = remoteFolder:FindFirstChild("CommF_")
+local LocalPlayer = Players.LocalPlayer
+local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
--- безопасный универсальный вызов RemoteFunction
-local function SafeInvoke(...)
-    if not remote then
-        -- лог подставится позже, когда AddLog объявится
-        if typeof(AddLog) == "function" then
-            AddLog("❌ Remote CommF_ не найден в ReplicatedStorage.Remotes")
-        else
-            warn("Remote CommF_ не найден в ReplicatedStorage.Remotes")
-        end
-        return nil
-    end
-
-    local ok, result = pcall(function()
-        return remote:InvokeServer(...)
-    end)
-
-    if not ok then
-        if typeof(AddLog) == "function" then
-            AddLog("❌ Ошибка InvokeServer: " .. tostring(result))
-        else
-            warn("InvokeServer error: " .. tostring(result))
-        end
-        return nil
-    end
-
-    return result
-end
-
--- Locations
+---------------------
+-- ЛОКАЦИИ
+---------------------
 local Locations = {
     Tushita = CFrame.new(-10238.8759765625, 389.7912902832, -9549.7939453125),
     Yama = CFrame.new(-9489.2168, 142.130066, 5567.14697),
     CDKAltar = CFrame.new(-9717.33203125, 375.1759338378906, -10160.1455078125),
-    SeaBeast = CFrame.new(-9752.6689453125, 331.55419921875, -10240.32421875)
 }
 
--- Status Logs
+---------------------
+-- ЛОГИ
+---------------------
 local StatusLogs = {}
-local MaxLogs = 20
+local MaxLogs = 60
 
--- Логирование
-function AddLog(message)
+local ScreenGui, MainFrame, ToggleButton, StatusLabel, UptimeLabel, SpeedLabel, LogsFrame, LogsText
+
+local function AddLog(msg)
     local timestamp = os.date("%H:%M:%S")
-    local logEntry = "["..timestamp.."] "..message
-    table.insert(StatusLogs, 1, logEntry)
-    
+    local entry = "["..timestamp.."] "..tostring(msg)
+    table.insert(StatusLogs, 1, entry)
     if #StatusLogs > MaxLogs then
         table.remove(StatusLogs, #StatusLogs)
     end
+
+    -- обновляем текст в GUI
+    if LogsText then
+        local all = table.concat(StatusLogs, "\n")
+        LogsText.Text = all
+    end
 end
 
-function UpdateStatus(newStatus)
+local function UpdateStatus(newStatus)
     CurrentStatus = newStatus
     AddLog("Статус: "..newStatus)
-    LastUpdate = os.time()
+    if StatusLabel then
+        StatusLabel.Text = "Статус: "..newStatus
+    end
 end
 
-function GetUptime()
-    local totalSeconds = os.time() - StartTime
-    local hours = math.floor(totalSeconds / 3600)
-    local minutes = math.floor((totalSeconds % 3600) / 60)
-    local seconds = totalSeconds % 60
-    return string.format("%02d:%02d:%02d", hours, minutes, seconds)
+local function GetUptime()
+    local t = os.time() - StartTime
+    local h = math.floor(t/3600)
+    local m = math.floor((t%3600)/60)
+    local s = t%60
+    return string.format("%02d:%02d:%02d", h, m, s)
 end
 
--- ПРАВИЛЬНЫЙ чекер инвентаря
-function HasItemInInventory(itemName)
-    -- Бэкпак
-    local player = game.Players.LocalPlayer
+---------------------
+-- ПРОВЕРКА ИНВЕНТАРЯ
+---------------------
+local function HasItemInInventory(itemName)
+    local player = LocalPlayer
+    if not player then return false end
+
+    -- Backpack
     local backpack = player:FindFirstChild("Backpack")
     if backpack and backpack:FindFirstChild(itemName) then
         return true
     end
-    
+
     -- В руках
-    local character = player.Character
-    if character and character:FindFirstChild(itemName) then
+    local char = player.Character
+    if char and char:FindFirstChild(itemName) then
         return true
     end
-    
+
     -- Через getInventory
-    local invData = SafeInvoke("getInventory")
-    
-    if invData and type(invData) == "table" then
+    local ok, invData = pcall(function()
+        return remote:InvokeServer("getInventory")
+    end)
+
+    if ok and type(invData) == "table" then
         for _, item in ipairs(invData) do
             local name = item.Name or item.name or tostring(item)
             if name == itemName then
@@ -110,691 +101,435 @@ function HasItemInInventory(itemName)
             end
         end
     end
-    
+
     return false
 end
 
-function HasTushita()
+local function HasTushita()
     return HasItemInInventory("Tushita")
 end
 
-function HasYama()
+local function HasYama()
     return HasItemInInventory("Yama")
 end
 
-function HasCDK()
+local function HasCDK()
     return HasItemInInventory("Cursed Dual Katana") or HasItemInInventory("Cursed Dual Katana [CDK]")
 end
 
--- Проверка через CDKQuest (дополнительная проверка)
-function CheckCDKQuestProgress()
-    local result = SafeInvoke("CDKQuest", "Progress")
-    if result and type(result) == "table" then
+local function CheckCDKQuestProgress()
+    local ok, result = pcall(function()
+        return remote:InvokeServer("CDKQuest", "Progress")
+    end)
+
+    if ok and type(result) == "table" then
         return result
     end
     return nil
 end
 
--- Полная проверка CDK статуса
-function GetFullCDKStatus()
-    local status = {
-        Tushita = false,
-        Yama = false,
-        CDK = false
-    }
-    
-    -- Через инвентарь
-    status.Tushita = HasTushita()
-    status.Yama = HasYama()
-    status.CDK = HasCDK()
-    
-    -- Доп. проверка через CDKQuest
-    local questProgress = CheckCDKQuestProgress()
-    if questProgress then
-        status.Tushita = status.Tushita or (questProgress[1] == true)
-        status.Yama = status.Yama or (questProgress[2] == true)
-        status.CDK = status.CDK or (questProgress[3] == true)
-    end
-    
-    return status
-end
+local function TryLoadItem(itemName)
+    local ok, res = pcall(function()
+        return remote:InvokeServer("LoadItem", itemName)
+    end)
 
-function TryLoadItem(itemName)
-    local result = SafeInvoke("LoadItem", itemName)
-    
-    if result ~= nil then
+    if ok then
         wait(1)
         return HasItemInInventory(itemName)
     end
-    
+
+    AddLog("Ошибка LoadItem("..itemName.."): "..tostring(res))
     return false
 end
 
--- Телепорт функция
-function SimpleTeleport(targetCFrame, locationName)
+---------------------
+-- ТЕЛЕПОРТ
+---------------------
+local function SimpleTeleport(targetCFrame, locationName)
     if IsTeleporting then
         AddLog("Уже выполняется телепорт, дождитесь завершения")
         return false
     end
-    
+
     IsTeleporting = true
     StopTween = false
-    
-    local player = game.Players.LocalPlayer
-    local character = player.Character
-    
-    if not character or not character:FindFirstChild("HumanoidRootPart") then
+
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then
         AddLog("Ошибка: Персонаж не найден")
         IsTeleporting = false
         return false
     end
-    
-    local hrp = character.HumanoidRootPart
-    local currentPos = hrp.Position
-    local targetPos = targetCFrame.Position
-    
-    local distance = (currentPos - targetPos).Magnitude
-    AddLog(string.format("Начинаю телепорт к %s", locationName))
-    AddLog(string.format("Дистанция: %.0f юнитов", distance))
-    AddLog(string.format("Скорость: %d юнитов/сек", TeleportSpeed))
-    
+
+    local hrp = char.HumanoidRootPart
+    local distance = (hrp.Position - targetCFrame.Position).Magnitude
+
+    AddLog(string.format("Телепорт к %s (%.0f юнитов)", locationName, distance))
+
     local travelTime = distance / TeleportSpeed
-    
     if travelTime < 5 then travelTime = 5 end
     if travelTime > 120 then travelTime = 120 end
-    
-    AddLog(string.format("Время телепорта: %.1f секунд (макс: 2 минуты)", travelTime))
-    
-    local success, tween = pcall(function()
-        return TweenService:Create(hrp,
-            TweenInfo.new(travelTime, Enum.EasingStyle.Linear),
-            {CFrame = targetCFrame}
-        )
-    end)
-    
-    if not success then
-        AddLog("Ошибка создания твина")
-        IsTeleporting = false
-        return false
-    end
-    
+
+    local tween = TweenService:Create(hrp, TweenInfo.new(travelTime, Enum.EasingStyle.Linear), {CFrame = targetCFrame})
     tween:Play()
-    AddLog("⏳ Телепорт начался...")
-    
-    local startTime = tick()
-    while tick() - startTime < travelTime do
+
+    local start = tick()
+    while tick() - start < travelTime do
         if StopTween then
             tween:Cancel()
-            AddLog("❌ Телепорт отменен")
+            AddLog("Телепорт отменён")
             IsTeleporting = false
             return false
         end
-        
-        local elapsed = tick() - startTime
-        local progress = math.floor((elapsed / travelTime) * 100)
-        local remaining = math.floor(travelTime - elapsed)
-        
-        if progress % 20 == 0 then
-            AddLog(string.format("📊 Прогресс: %d%% (осталось: %d сек)", progress, remaining))
-        end
-        
-        wait(1)
+        wait(0.5)
     end
-    
+
     tween:Cancel()
-    
-    AddLog("🎯 Точная настройка позиции...")
-    local finalTween = TweenService:Create(hrp,
-        TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-        {CFrame = targetCFrame}
-    )
-    
-    finalTween:Play()
-    wait(1)
-    finalTween:Cancel()
-    
     hrp.CFrame = targetCFrame
-    
-    AddLog("✅ Телепорт успешно завершен!")
+    AddLog("Телепорт завершён")
     IsTeleporting = false
     return true
 end
 
-function CancelTeleport()
+local function CancelTeleport()
     StopTween = true
-    AddLog("⏸️ Запрошена отмена телепорта")
 end
 
--- Combat Functions
-function Attack()
-    game:GetService("VirtualUser"):Button1Down(Vector2.new(0,0))
-    wait(0.1)
-    game:GetService("VirtualUser"):Button1Up(Vector2.new(0,0))
-end
-
-function AutoHaki()
-    if not game.Players.LocalPlayer.Character:FindFirstChild("HasBuso") then
-        SafeInvoke("Buso")
-    end
-end
-
--- Farming Functions
-function FarmTushita()
+---------------------
+-- ФАРМ TUSHITA
+---------------------
+local function FarmTushita()
     UpdateStatus("Добыча Tushita...")
-    
+
     if HasTushita() then
-        AddLog("✅ Уже есть Tushita")
+        AddLog("Уже есть Tushita")
         return true
     end
-    
+
     if TryLoadItem("Tushita") then
-        AddLog("✅ Tushita загружена из хранилища")
+        AddLog("Tushita загружена из хранилища")
         return true
     end
-    
-    AddLog("🚀 Телепорт к Tushita...")
-    local success = SimpleTeleport(Locations.Tushita, "Tushita")
-    if not success then
-        AddLog("❌ Ошибка телепорта к Tushita")
+
+    if not SimpleTeleport(Locations.Tushita, "Tushita") then
         return false
     end
-    
+
     wait(2)
-    
-    AddLog("Начинаю испытание Tushita...")
-    local trialResult = SafeInvoke("CDKQuest", "StartTrial", "Tushita")
-    
-    if trialResult ~= nil then
-        AddLog("✅ Испытание Tushita начато")
-        UpdateStatus("Прохождение испытания Tushita...")
-        
-        for i = 1, 120 do
-            if HasTushita() then
-                AddLog("✅ Получена Tushita!")
-                return true
-            end
-            wait(1)
-        end
-    else
-        AddLog("❌ Ошибка начала испытания Tushita")
+    AddLog("Запуск испытания Tushita...")
+
+    local ok, res = pcall(function()
+        return remote:InvokeServer("CDKQuest", "StartTrial", "Tushita")
+    end)
+
+    if not ok then
+        AddLog("Ошибка StartTrial Tushita: "..tostring(res))
+        return false
     end
-    
+
+    UpdateStatus("Испытание Tushita...")
+    for i = 1, 120 do
+        if HasTushita() then
+            AddLog("Получена Tushita!")
+            return true
+        end
+        wait(1)
+    end
+
     return HasTushita()
 end
 
-function FarmYama()
+---------------------
+-- ФАРМ YAMA
+---------------------
+local function FarmYama()
     UpdateStatus("Добыча Yama...")
-    
+
     if HasYama() then
-        AddLog("✅ Уже есть Yama")
+        AddLog("Уже есть Yama")
         return true
     end
-    
+
     if TryLoadItem("Yama") then
-        AddLog("✅ Yama загружена из хранилища")
+        AddLog("Yama загружена из хранилища")
         return true
     end
-    
-    AddLog("🚀 Телепорт к Yama...")
-    local success = SimpleTeleport(Locations.Yama, "Yama")
-    if not success then
-        AddLog("❌ Ошибка телепорта к Yama")
+
+    if not SimpleTeleport(Locations.Yama, "Yama") then
         return false
     end
-    
+
     wait(2)
-    
-    AddLog("Начинаю испытание Yama...")
-    local trialResult = SafeInvoke("CDKQuest", "StartTrial", "Yama")
-    
-    if trialResult ~= nil then
-        AddLog("✅ Испытание Yama начато")
-        UpdateStatus("Прохождение испытания Yama...")
-        
-        for i = 1, 120 do
-            if HasYama() then
-                AddLog("✅ Получена Yama!")
-                return true
-            end
-            wait(1)
-        end
-    else
-        AddLog("❌ Ошибка начала испытания Yama")
+    AddLog("Запуск испытания Yama...")
+
+    local ok, res = pcall(function()
+        return remote:InvokeServer("CDKQuest", "StartTrial", "Yama")
+    end)
+
+    if not ok then
+        AddLog("Ошибка StartTrial Yama: "..tostring(res))
+        return false
     end
-    
+
+    UpdateStatus("Испытание Yama...")
+    for i = 1, 120 do
+        if HasYama() then
+            AddLog("Получена Yama!")
+            return true
+        end
+        wait(1)
+    end
+
     return HasYama()
 end
 
-function FarmCDK()
+---------------------
+-- ФАРМ CDK
+---------------------
+local function FarmCDK()
     UpdateStatus("Добыча CDK...")
-    
+
     if not (HasTushita() and HasYama()) then
-        AddLog("❌ Нужны обе катаны: Tushita и Yama")
-        AddLog("Tushita: " .. tostring(HasTushita()) .. ", Yama: " .. tostring(HasYama()))
+        AddLog("Нужны обе катаны: Tushita и Yama")
+        AddLog("Tushita: "..tostring(HasTushita()).." | Yama: "..tostring(HasYama()))
         return false
     end
-    
+
     if HasCDK() then
-        AddLog("✅ Уже есть Cursed Dual Katana!")
+        AddLog("Уже есть Cursed Dual Katana")
         return true
     end
-    
-    AddLog("🚀 Телепорт к CDK Altar...")
-    local success = SimpleTeleport(Locations.CDKAltar, "CDK Altar")
-    if not success then
-        AddLog("❌ Ошибка телепорта к CDK Altar")
+
+    if not SimpleTeleport(Locations.CDKAltar, "CDK Altar") then
         return false
     end
-    
+
     wait(2)
-    
-    -- Начинаем квест
-    AddLog("Начинаю квест CDK...")
-    
-    -- на всякий случай дергаем Progress, можно убрать
-    SafeInvoke("CDKQuest", "Progress", "CursedKatana")
-    
-    local questResult = SafeInvoke("CDKQuest", "StartQuest", "CursedKatana")
-    
-    if questResult ~= nil then
-        AddLog("✅ Квест CDK начат")
-        UpdateStatus("Прохождение квеста CDK...")
-        
-        for i = 1, 300 do
-            if HasCDK() then
-                AddLog("🎉 ПОЛУЧЕНА CURSED DUAL KATANA!")
-                return true
-            end
-            wait(1)
-        end
-    else
-        AddLog("❌ Ошибка начала квеста CDK")
+    AddLog("Запуск квеста CDK...")
+
+    -- дополнительный Progress (можно убрать, но не мешает)
+    pcall(function()
+        remote:InvokeServer("CDKQuest", "Progress", "CursedKatana")
+    end)
+
+    local ok, res = pcall(function()
+        return remote:InvokeServer("CDKQuest", "StartQuest", "CursedKatana")
+    end)
+
+    if not ok then
+        AddLog("Ошибка StartQuest CDK: "..tostring(res))
+        return false
     end
-    
+
+    UpdateStatus("Квест CDK...")
+
+    for i = 1, 300 do
+        if HasCDK() then
+            AddLog("ПОЛУЧЕНА CURSED DUAL KATANA!")
+            return true
+        end
+        wait(1)
+    end
+
     return HasCDK()
 end
 
--- UI
+---------------------
+-- ПРОСТОЙ GUI
+---------------------
+local function CreateGui()
+    local pg = LocalPlayer:WaitForChild("PlayerGui")
 
-local Window = Rayfield:CreateWindow({
-    Name = "Auto Cursed Dual Katana",
-    LoadingTitle = "Cursed Katana Farm",
-    LoadingSubtitle = "by NoxHub",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "NoxHub",
-        FileName = "CursedKatana"
-    },
-    Discord = {
-        Enabled = false,
-        Invite = "noxhub",
-        RememberJoins = true
-    },
-    KeySystem = false,
-})
+    ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "AutoCDKGui"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.Parent = pg
 
-local MainTab = Window:CreateTab("Main", 4483362458)
-local StatusTab = Window:CreateTab("Status", 4483362458)
+    MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 320, 0, 260)
+    MainFrame.Position = UDim2.new(0, 20, 0, 200)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.Parent = ScreenGui
 
-function UpdateLogDisplay()
-    if StatusLabel then
-        StatusLabel:Set("Статус: " .. CurrentStatus)
-    end
-    if UptimeLabel then
-        UptimeLabel:Set("Время работы: " .. GetUptime())
-    end
-    
-    if LogsContainer then
-        local logText = ""
-        for i, log in ipairs(StatusLogs) do
-            logText = logText .. log .. "\n"
-        end
-        LogsContainer:Set({Title = "Логи (" .. #StatusLogs .. " записей)", Content = logText})
-    end
-end
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 24)
+    title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    title.Text = "Auto Cursed Dual Katana"
+    title.TextColor3 = Color3.new(1,1,1)
+    title.Font = Enum.Font.SourceSansBold
+    title.TextSize = 18
+    title.Parent = MainFrame
 
-local Toggle = MainTab:CreateToggle({
-    Name = "Автофарм CDK",
-    CurrentValue = false,
-    Flag = "AutoCDK",
-    Callback = function(Value)
-        AutoCursedKatana = Value
-        if Value then
+    ToggleButton = Instance.new("TextButton")
+    ToggleButton.Size = UDim2.new(0, 140, 0, 30)
+    ToggleButton.Position = UDim2.new(0, 10, 0, 30)
+    ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    ToggleButton.TextColor3 = Color3.new(1,1,1)
+    ToggleButton.Font = Enum.Font.SourceSansBold
+    ToggleButton.TextSize = 16
+    ToggleButton.Text = "Авто CDK: OFF"
+    ToggleButton.Parent = MainFrame
+
+    SpeedLabel = Instance.new("TextLabel")
+    SpeedLabel.Size = UDim2.new(0, 150, 0, 20)
+    SpeedLabel.Position = UDim2.new(0, 170, 0, 35)
+    SpeedLabel.BackgroundTransparency = 1
+    SpeedLabel.TextColor3 = Color3.new(1,1,1)
+    SpeedLabel.Font = Enum.Font.SourceSans
+    SpeedLabel.TextSize = 14
+    SpeedLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SpeedLabel.Text = "Скорость: "..TeleportSpeed
+    SpeedLabel.Parent = MainFrame
+
+    StatusLabel = Instance.new("TextLabel")
+    StatusLabel.Size = UDim2.new(1, -20, 0, 20)
+    StatusLabel.Position = UDim2.new(0, 10, 0, 65)
+    StatusLabel.BackgroundTransparency = 1
+    StatusLabel.TextColor3 = Color3.new(1,1,1)
+    StatusLabel.Font = Enum.Font.SourceSans
+    StatusLabel.TextSize = 14
+    StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    StatusLabel.Text = "Статус: "..CurrentStatus
+    StatusLabel.Parent = MainFrame
+
+    UptimeLabel = Instance.new("TextLabel")
+    UptimeLabel.Size = UDim2.new(1, -20, 0, 20)
+    UptimeLabel.Position = UDim2.new(0, 10, 0, 85)
+    UptimeLabel.BackgroundTransparency = 1
+    UptimeLabel.TextColor3 = Color3.new(1,1,1)
+    UptimeLabel.Font = Enum.Font.SourceSans
+    UptimeLabel.TextSize = 14
+    UptimeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    UptimeLabel.Text = "Время работы: 00:00:00"
+    UptimeLabel.Parent = MainFrame
+
+    LogsFrame = Instance.new("Frame")
+    LogsFrame.Size = UDim2.new(1, -20, 0, 140)
+    LogsFrame.Position = UDim2.new(0, 10, 0, 110)
+    LogsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    LogsFrame.BorderSizePixel = 0
+    LogsFrame.Parent = MainFrame
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -4, 1, -4)
+    scroll.Position = UDim2.new(0, 2, 0, 2)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.CanvasSize = UDim2.new(0,0,5,0)
+    scroll.ScrollBarThickness = 4
+    scroll.Parent = LogsFrame
+
+    LogsText = Instance.new("TextLabel")
+    LogsText.Size = UDim2.new(1, -4, 0, 20)
+    LogsText.Position = UDim2.new(0, 0, 0, 0)
+    LogsText.BackgroundTransparency = 1
+    LogsText.TextColor3 = Color3.new(1,1,1)
+    LogsText.Font = Enum.Font.Code
+    LogsText.TextSize = 12
+    LogsText.TextXAlignment = Enum.TextXAlignment.Left
+    LogsText.TextYAlignment = Enum.TextYAlignment.Top
+    LogsText.TextWrapped = false
+    LogsText.Text = ""
+    LogsText.Parent = scroll
+
+    ToggleButton.MouseButton1Click:Connect(function()
+        AutoCursedKatana = not AutoCursedKatana
+        if AutoCursedKatana then
             StartTime = os.time()
-            AddLog("🚀 Автофарм CDK ЗАПУЩЕН")
+            ToggleButton.Text = "Авто CDK: ON"
+            ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+            AddLog("Автофарм CDK включен")
             UpdateStatus("Запуск...")
-            Rayfield:Notify({
-                Title = "Автофарм CDK",
-                Content = "Начинаю фарм Cursed Dual Katana",
-                Duration = 5,
-                Image = 4483362458
-            })
         else
-            CancelTeleport()
-            AddLog("🛑 Автофарм CDK ОСТАНОВЛЕН")
+            ToggleButton.Text = "Авто CDK: OFF"
+            ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            AddLog("Автофарм CDK выключен")
             UpdateStatus("Остановлен")
-            Rayfield:Notify({
-                Title = "Автофарм CDK",
-                Content = "Фарм остановлен",
-                Duration = 3,
-                Image = 4483362458
-            })
+            CancelTeleport()
         end
-    end,
-})
-
-local SpeedSlider = MainTab:CreateSlider({
-    Name = "Скорость телепорта",
-    Range = {100, 400},
-    Increment = 10,
-    Suffix = "юнитов/сек",
-    CurrentValue = TeleportSpeed,
-    Flag = "TeleportSpeed",
-    Callback = function(Value)
-        TeleportSpeed = Value
-        AddLog("⚡ Скорость телепорта: " .. Value .. " юнитов/сек")
-        
-        Rayfield:Notify({
-            Title = "Скорость",
-            Content = "Новая скорость: " .. Value .. " юнитов/сек",
-            Duration = 3,
-            Image = 4483362458
-        })
-    end,
-})
-
-MainTab:CreateSection("Ручное управление")
-
-local function CheckInventoryDetailed()
-    local fullStatus = GetFullCDKStatus()
-    
-    local hasTushitaInv = HasTushita()
-    local hasYamaInv = HasYama()
-    local hasCDKInv = HasCDK()
-    
-    local questProgress = CheckCDKQuestProgress()
-    
-    local message = "📦 ДЕТАЛЬНАЯ ПРОВЕРКА ИНВЕНТАРЯ:\n\n"
-    message = message .. "✅ Проверено через инвентарь:\n"
-    message = message .. "   Tushita: " .. tostring(hasTushitaInv) .. "\n"
-    message = message .. "   Yama: " .. tostring(hasYamaInv) .. "\n"
-    message = message .. "   CDK: " .. tostring(hasCDKInv) .. "\n\n"
-    
-    if questProgress then
-        message = message .. "✅ Проверено через CDKQuest:\n"
-        message = message .. "   Tushita: " .. tostring(questProgress[1]) .. "\n"
-        message = message .. "   Yama: " .. tostring(questProgress[2]) .. "\n"
-        message = message .. "   CDK: " .. tostring(questProgress[3]) .. "\n\n"
-    else
-        message = message .. "⚠️ CDKQuest не доступен\n\n"
-    end
-    
-    message = message .. "📊 ИТОГОВЫЙ СТАТУС:\n"
-    message = message .. "   Tushita: " .. tostring(fullStatus.Tushita) .. "\n"
-    message = message .. "   Yama: " .. tostring(fullStatus.Yama) .. "\n"
-    message = message .. "   CDK: " .. tostring(fullStatus.CDK)
-    
-    AddLog("Проверка инвентаря выполнена")
-    Rayfield:Notify({
-        Title = "Детальная проверка",
-        Content = message,
-        Duration = 8,
-        Image = 4483362458
-    })
+    end)
 end
 
-MainTab:CreateButton({
-    Name = "Телепорт к Tushita",
-    Callback = function()
-        CancelTeleport()
-        UpdateStatus("Ручной телепорт к Tushita")
-        local success = SimpleTeleport(Locations.Tushita, "Tushita")
-        
-        if success then
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Успешно телепортирован к Tushita",
-                Duration = 3,
-                Image = 4483362458
-            })
-        end
-        UpdateStatus("Готов")
-    end
-})
+---------------------
+-- ЛУПЫ
+---------------------
+CreateGui()
+AddLog("Скрипт CDK загружен. Нажми кнопку 'Авто CDK'.")
 
-MainTab:CreateButton({
-    Name = "Телепорт к Yama",
-    Callback = function()
-        CancelTeleport()
-        UpdateStatus("Ручной телепорт к Yama")
-        local success = SimpleTeleport(Locations.Yama, "Yama")
-        
-        if success then
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Успешно телепортирован к Yama",
-                Duration = 3,
-                Image = 4483362458
-            })
-        end
-        UpdateStatus("Готов")
-    end
-})
-
-MainTab:CreateButton({
-    Name = "Телепорт к CDK Altar",
-    Callback = function()
-        CancelTeleport()
-        UpdateStatus("Ручной телепорт к CDK Altar")
-        local success = SimpleTeleport(Locations.CDKAltar, "CDK Altar")
-        
-        if success then
-            Rayfield:Notify({
-                Title = "Телепорт",
-                Content = "Успешно телепортирован к CDK Altar",
-                Duration = 3,
-                Image = 4483362458
-            })
-        end
-        UpdateStatus("Готов")
-    end
-})
-
-MainTab:CreateButton({
-    Name = "Проверить инвентарь (детально)",
-    Callback = CheckInventoryDetailed
-})
-
-MainTab:CreateButton({
-    Name = "Загрузить Tushita из хранилища",
-    Callback = function()
-        AddLog("📥 Загружаю Tushita из хранилища...")
-        if TryLoadItem("Tushita") then
-            AddLog("✅ Tushita загружена успешно")
-            Rayfield:Notify({
-                Title = "Загрузка",
-                Content = "Tushita загружена из хранилища",
-                Duration = 3,
-                Image = 4483362458
-            })
-        else
-            AddLog("❌ Ошибка загрузки Tushita")
-            Rayfield:Notify({
-                Title = "Загрузка",
-                Content = "Ошибка загрузки Tushita",
-                Duration = 3,
-                Image = 4483362458
-            })
-        end
-    end
-})
-
-MainTab:CreateButton({
-    Name = "Загрузить Yama из хранилища",
-    Callback = function()
-        AddLog("📥 Загружаю Yama из хранилища...")
-        if TryLoadItem("Yama") then
-            AddLog("✅ Yama загружена успешно")
-            Rayfield:Notify({
-                Title = "Загрузка",
-                Content = "Yama загружена из хранилища",
-                Duration = 3,
-                Image = 4483362458
-            })
-        else
-            AddLog("❌ Ошибка загрузки Yama")
-            Rayfield:Notify({
-                Title = "Загрузка",
-                Content = "Ошибка загрузки Yama",
-                Duration = 3,
-                Image = 4483362458
-            })
-        end
-    end
-})
-
-MainTab:CreateButton({
-    Name = "Отмена телепорта",
-    Callback = function()
-        CancelTeleport()
-        AddLog("⏸️ Отмена телепорта")
-        Rayfield:Notify({
-            Title = "Телепорт",
-            Content = "Телепорт отменен",
-            Duration = 2,
-            Image = 4483362458
-        })
-    end
-})
-
-MainTab:CreateSection("Информация")
-
-MainTab:CreateParagraph({
-    Title = "Как использовать:",
-    Content = "1. Установите скорость 100-150 (безопасно)\n2. Проверьте инвентарь\n3. Включите автофарм CDK\n4. Используйте ручные кнопки для тестов\n5. Требуется: 2000+ уровень, Third Sea"
-})
-
-local StatusLabel = StatusTab:CreateLabel("Статус: " .. CurrentStatus)
-local UptimeLabel = StatusTab:CreateLabel("Время работы: " .. GetUptime())
-local SpeedLabel = StatusTab:CreateLabel("Скорость: " .. TeleportSpeed .. " юнитов/сек")
-
-StatusTab:CreateSection("Логи")
-local LogsContainer = StatusTab:CreateParagraph({Title = "Логи действий", Content = "Ожидание..."})
-
-StatusTab:CreateButton({
-    Name = "Очистить логи",
-    Callback = function()
-        StatusLogs = {}
-        UpdateLogDisplay()
-        AddLog("🧹 Логи очищены")
-    end
-})
-
+-- обновление статуса / аптайма
 spawn(function()
-    while wait(0.5) do
-        UpdateLogDisplay()
-        
-        if IsTeleporting then
-            StatusLabel:Set("Статус: Телепортируется...")
-        else
-            StatusLabel:Set("Статус: " .. CurrentStatus)
+    while wait(1) do
+        if UptimeLabel then
+            UptimeLabel.Text = "Время работы: "..GetUptime()
         end
-        UptimeLabel:Set("Время работы: " .. GetUptime())
-        SpeedLabel:Set("Скорость: " .. TeleportSpeed .. " юнитов/сек")
+        if SpeedLabel then
+            SpeedLabel.Text = "Скорость: "..TeleportSpeed
+        end
     end
 end)
 
+-- основной цикл автоквеста
 spawn(function()
     while wait(2) do
         if AutoCursedKatana then
             pcall(function()
-                local hasCDK = HasCDK()
-                if hasCDK then
-                    AddLog("🎉 УЖЕ ЕСТЬ CURSED DUAL KATANA!")
+                if HasCDK() then
+                    AddLog("Уже есть Cursed Dual Katana — остановка.")
                     AutoCursedKatana = false
-                    Toggle:Set(false)
+                    if ToggleButton then
+                        ToggleButton.Text = "Авто CDK: OFF"
+                        ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+                    end
                     UpdateStatus("Завершено")
-                    Rayfield:Notify({
-                        Title = "Автофарм CDK",
-                        Content = "Уже есть Cursed Dual Katana!",
-                        Duration = 5,
-                        Image = 4483362458
-                    })
                     return
                 end
-                
-                AddLog("=== НАЧАЛО ФАРМА CDK ===")
-                
+
+                AddLog("=== НАЧАЛО ЦИКЛА CDK ===")
+
                 if not HasTushita() then
                     AddLog("--- ФАРМ TUSHITA ---")
-                    local gotTushita = FarmTushita()
-                    
-                    if not gotTushita then
-                        AddLog("❌ Не удалось получить Tushita")
+                    if not FarmTushita() then
+                        AddLog("Не удалось получить Tushita")
                         UpdateStatus("Ошибка Tushita")
                         return
                     end
                 else
-                    AddLog("✅ Уже есть Tushita")
+                    AddLog("Tushita уже есть")
                 end
-                
+
                 if not AutoCursedKatana then return end
-                
+
                 if not HasYama() then
                     AddLog("--- ФАРМ YAMA ---")
-                    local gotYama = FarmYama()
-                    
-                    if not gotYama then
-                        AddLog("❌ Не удалось получить Yama")
+                    if not FarmYama() then
+                        AddLog("Не удалось получить Yama")
                         UpdateStatus("Ошибка Yama")
                         return
                     end
                 else
-                    AddLog("✅ Уже есть Yama")
+                    AddLog("Yama уже есть")
                 end
-                
+
                 if not AutoCursedKatana then return end
-                
-                if HasTushita() and HasYama() then
-                    AddLog("--- ФАРМ CDK ---")
-                    local gotCDK = FarmCDK()
-                    
-                    if gotCDK then
-                        AddLog("🎉 CURSED DUAL KATANA ПОЛУЧЕНА!")
-                        AutoCursedKatana = false
-                        Toggle:Set(false)
-                        UpdateStatus("Завершено")
-                        Rayfield:Notify({
-                            Title = "Автофарм CDK",
-                            Content = "ПОЛУЧЕНА Cursed Dual Katana!",
-                            Duration = 10,
-                            Image = 4483362458
-                        })
-                    else
-                        AddLog("⚠️ Не удалось получить CDK, пробую снова...")
-                        UpdateStatus("Повтор CDK...")
+
+                AddLog("--- ФАРМ CDK ---")
+                local got = FarmCDK()
+                if got then
+                    AddLog("CURSED DUAL KATANA ПОЛУЧЕНА!")
+                    AutoCursedKatana = false
+                    if ToggleButton then
+                        ToggleButton.Text = "Авто CDK: OFF"
+                        ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
                     end
+                    UpdateStatus("Завершено")
                 else
-                    AddLog("❌ Отсутствует Tushita или Yama")
-                    AddLog("Tushita: " .. tostring(HasTushita()) .. ", Yama: " .. tostring(HasYama()))
-                    UpdateStatus("Нет катаны")
+                    AddLog("Не удалось получить CDK — повтор через цикл")
+                    UpdateStatus("Повтор...")
                 end
             end)
         end
     end
 end)
-
-StatusTab:CreateSection("Информация")
-StatusTab:CreateParagraph({
-    Title = "Auto CDK Farm v2.2",
-    Content = "Исправленный чекер инвентаря\nSafeInvoke для CommF_\nОбъединенный телепорт и автофарм\nБезопасная скорость 100-150\nПроверка через getInventory и CDKQuest"
-})
-
-AddLog("✅ Скрипт загружен успешно!")
-AddLog("⚡ Начальная скорость: " .. TeleportSpeed .. " юнитов/сек")
-AddLog("📍 Доступно 4 точки телепорта")
-AddLog("📦 Исправленный чекер инвентаря")
-AddLog("⚠️ Рекомендуемая скорость: 100-150 для безопасности")
-UpdateStatus("Готов")
-
-Rayfield:LoadConfiguration()
