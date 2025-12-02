@@ -1,5 +1,5 @@
 -- Simple CDK Teleporter
--- Version 3.0 (Clean Teleport Only)
+-- Version 3.1 (2 Minute Max Teleport)
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -87,10 +87,10 @@ function SimpleTeleport(targetCFrame, locationName)
     local travelTime = distance / TeleportSpeed
     
     -- Ограничиваем время для безопасности
-    if travelTime < 3 then travelTime = 3 end  -- Минимум 3 секунды
-    if travelTime > 30 then travelTime = 30 end -- Максимум 30 секунд
+    if travelTime < 5 then travelTime = 5 end  -- Минимум 5 секунд
+    if travelTime > 120 then travelTime = 120 end -- Максимум 120 секунд (2 минуты)
     
-    AddLog(string.format("Время телепорта: %.1f секунд", travelTime))
+    AddLog(string.format("Время телепорта: %.1f секунд (макс: 2 минуты)", travelTime))
     
     -- Создаем и запускаем твин
     local success, tween = pcall(function()
@@ -108,29 +108,43 @@ function SimpleTeleport(targetCFrame, locationName)
     
     tween:Play()
     
+    -- Отображаем прогресс
+    AddLog("⏳ Телепорт начался...")
+    
     -- Ждем завершения
     local startTime = tick()
     while tick() - startTime < travelTime do
         if StopTween then
             tween:Cancel()
-            AddLog("Телепорт отменен пользователем")
+            AddLog("❌ Телепорт отменен пользователем")
             IsTeleporting = false
             return false
         end
-        wait(0.1)
+        
+        -- Периодически обновляем прогресс
+        local elapsed = tick() - startTime
+        local progress = math.floor((elapsed / travelTime) * 100)
+        local remaining = math.floor(travelTime - elapsed)
+        
+        if progress % 10 == 0 then -- Обновляем каждые 10%
+            AddLog(string.format("📊 Прогресс: %d%% (осталось: %d сек)", progress, remaining))
+        end
+        
+        wait(1) -- Проверяем каждую секунду
     end
     
     -- Завершаем телепорт
     tween:Cancel()
     
     -- Плавно устанавливаем конечную позицию
+    AddLog("🎯 Точная настройка позиции...")
     local finalTween = TweenService:Create(hrp,
-        TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        TweenInfo.new(1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
         {CFrame = targetCFrame}
     )
     
     finalTween:Play()
-    wait(0.5)
+    wait(1)
     finalTween:Cancel()
     
     hrp.CFrame = targetCFrame
@@ -142,7 +156,7 @@ end
 
 -- Функции телепорта (используют глобальную TeleportSpeed)
 function TeleportToTushita()
-    AddLog("Запуск телепорта к Tushita...")
+    AddLog("🚀 Запуск телепорта к Tushita...")
     
     local success = SimpleTeleport(Locations.Tushita, "Tushita")
     
@@ -150,21 +164,21 @@ function TeleportToTushita()
         Rayfield:Notify({
             Title = "Телепорт",
             Content = "Успешно телепортирован к Tushita",
-            Duration = 3,
+            Duration = 5,
             Image = 4483362458
         })
     elseif not IsTeleporting then
         Rayfield:Notify({
             Title = "Телепорт",
             Content = "Ошибка телепорта к Tushita",
-            Duration = 3,
+            Duration = 5,
             Image = 4483362458
         })
     end
 end
 
 function TeleportToYama()
-    AddLog("Запуск телепорта к Yama...")
+    AddLog("🚀 Запуск телепорта к Yama...")
     
     local success = SimpleTeleport(Locations.Yama, "Yama")
     
@@ -172,21 +186,21 @@ function TeleportToYama()
         Rayfield:Notify({
             Title = "Телепорт",
             Content = "Успешно телепортирован к Yama",
-            Duration = 3,
+            Duration = 5,
             Image = 4483362458
         })
     elseif not IsTeleporting then
         Rayfield:Notify({
             Title = "Телепорт",
             Content = "Ошибка телепорта к Yama",
-            Duration = 3,
+            Duration = 5,
             Image = 4483362458
         })
     end
 end
 
 function TeleportToCDKAltar()
-    AddLog("Запуск телепорта к CDK Altar...")
+    AddLog("🚀 Запуск телепорта к CDK Altar...")
     
     local success = SimpleTeleport(Locations.CDKAltar, "CDK Altar")
     
@@ -194,21 +208,21 @@ function TeleportToCDKAltar()
         Rayfield:Notify({
             Title = "Телепорт",
             Content = "Успешно телепортирован к CDK Altar",
-            Duration = 3,
+            Duration = 5,
             Image = 4483362458
         })
     elseif not IsTeleporting then
         Rayfield:Notify({
             Title = "Телепорт",
             Content = "Ошибка телепорта к CDK Altar",
-            Duration = 3,
+            Duration = 5,
             Image = 4483362458
         })
     end
 end
 
 function TeleportToSeaBeast()
-    AddLog("Запуск телепорта к Sea Beast...")
+    AddLog("🚀 Запуск телепорта к Sea Beast...")
     
     local success = SimpleTeleport(Locations.SeaBeast, "Sea Beast")
     
@@ -216,14 +230,14 @@ function TeleportToSeaBeast()
         Rayfield:Notify({
             Title = "Телепорт",
             Content = "Успешно телепортирован к Sea Beast",
-            Duration = 3,
+            Duration = 5,
             Image = 4483362458
         })
     elseif not IsTeleporting then
         Rayfield:Notify({
             Title = "Телепорт",
             Content = "Ошибка телепорта к Sea Beast",
-            Duration = 3,
+            Duration = 5,
             Image = 4483362458
         })
     end
@@ -231,12 +245,12 @@ end
 
 function CancelTeleport()
     StopTween = true
-    AddLog("Запрошена отмена телепорта")
+    AddLog("⏸️ Запрошена отмена телепорта")
     
     Rayfield:Notify({
         Title = "Телепорт",
         Content = "Отмена текущего телепорта",
-        Duration = 2,
+        Duration = 3,
         Image = 4483362458
     })
 end
@@ -253,12 +267,12 @@ local SpeedSlider = MainTab:CreateSlider({
     Flag = "TeleportSpeed",
     Callback = function(Value)
         TeleportSpeed = Value
-        AddLog("Скорость телепорта установлена: " .. Value .. " юнитов/сек")
+        AddLog("⚡ Скорость телепорта: " .. Value .. " юнитов/сек")
         
         Rayfield:Notify({
             Title = "Скорость",
             Content = "Новая скорость: " .. Value .. " юнитов/сек",
-            Duration = 2,
+            Duration = 3,
             Image = 4483362458
         })
     end,
@@ -297,12 +311,12 @@ MainTab:CreateSection("Информация")
 
 MainTab:CreateParagraph({
     Title = "Как использовать:",
-    Content = "1. Установите скорость (рекомендуется 100-150)\n2. Нажмите кнопку нужного телепорта\n3. Ждите завершения\n4. Используйте 'Отмена' при необходимости\n\n📊 Скорость влияет на все телепорты!"
+    Content = "1. Установите скорость (рекомендуется 100-150)\n2. Нажмите кнопку нужного телепорта\n3. Ждите завершения (макс 2 минуты)\n4. Используйте 'Отмена' при необходимости\n\n📊 Скорость влияет на все телепорты!"
 })
 
 MainTab:CreateParagraph({
-    Title = "Важно:",
-    Content = "• Минимальная скорость: 100 юнитов/сек\n• Рекомендуемая: 100-150 (безопасно)\n• Высокая скорость может вызвать античит\n• Не прерывайте телепорт без необходимости"
+    Title = "Важные настройки:",
+    Content = "• Скорость: 100-400 юнитов/сек\n• Минимальное время: 5 секунд\n• Максимальное время: 120 секунд (2 минуты)\n• Рекомендуемая скорость: 100-150"
 })
 
 -- Создаем статус панель
@@ -337,7 +351,7 @@ StatusTab:CreateButton({
     Callback = function()
         StatusLogs = {}
         UpdateLogDisplay()
-        AddLog("Логи очищены")
+        AddLog("🧹 Логи очищены")
     end
 })
 
@@ -352,13 +366,14 @@ end)
 -- Информация о скрипте
 StatusTab:CreateSection("Информация")
 StatusTab:CreateParagraph({
-    Title = "Simple CDK Teleporter v3.0",
-    Content = "Чистый телепорт без fast travel\nСкорость: 100-400 юнитов/сек\nМинимальный риск античита"
+    Title = "Simple CDK Teleporter v3.1",
+    Content = "Чистый телепорт без fast travel\nМакс время: 120 секунд\nСкорость: 100-400 юнитов/сек"
 })
 
 -- Инициализация
 AddLog("✅ Скрипт загружен успешно!")
-AddLog("📊 Начальная скорость: " .. TeleportSpeed .. " юнитов/сек")
+AddLog("⚡ Начальная скорость: " .. TeleportSpeed .. " юнитов/сек")
+AddLog("⏰ Максимальное время телепорта: 120 секунд")
 AddLog("📍 Доступно 4 точки телепорта")
 AddLog("⚠️ Рекомендуемая скорость: 100-150 для безопасности")
 
