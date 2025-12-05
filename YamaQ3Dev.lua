@@ -1,31 +1,31 @@
--- Auto Yama Quest 3 (отдельный скрипт под твой оффлайн BF-проект)
--- Логика:
--- 1) Если открыт HellDimension -> заходим и прожимаем Torch1, Torch2, Torch3, Exit.
--- 2) Иначе, если есть Soul Reaper -> убиваем его.
--- 3) Иначе -> летим к NPC Bones и покупаем спавн Soul Reaper ("Bones","Buy",1,1).
+-- Auto Bones Farm + Hallow Essence Hunter
+-- оффлайн-проект в стиле Blox Fruits, 3-е море, Haunted Castle.
 
 ---------------------
 -- НАСТРОЙКИ
 ---------------------
-local SwordName = "Yama"                         -- каким мечом бить
-local TeleportSpeed = 150                        -- скорость твина при перелёте
-local FarmOffset = CFrame.new(0, 10, -3)         -- позиция над целью
+local SwordName = "Yama"                -- чем бить скелетов (можешь сменить на любой свой меч)
+local TeleportSpeed = 150               -- скорость твина при подлёте
+local FarmOffset = CFrame.new(0, 10, -3)-- позиция над мобом
 
--- локация к NPC "Bones" (где покупается Soul Reaper / Hallow Essence)
-local BonesNPCPos = CFrame.new(-9570.033203125, 315.9346923828125, 6726.89306640625)
+local MaxRollsPerSession = 10           -- 10 роллов = 500 костей
+local MinBonesToRoll = 500              -- минимум костей, чтобы пойти роллить
 
 ---------------------
 -- ПЕРЕМЕННЫЕ
 ---------------------
-local AutoYamaQuest3 = false
-local CurrentStatus = "Idle"
+local AutoBones = false
 local StartTime = os.time()
+local CurrentStatus = "Idle"
+
 local IsTeleporting = false
 local StopTween = false
 local NoclipEnabled = false
 local IsFighting = false
 
-local SoulReaperKillCount = 0
+local BonesCount = 0
+local RollsUsed = 0
+local HasHallow = false
 
 ---------------------
 -- СЕРВИСЫ
@@ -35,13 +35,12 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 ---------------------
--- MODULE NET ATTACK (как в YamaQuest2)
+-- NET MODULE ДЛЯ FAST ATTACK
 ---------------------
 local modules = ReplicatedStorage:WaitForChild("Modules")
 local net = modules:WaitForChild("Net")
@@ -59,19 +58,19 @@ function AttackModule:AttackEnemyModel(enemyModel)
         {enemyModel, hrp}
     }
 
-    -- мягкий fast-attack
     RegisterAttack:FireServer(0)
     RegisterAttack:FireServer(1)
     RegisterHit:FireServer(hrp, hitTable)
 end
 
 ---------------------
--- ЛОГИ / GUI-ПЕРЕМЕННЫЕ
+-- ЛОГИ / GUI
 ---------------------
 local StatusLogs = {}
 local MaxLogs = 80
 
-local ScreenGui, MainFrame, ToggleButton, StatusLabel, UptimeLabel, KillsLabel, LogsText
+local ScreenGui, MainFrame, ToggleButton
+local StatusLabel, UptimeLabel, BonesLabel, RollsLabel, HallowLabel, LogsText
 
 local function AddLog(msg)
     local timestamp = os.date("%H:%M:%S")
@@ -93,17 +92,29 @@ local function UpdateStatus(newStatus)
     end
 end
 
-local function UpdateKillsLabel()
-    if KillsLabel then
-        KillsLabel.Text = "Убито Soul Reaper: " .. tostring(SoulReaperKillCount)
+local function UpdateBonesLabel()
+    if BonesLabel then
+        BonesLabel.Text = "Костей (stash): " .. tostring(BonesCount or 0)
+    end
+end
+
+local function UpdateRollsLabel()
+    if RollsLabel then
+        RollsLabel.Text = "Роллов в сессию: " .. tostring(RollsUsed) .. "/" .. tostring(MaxRollsPerSession)
+    end
+end
+
+local function UpdateHallowLabel()
+    if HallowLabel then
+        HallowLabel.Text = "Hallow Essence: " .. (HasHallow and "есть" or "нет")
     end
 end
 
 local function GetUptime()
     local t = os.time() - StartTime
-    local h = math.floor(t/3600)
-    local m = math.floor((t%3600)/60)
-    local s = t%60
+    local h = math.floor(t / 3600)
+    local m = math.floor((t % 3600) / 60)
+    local s = t % 60
     return string.format("%02d:%02d:%02d", h, m, s)
 end
 
@@ -275,112 +286,212 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     AddLog("Персонаж возрождён, жду HRP...")
 
     char:WaitForChild("HumanoidRootPart", 10)
-    AddLog("HRP найден, AutoYamaQuest3 может продолжаться.")
-    UpdateStatus("Ожидание Soul Reaper / HellDimension")
+    AddLog("HRP найден, фарм можно продолжать.")
+    UpdateStatus("Ожидание / фарм костей")
 end)
 
 ---------------------
--- ПОИСК ОБЪЕКТОВ
+-- ЧЕКЕР ИНВЕНТАРЯ + HALLOW ESSENCE
 ---------------------
-local function GetSoulReaper()
+local function HasItemInInventory(itemName)
+    local p = LocalPlayer
+    if not p then return false end
+
+    -- Backpack
+    local backpack = p:FindFirstChild("Backpack")
+    if backpack and backpack:FindFirstChild(itemName) then
+        return true
+    end
+
+    -- В руках
+    local char = p.Character
+    if char and char:FindFirstChild(itemName) then
+        return true
+    end
+
+    -- через getInventory
+    local ok, invData = pcall(function()
+        return remote:InvokeServer("getInventory")
+    end)
+    if ok and type(invData) == "table" then
+        for _, item in ipairs(invData) do
+            local name = item.Name or item.name or tostring(item)
+            if name == itemName then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function UpdateHallowStatus()
+    HasHallow = HasItemInInventory("Hallow Essence")
+    UpdateHallowLabel()
+end
+
+---------------------
+-- ЧЕКЕР КОСТЕЙ
+---------------------
+local function RefreshBonesCount()
+    local c = 0
+    local ok, result = pcall(function()
+        return remote:InvokeServer("Bones", "Check")
+    end)
+
+    if ok and typeof(result) == "number" then
+        c = result
+    else
+        -- запасной вариант: через Data.Bones
+        local data = LocalPlayer:FindFirstChild("Data")
+        if data and data:FindFirstChild("Bones") and data.Bones.Value then
+            c = data.Bones.Value
+        end
+    end
+
+    BonesCount = c or 0
+    UpdateBonesLabel()
+end
+
+---------------------
+-- ПОИСК DEATH KING
+---------------------
+local function FindDeathKingModel()
+    local candidate = nil
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "Death King" then
+            if obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Humanoid") then
+                candidate = obj
+                break
+            end
+        end
+    end
+    return candidate
+end
+
+---------------------
+-- РОЛЛЫ У DEATH KING
+---------------------
+local lastRollAttempt = 0
+
+local function DoDeathKingRolls()
+    -- не трогаем, если уже есть Hallow Essence
+    UpdateHallowStatus()
+    if HasHallow then
+        AddLog("Hallow Essence уже есть, роллить не нужно.")
+        return
+    end
+
+    RefreshBonesCount()
+    if BonesCount < MinBonesToRoll then
+        AddLog("Костей меньше "..MinBonesToRoll..", ролл откладывается.")
+        return
+    end
+
+    if RollsUsed >= MaxRollsPerSession then
+        AddLog("Лимит роллов в сессию ("..MaxRollsPerSession..") достигнут.")
+        return
+    end
+
+    if tick() - lastRollAttempt < 5 then
+        return
+    end
+    lastRollAttempt = tick()
+
+    UpdateStatus("Ролл у Death King")
+    AddLog("Пытаюсь сделать роллы у Death King...")
+
+    local dk = FindDeathKingModel()
+    if dk then
+        local dkHRP = dk:FindFirstChild("HumanoidRootPart") or dk:FindFirstChild("Head")
+        if dkHRP then
+            SimpleTeleport(dkHRP.CFrame * CFrame.new(0, 4, 3), "Death King")
+            task.wait(1.5)
+        end
+    else
+        AddLog("⚠️ Death King в Workspace не найден, но всё равно пробую вызвать Bones->Buy.")
+    end
+
+    -- делаем оставшиеся роллы (но не больше, чем позволяет лимит)
+    local rollsToDo = MaxRollsPerSession - RollsUsed
+    for i = 1, rollsToDo do
+        RefreshBonesCount()
+        if BonesCount < 50 then
+            AddLog("Костей меньше 50, остановка роллов.")
+            break
+        end
+
+        local ok, res = pcall(function()
+            return remote:InvokeServer("Bones", "Buy", 1, 1)
+        end)
+
+        RollsUsed = RollsUsed + 1
+        UpdateRollsLabel()
+
+        if ok then
+            AddLog("Ролл #"..tostring(RollsUsed).." отправлен. Ответ: "..tostring(res))
+        else
+            AddLog("Ошибка при ролле #"..tostring(RollsUsed)..": "..tostring(res))
+        end
+
+        -- после каждого ролла проверяем, не дали ли Hallow Essence
+        UpdateHallowStatus()
+        if HasHallow then
+            AddLog("🎃 Hallow Essence ПОЛУЧЕНА! Останавливаю роллы.")
+            break
+        end
+
+        task.wait(1.5)
+    end
+
+    if RollsUsed >= MaxRollsPerSession then
+        AddLog("Лимит роллов в сессию достигнут, далее только фарм костей.")
+    end
+end
+
+---------------------
+-- ПОИСК СКЕЛЕТОВ ДЛЯ ФАРМА КОСТЕЙ
+---------------------
+local function IsBoneMob(mob)
+    -- можно расширить, если в проекте другие имена мобов
+    local name = tostring(mob.Name)
+    if string.find(name, "Skeleton") then return true end
+    if string.find(name, "Reborn Skeleton") then return true end
+    if string.find(name, "Living Skeleton") then return true end
+    return false
+end
+
+local function GetNearestBoneMob(maxDistance)
+    maxDistance = maxDistance or 9999
     local enemiesFolder = Workspace:FindFirstChild("Enemies")
-    if enemiesFolder then
-        for _, v in ipairs(enemiesFolder:GetChildren()) do
-            if v.Name == "Soul Reaper" and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
-                if v.Humanoid.Health > 0 then
-                    return v
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not enemiesFolder or not hrp then
+        return nil
+    end
+
+    local nearest
+    local bestDist = maxDistance
+
+    for _, v in ipairs(enemiesFolder:GetChildren()) do
+        if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+            if IsBoneMob(v) then
+                local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+                if d < bestDist then
+                    bestDist = d
+                    nearest = v
                 end
             end
         end
     end
-    -- если в воркспейсе нет, но в реплике есть модель рейд-босса
-    local rs = ReplicatedStorage
-    for _, v in ipairs(rs:GetChildren()) do
-        if string.find(v.Name, "Soul Reaper") then
-            return nil -- он ещё в реплике, ждём пока заспавнится в Workspace
-        end
-    end
-    return nil
-end
 
-local function GetHellDimension()
-    local map = Workspace:FindFirstChild("Map")
-    if not map then return nil end
-    return map:FindFirstChild("HellDimension")
+    return nearest
 end
 
 ---------------------
--- RUNTIME: HellDimension
+-- ФАРМ КОСТЕЙ (БОЙ СО СКЕЛЕТОМ)
 ---------------------
-local function RunHellDimension()
-    local hell = GetHellDimension()
-    if not hell then
-        return
-    end
-
-    UpdateStatus("HellDimension: факелы")
-    AddLog("HellDimension найден, начинаю прожимать факелы...")
-
-    local function tpAndPressE(partName)
-        local part = hell:FindFirstChild(partName)
-        if not part or not part:IsA("BasePart") then
-            AddLog("⚠️ В HellDimension не найдено: "..partName)
-            return
-        end
-
-        SimpleTeleport(part.CFrame * CFrame.new(0, 5, 0), "HellDimension "..partName)
-        task.wait(1.5)
-
-        pcall(function()
-            VirtualInputManager:SendKeyEvent(true, "E", false, game)
-            VirtualInputManager:SendKeyEvent(false, "E", false, game)
-        end)
-
-        task.wait(1.0)
-    end
-
-    -- Torch1 → Torch2 → Torch3 → Exit
-    tpAndPressE("Torch1")
-    tpAndPressE("Torch2")
-    tpAndPressE("Torch3")
-
-    local exitPart = hell:FindFirstChild("Exit")
-    if exitPart and exitPart:IsA("BasePart") then
-        SimpleTeleport(exitPart.CFrame * CFrame.new(0, 5, 0), "HellDimension Exit")
-        AddLog("HellDimension: вышел через Exit.")
-    else
-        AddLog("⚠️ В HellDimension не найден Exit, пропускаю.")
-    end
-end
-
----------------------
--- ПОКУПКА Soul Reaper через Bones
----------------------
-local lastBonesBuy = 0
-
-local function BuySoulReaper()
-    if tick() - lastBonesBuy < 5 then
-        return
-    end
-    lastBonesBuy = tick()
-
-    UpdateStatus("Покупка Soul Reaper у Bones")
-    AddLog("Лечу к Bones NPC для покупки Soul Reaper...")
-
-    SimpleTeleport(BonesNPCPos, "Bones NPC")
-    task.wait(1)
-
-    pcall(function()
-        remote:InvokeServer("Bones", "Buy", 1, 1)
-    end)
-
-    AddLog("Запрос на покупку Soul Reaper отправлен (Bones, Buy, 1, 1).")
-end
-
----------------------
--- БОЙ С Soul Reaper
----------------------
-local function FightSoulReaperOnce()
+local function FarmBonesOnce()
     if IsFighting then return end
     IsFighting = true
 
@@ -391,26 +502,26 @@ local function FightSoulReaperOnce()
             return
         end
 
-        local target = GetSoulReaper()
+        local target = GetNearestBoneMob(9999)
         if not target then
-            AddLog("Soul Reaper сейчас не найден в Workspace.")
+            UpdateStatus("Скелеты не найдены поблизости")
             return
         end
 
-        AddLog("Найден Soul Reaper, начинаю бой...")
-        UpdateStatus("Бой с Soul Reaper")
+        UpdateStatus("Фарм костей: "..tostring(target.Name))
+        AddLog("Нашёл скелета: "..tostring(target.Name))
 
         local tHRP = target:FindFirstChild("HumanoidRootPart")
         if tHRP then
-            SimpleTeleport(tHRP.CFrame * FarmOffset, "старт боя с Soul Reaper")
+            SimpleTeleport(tHRP.CFrame * FarmOffset, "скелет")
         end
 
-        local fightDeadline = tick() + 60   -- максимум 60 секунд на одну попытку
+        local fightDeadline = tick() + 40
         local lastPosAdjust = 0
         local lastAttack = 0
         local engaged = false
 
-        while AutoYamaQuest3
+        while AutoBones
             and target.Parent
             and target:FindFirstChild("Humanoid")
             and target.Humanoid.Health > 0
@@ -426,9 +537,8 @@ local function FightSoulReaperOnce()
             end
 
             local dist = (tHRP.Position - hrp.Position).Magnitude
-
-            if dist > 2500 then
-                SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий Soul Reaper")
+            if dist > 2000 then
+                SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий скелет")
             else
                 if tick() - lastPosAdjust > 0.05 then
                     hrp.CFrame = tHRP.CFrame * FarmOffset
@@ -439,7 +549,6 @@ local function FightSoulReaperOnce()
                 end
             end
 
-            -- фиксы коллизии/скорости босса
             pcall(function()
                 tHRP.CanCollide = false
                 target.Humanoid.WalkSpeed = 0
@@ -474,51 +583,52 @@ local function FightSoulReaperOnce()
             local hum = target:FindFirstChild("Humanoid")
             local dead = hum and hum.Health <= 0
             if dead or not target.Parent then
-                SoulReaperKillCount = SoulReaperKillCount + 1
-                UpdateKillsLabel()
-                AddLog("✅ Soul Reaper повержен. Всего киллов: " .. tostring(SoulReaperKillCount))
+                AddLog("✅ Скелет убит, кости должны были начислиться.")
+                RefreshBonesCount()
             else
-                AddLog("⚠️ Бой с Soul Reaper прерван (вышли из цикла).")
+                AddLog("⚠️ Бой со скелетом прерван.")
             end
         end
     end)
 
     if not ok then
-        AddLog("Ошибка в FightSoulReaperOnce: "..tostring(err))
+        AddLog("Ошибка в FarmBonesOnce: "..tostring(err))
     end
 
     IsFighting = false
 end
 
 ---------------------
--- ОСНОВНОЙ ЦИКЛ AUTOYAMAQUEST3
+-- ОСНОВНОЙ ЦИКЛ
 ---------------------
 spawn(function()
     while task.wait(0.4) do
-        if AutoYamaQuest3 then
+        if AutoBones then
             local ok, err = pcall(function()
-                local hell = GetHellDimension()
-                if hell then
-                    -- если уже есть HellDimension, не трогаем Soul Reaper и Bones,
-                    -- просто завершаем пазл с факелами.
-                    RunHellDimension()
+                -- сначала обновляем статусы
+                RefreshBonesCount()
+                UpdateHallowStatus()
+
+                -- если уже есть Hallow Essence – просто фармим кости, но не роллим
+                if HasHallow then
+                    UpdateStatus("Hallow Essence уже есть, фармлю кости")
+                    FarmBonesOnce()
                     return
                 end
 
-                -- HellDimension нет, проверяем Soul Reaper
-                local sr = GetSoulReaper()
-                if sr then
-                    FightSoulReaperOnce()
+                -- если костей >= MinBonesToRoll и ещё есть лимит по роллам – идём к Death King
+                if BonesCount >= MinBonesToRoll and RollsUsed < MaxRollsPerSession then
+                    DoDeathKingRolls()
                     return
                 end
 
-                -- Нет ни портала, ни босса -> пытаемся купить Soul Reaper через Bones
-                BuySoulReaper()
-                UpdateStatus("Ожидание спавна Soul Reaper / HellDimension")
+                -- иначе – просто фармим кости
+                UpdateStatus("Фарм костей (Haunted Castle)")
+                FarmBonesOnce()
             end)
 
             if not ok then
-                AddLog("Ошибка в основном цикле AutoYamaQuest3: "..tostring(err))
+                AddLog("Ошибка в основном цикле AutoBones: "..tostring(err))
             end
         end
     end
@@ -531,12 +641,12 @@ local function CreateGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
 
     ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "AutoYamaQuest3Gui"
+    ScreenGui.Name = "AutoBonesGui"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 360, 0, 260)
+    MainFrame.Size = UDim2.new(0, 380, 0, 270)
     MainFrame.Position = UDim2.new(0, 20, 0, 200)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderSizePixel = 0
@@ -547,20 +657,20 @@ local function CreateGui()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 24)
     title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    title.Text = "Auto Yama Quest 3"
+    title.Text = "Auto Bones + Hallow Essence"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
     title.TextSize = 18
     title.Parent = MainFrame
 
     ToggleButton = Instance.new("TextButton")
-    ToggleButton.Size = UDim2.new(0, 220, 0, 30)
+    ToggleButton.Size = UDim2.new(0, 240, 0, 30)
     ToggleButton.Position = UDim2.new(0, 10, 0, 30)
     ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
     ToggleButton.TextColor3 = Color3.new(1,1,1)
     ToggleButton.Font = Enum.Font.SourceSansBold
     ToggleButton.TextSize = 16
-    ToggleButton.Text = "Auto Yama Quest 3: OFF"
+    ToggleButton.Text = "Auto Bones: OFF"
     ToggleButton.Parent = MainFrame
 
     StatusLabel = Instance.new("TextLabel")
@@ -585,20 +695,42 @@ local function CreateGui()
     UptimeLabel.Text = "Время работы: 00:00:00"
     UptimeLabel.Parent = MainFrame
 
-    KillsLabel = Instance.new("TextLabel")
-    KillsLabel.Size = UDim2.new(1, -20, 0, 20)
-    KillsLabel.Position = UDim2.new(0, 10, 0, 105)
-    KillsLabel.BackgroundTransparency = 1
-    KillsLabel.TextColor3 = Color3.new(1,1,1)
-    KillsLabel.Font = Enum.Font.SourceSans
-    KillsLabel.TextSize = 14
-    KillsLabel.TextXAlignment = Enum.TextXAlignment.Left
-    KillsLabel.Text = "Убито Soul Reaper: 0"
-    KillsLabel.Parent = MainFrame
+    BonesLabel = Instance.new("TextLabel")
+    BonesLabel.Size = UDim2.new(1, -20, 0, 20)
+    BonesLabel.Position = UDim2.new(0, 10, 0, 105)
+    BonesLabel.BackgroundTransparency = 1
+    BonesLabel.TextColor3 = Color3.new(1,1,1)
+    BonesLabel.Font = Enum.Font.SourceSans
+    BonesLabel.TextSize = 14
+    BonesLabel.TextXAlignment = Enum.TextXAlignment.Left
+    BonesLabel.Text = "Костей (stash): 0"
+    BonesLabel.Parent = MainFrame
+
+    RollsLabel = Instance.new("TextLabel")
+    RollsLabel.Size = UDim2.new(1, -20, 0, 20)
+    RollsLabel.Position = UDim2.new(0, 10, 0, 125)
+    RollsLabel.BackgroundTransparency = 1
+    RollsLabel.TextColor3 = Color3.new(1,1,1)
+    RollsLabel.Font = Enum.Font.SourceSans
+    RollsLabel.TextSize = 14
+    RollsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    RollsLabel.Text = "Роллов в сессию: 0/"..tostring(MaxRollsPerSession)
+    RollsLabel.Parent = MainFrame
+
+    HallowLabel = Instance.new("TextLabel")
+    HallowLabel.Size = UDim2.new(1, -20, 0, 20)
+    HallowLabel.Position = UDim2.new(0, 10, 0, 145)
+    HallowLabel.BackgroundTransparency = 1
+    HallowLabel.TextColor3 = Color3.new(1,1,1)
+    HallowLabel.Font = Enum.Font.SourceSans
+    HallowLabel.TextSize = 14
+    HallowLabel.TextXAlignment = Enum.TextXAlignment.Left
+    HallowLabel.Text = "Hallow Essence: нет"
+    HallowLabel.Parent = MainFrame
 
     local LogsFrame = Instance.new("Frame")
-    LogsFrame.Size = UDim2.new(1, -20, 0, 120)
-    LogsFrame.Position = UDim2.new(0, 10, 0, 135)
+    LogsFrame.Size = UDim2.new(1, -20, 0, 100)
+    LogsFrame.Position = UDim2.new(0, 10, 0, 170)
     LogsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     LogsFrame.BorderSizePixel = 0
     LogsFrame.Parent = MainFrame
@@ -626,32 +758,34 @@ local function CreateGui()
     LogsText.Parent = scroll
 
     ToggleButton.MouseButton1Click:Connect(function()
-        AutoYamaQuest3 = not AutoYamaQuest3
-        if AutoYamaQuest3 then
+        AutoBones = not AutoBones
+        if AutoBones then
             StartTime = os.time()
-            ToggleButton.Text = "Auto Yama Quest 3: ON"
+            ToggleButton.Text = "Auto Bones: ON"
             ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
             NoclipEnabled = true
-            AddLog("Auto Yama Quest 3 включен (noclip ON)")
-            UpdateStatus("Ожидание Soul Reaper / HellDimension")
+            AddLog("Auto Bones включен (noclip ON)")
+            UpdateStatus("Фарм костей (Haunted Castle)")
         else
-            ToggleButton.Text = "Auto Yama Quest 3: OFF"
+            ToggleButton.Text = "Auto Bones: OFF"
             ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
             NoclipEnabled = false
-            AddLog("Auto Yama Quest 3 выключен (noclip OFF)")
+            AddLog("Auto Bones выключен (noclip OFF)")
             UpdateStatus("Остановлен")
             StopTween = true
         end
     end)
 
-    UpdateKillsLabel()
+    UpdateBonesLabel()
+    UpdateRollsLabel()
+    UpdateHallowLabel()
 end
 
 ---------------------
 -- ЗАПУСК GUI + ТАЙМЕР
 ---------------------
 CreateGui()
-AddLog("Скрипт AutoYamaQuest3 загружен. Включи его, когда начал 3-е испытание Yama у NPC.")
+AddLog("Auto Bones + Hallow Essence скрипт загружен. Включай кнопку, когда стоишь в 3-м море (Haunted Castle).")
 
 spawn(function()
     while task.wait(1) do
