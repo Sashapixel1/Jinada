@@ -1,12 +1,12 @@
 -- Auto Bones Farm + Hallow Essence Hunter
 -- фарм костей в Haunted Castle + роллы у Death King
--- ТЕПЕРЬ ИСПОЛЬЗУЕТ MELEE "Godhuman"
+-- ТЕПЕРЬ ИСПОЛЬЗУЕТ MELEE "Godhuman" и скорость полёта 300 юнитов/сек
 
 ---------------------
 -- НАСТРОЙКИ
 ---------------------
 local WeaponName = "Godhuman"           -- чем бить скелетов (MELEE)
-local TeleportSpeed = 150               -- скорость твина при подлёте
+local TeleportSpeed = 300               -- СКОРОСТЬ ПОЛЁТА (было 150)
 local FarmOffset = CFrame.new(0, 10, -3)-- позиция над мобом
 
 local MaxRollsPerSession = 10           -- 10 роллов = 500 костей
@@ -214,7 +214,7 @@ local function EquipToolByName(name)
 end
 
 ---------------------
--- ТЕЛЕПОРТ
+-- ТЕЛЕПОРТ (скорость 300, минимум 0.5 сек)
 ---------------------
 local function SimpleTeleport(targetCFrame, label)
     if IsTeleporting then return end
@@ -232,7 +232,7 @@ local function SimpleTeleport(targetCFrame, label)
     AddLog(string.format("Телепорт к %s (%.0f юнитов)", label or "цели", distance))
 
     local travelTime = distance / TeleportSpeed
-    if travelTime < 3 then travelTime = 3 end
+    if travelTime < 0.5 then travelTime = 0.5 end   -- БЫЛО 3, теперь 0.5
     if travelTime > 60 then travelTime = 60 end
 
     local tween = TweenService:Create(
@@ -263,7 +263,7 @@ local function SimpleTeleport(targetCFrame, label)
         hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
         hrp.CanCollide = false
 
-        task.wait(0.3)
+        task.wait(0.2)
     end
 
     tween:Cancel()
@@ -340,7 +340,7 @@ local function RefreshBonesCount()
     if ok and typeof(result) == "number" then
         c = result
     else
-        local data = LocalPlayer:FindFirstChild("Data")
+        local data = LocalPlayer:FindChild("Data")
         if data and data:FindFirstChild("Bones") and data.Bones.Value then
             c = data.Bones.Value
         end
@@ -646,7 +646,7 @@ local function CreateGui()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 24)
     title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    title.Text = "Auto Bones + Hallow Essence (Godhuman)"
+    title.Text = "Auto Bones + Hallow Essence (Godhuman, 300 speed)"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
     title.TextSize = 18
@@ -753,7 +753,7 @@ local function CreateGui()
             ToggleButton.Text = "Auto Bones: ON"
             ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
             NoclipEnabled = true
-            AddLog("Auto Bones включен (noclip ON, Godhuman)")
+            AddLog("Auto Bones включен (noclip ON, Godhuman, speed 300)")
             UpdateStatus("Фарм костей (Haunted Castle)")
         else
             ToggleButton.Text = "Auto Bones: OFF"
@@ -774,7 +774,7 @@ end
 -- ЗАПУСК GUI + ТАЙМЕР
 ---------------------
 CreateGui()
-AddLog("Auto Bones + Hallow Essence (Godhuman) загружен. Включай кнопку в 3-м море (Haunted Castle).")
+AddLog("Auto Bones + Hallow Essence (Godhuman, speed 300) загружен. Включай кнопку в 3-м море (Haunted Castle).")
 
 spawn(function()
     while task.wait(1) do
