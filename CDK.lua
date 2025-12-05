@@ -8,7 +8,7 @@ local SwordName = "Yama"                      -- каким мечом бить
 local TeleportSpeed = 150                     -- скорость телепорта при подлёте
 local FarmOffset = CFrame.new(0, 10, -3)      -- позиция над мобом
 
--- точки патруля по карте (координаты из 12k-скрипта)
+-- точки патруля по карте (координаты из большого скрипта)
 local PatrolPoints = {
     -- Pirate Port – Pistol Billionaire
     CFrame.new(-187.3301544189453, 86.23987579345703, 6013.513671875),
@@ -31,7 +31,7 @@ local NoclipEnabled = false
 local IsFarming = false
 
 local patrolIndex = 1
-local lastPatrol = 0         -- таймер для cooldown патруля (чтобы не спамить телепорты)
+local lastPatrol = 0         -- cooldown патруля
 
 ---------------------
 -- СЕРВИСЫ
@@ -151,7 +151,6 @@ local function IsToolEquipped(name)
 end
 
 local function EquipToolByName(name)
-    -- уже в руках нужный меч? не трогаем и не логируем
     if IsToolEquipped(name) then
         return
     end
@@ -235,6 +234,7 @@ local function SimpleTeleport(targetCFrame, label)
         if StopTween then
             tween:Cancel()
             IsTeleporting = false
+            AddLog("Телепорт прерван (StopTween)")
             return
         end
 
@@ -314,8 +314,8 @@ end
 local function PatrolStep()
     if not AutoYamaQuest2 then return end
     if #PatrolPoints == 0 then return end
-    -- не чаще раза в 8 секунд
-    if tick() - lastPatrol < 8 then return end
+    if IsTeleporting then return end             -- не стартуем новый полёт, если ещё летим
+    if tick() - lastPatrol < 8 then return end   -- cooldown 8 секунд
 
     local idx = patrolIndex
     patrolIndex = patrolIndex + 1
@@ -353,8 +353,19 @@ local function FarmYamaQuest2Once()
             return
         end
 
+        -- нашли цель: прерываем патрульный телепорт
+        StopTween = true
+        task.wait(0.1)
+        IsTeleporting = false
+
         AddLog("Нашёл моба с HazeESP: "..tostring(target.Name))
         UpdateStatus("Yama Quest 2: бой с "..tostring(target.Name))
+
+        local tHRP = target:FindFirstChild("HumanoidRootPart")
+        if tHRP then
+            -- гарантированно подлетаем к мобу перед началом боя
+            SimpleTeleport(tHRP.CFrame * FarmOffset, "старт боя с Haze-мобом")
+        end
 
         local fightDeadline = tick() + 35
         local lastPosAdjust = 0
@@ -368,7 +379,7 @@ local function FarmYamaQuest2Once()
 
             char = LocalPlayer.Character
             hrp = char and char:FindFirstChild("HumanoidRootPart")
-            local tHRP = target:FindFirstChild("HumanoidRootPart")
+            tHRP = target:FindFirstChild("HumanoidRootPart")
             if not (char and hrp and tHRP) then
                 break
             end
