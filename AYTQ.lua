@@ -49,7 +49,7 @@ local lastWaterfallLog = 0
 local FloatingTurtlePos   = CFrame.new(-13274.528320313, 531.82073974609, -7579.22265625)
 local lastTurtleTeleport  = 0              -- кулдаун телепорта к острову
 
--- Rip Indra: алтарь ZQuestProgress (из 12к)
+-- Rip Indra: алтарь ZQuestProgress (как в 12к)
 local IndraSummonPos         = CFrame.new(-1926.3221435547, 12.819851875305, 1738.3092041016)
 local lastIndraSummonAttempt = 0           -- чтобы не спамить вызов
 
@@ -81,7 +81,7 @@ end
 -- ЛОГИ / GUI
 ---------------------
 local StatusLogs = {}
-local MaxLogs    = 120
+local MaxLogs    = 150
 
 local ScreenGui, MainFrame
 local StatusLabel
@@ -101,7 +101,6 @@ local function AddLog(msg)
 end
 
 local function UpdateStatus(text)
-    -- лог только при реальной смене статуса
     if text ~= CurrentStatus then
         CurrentStatus = text
         if StatusLabel then
@@ -276,7 +275,6 @@ local function SimpleTeleport(targetCFrame, label)
     local hrp      = char.HumanoidRootPart
     local distance = (hrp.Position - targetCFrame.Position).Magnitude
 
-    -- Жёстко ограничиваем скорость максимум 300
     local speed = TeleportSpeed
     if speed > 300 then
         speed = 300
@@ -524,7 +522,6 @@ local function CheckNameBoss(a)
     return nil
 end
 
--- CheckTorch, который умеет Turtle и Floating Turtle
 local function CheckTorch()
     local ws  = Workspace
     local map = ws:FindFirstChild("Map")
@@ -566,7 +563,6 @@ local function FindEliteBoss()
     return CheckNameBoss({"Diablo","Deandre","Urban"})
 end
 
--- Поиск SealedKatana с фоллбеком по всему Workspace
 local function GetSealedKatanaHandle()
     local map = Workspace:FindFirstChild("Map")
     if map then
@@ -603,12 +599,11 @@ local function GetSealedKatanaHandle()
 end
 
 ---------------------
--- Призыв rip_indra (ZQuestProgress из 12к)
+-- Призыв rip_indra (ZQuestProgress)
 ---------------------
 local function EnsureRipIndraSummoned()
     local now = tick()
     if now - lastIndraSummonAttempt < 30 then
-        -- не спамим вызов чаще, чем раз в 30 сек
         return
     end
     lastIndraSummonAttempt = now
@@ -619,32 +614,29 @@ local function EnsureRipIndraSummoned()
         return remote:InvokeServer("ZQuestProgress", "General")
     end)
 
-    if not ok then
+    if ok then
+        AddLog("ZQuestProgress General: " .. tostring(general))
+    else
         AddLog("Ошибка ZQuestProgress General: " .. tostring(general))
-        return
     end
 
-    if type(general) == "number" and general == 0 then
-        -- по 12к: если General == 0 — летим к позиции алтаря и жмём Begin
-        SimpleTeleport(IndraSummonPos, "Алтарь rip_indra")
-        task.wait(1.5)
+    -- В оффлайн-проекте просто всегда пытаемся Begin
+    SimpleTeleport(IndraSummonPos, "Алтарь rip_indra")
+    task.wait(1.5)
 
-        local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if hrp and (hrp.Position - IndraSummonPos.Position).Magnitude <= 15 then
-            local ok2, res2 = pcall(function()
-                return remote:InvokeServer("ZQuestProgress", "Begin")
-            end)
-            if ok2 then
-                AddLog("Отправлен ZQuestProgress Begin, жду появления rip_indра (" .. tostring(res2) .. ").")
-            else
-                AddLog("Ошибка ZQuestProgress Begin: " .. tostring(res2))
-            end
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp and (hrp.Position - IndraSummonPos.Position).Magnitude <= 15 then
+        local ok2, res2 = pcall(function()
+            return remote:InvokeServer("ZQuestProgress", "Begin")
+        end)
+        if ok2 then
+            AddLog("Отправлен ZQuestProgress Begin: " .. tostring(res2))
         else
-            AddLog("Не удалось подойти к алтарю rip_indra (слишком далеко).")
+            AddLog("Ошибка ZQuestProgress Begin: " .. tostring(res2))
         end
     else
-        AddLog("ZQuestProgress General != 0 (" .. tostring(general) .. "), ивент уже активен или недоступен.")
+        AddLog("Не удалось подойти к алтарю rip_indra (слишком далеко).")
     end
 end
 
@@ -667,7 +659,6 @@ local function RunYamaLogic()
 
     local now = tick()
 
-    -- прогресс Elite Hunter — не чаще 1 раза/мин
     if now - lastEliteProgressCheck >= 60 or cachedEliteProgress == 0 then
         cachedEliteProgress    = GetEliteProgress()
         lastEliteProgressCheck = now
@@ -786,7 +777,6 @@ local function RunTushitaLogic()
         return
     end
 
-    -- пробуем найти модель острова; если её нет — летим на координаты Floating Turtle
     local turtle = map:FindFirstChild("Turtle") or map:FindFirstChild("Floating Turtle")
     if not turtle then
         local now = tick()
@@ -815,15 +805,14 @@ local function RunTushitaLogic()
     end
 
     -- 2) дверь есть → rip_indra / Holy Torch / факелы
-    UpdateStatus("Tushita: дверь есть, работаю с rip_indra / Holy Torch / факелами.")
-
-    -- ищем rip_indra и его True Form
     local indra = CheckNameBoss("rip_indra True Form [Lv. 5000] [Raid Boss]") or CheckNameBoss("rip_indra")
     if not indra then
         UpdateStatus("Tushita: пытаюсь призвать rip_indra.")
         EnsureRipIndraSummoned()
         return
     end
+
+    UpdateStatus("Tushita: дверь есть, работаю с rip_indra / Holy Torch / факелами.")
 
     local hasTorch = HasItemSimple("Holy Torch")
 
@@ -894,7 +883,7 @@ local function CreateGui()
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 420, 0, 260)
+    MainFrame.Size = UDim2.new(0, 420, 0, 320) -- было 260, сделал выше
     MainFrame.Position = UDim2.new(0, 40, 0, 200)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
     MainFrame.BorderSizePixel = 0
@@ -942,9 +931,9 @@ local function CreateGui()
     YamaButton.Text = "Auto Yama: OFF"
     YamaButton.Parent = MainFrame
 
-    -- Логи
+    -- Логи (увеличил высоту)
     local LogsFrame = Instance.new("Frame")
-    LogsFrame.Size = UDim2.new(1, -20, 0, 150)
+    LogsFrame.Size = UDim2.new(1, -20, 0, 210) -- было 150
     LogsFrame.Position = UDim2.new(0, 10, 0, 100)
     LogsFrame.BackgroundColor3 = Color3.fromRGB(15,15,15)
     LogsFrame.BorderSizePixel = 0
@@ -955,7 +944,7 @@ local function CreateGui()
     scroll.Position = UDim2.new(0, 2, 0, 2)
     scroll.BackgroundTransparency = 1
     scroll.BorderSizePixel = 0
-    scroll.CanvasSize = UDim2.new(0, 0, 4, 0)
+    scroll.CanvasSize = UDim2.new(0, 0, 8, 0) -- больше высота канвы
     scroll.ScrollBarThickness = 4
     scroll.Parent = LogsFrame
 
