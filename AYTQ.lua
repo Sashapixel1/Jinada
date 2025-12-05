@@ -1,6 +1,5 @@
 --========================================================
 -- Auto Yama / Auto Tushita (получение мечей) + GUI + ЛОГИ
--- с кулдауном на EliteHunter и кэшем прогресса
 --========================================================
 
 ---------------------
@@ -38,11 +37,17 @@ local IsFighting    = false
 local WarnNoThirdSeaForTushita = false
 local WarnNoThirdSeaForYama    = false
 
--- кулдаун на запрос квеста Elite Hunter (сек)
-local lastEliteRequest       = 0
--- кэш прогресса EliteHunter + время последней проверки
-local lastEliteProgressCheck = 0
-local cachedEliteProgress    = 0
+-- Elite Hunter
+local lastEliteRequest       = 0            -- кулдаун запроса квеста
+local lastEliteProgressCheck = 0            -- когда последний раз брали прогресс
+local cachedEliteProgress    = 0            -- кэш прогресса
+
+-- антиспам логов по SealedKatana/Waterfall
+local lastWaterfallLog = 0
+
+-- координаты Floating Turtle (как в 12к)
+local FloatingTurtlePos   = CFrame.new(-13274.528320313, 531.82073974609, -7579.22265625)
+local lastTurtleTeleport  = 0              -- кулдаун телепорта к острову
 
 ---------------------
 -- NET MODULE (как в 12к)
@@ -92,7 +97,7 @@ local function AddLog(msg)
 end
 
 local function UpdateStatus(text)
-    -- лог только при изменении статуса
+    -- лог только при реальной смене статуса
     if text ~= CurrentStatus then
         CurrentStatus = text
         if StatusLabel then
@@ -264,13 +269,13 @@ local function SimpleTeleport(targetCFrame, label)
         return
     end
 
-    local hrp = char.HumanoidRootPart
+    local hrp      = char.HumanoidRootPart
     local distance = (hrp.Position - targetCFrame.Position).Magnitude
     AddLog(string.format("Телепорт к %s (%.0f stud)", label or "цели", distance))
 
     local travelTime = distance / TeleportSpeed
     if travelTime < 0.5 then travelTime = 0.5 end
-    if travelTime > 60 then travelTime = 60 end
+    if travelTime > 60  then travelTime = 60  end
 
     local tween = TweenService:Create(
         hrp,
@@ -326,7 +331,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 ---------------------
--- ОБЩИЙ БОЙ С БОССОМ
+-- ОБЩИЙ БОЙ
 ---------------------
 local function FightBossOnce(target, label)
     if IsFighting then return end
@@ -423,18 +428,16 @@ local function FightBossOnce(target, label)
 end
 
 ---------------------
--- ОПРЕДЕЛЕНИЕ 3 МОРЯ (для оффлайна — просто true)
+-- 3 МОРЕ (для оффлайна просто true)
 ---------------------
 local function IsThirdSea()
-    -- В твоём оффлайн-проекте считаем, что скрипт включают только в 3-м море.
     return true
 end
 
 ---------------------
--- ВСПОМОГАТЕЛЬНОЕ ДЛЯ YAMA (Elite Hunter)
+-- YAMA: Elite Hunter
 ---------------------
 local EliteNPCPos = CFrame.new(-5418.892578125, 313.74130249023, -2826.2260742188)
-local EliteNames  = { Diablo = true, Deandre = true, Urban = true }
 
 local function GetEliteProgress()
     local ok, res = pcall(function()
@@ -458,13 +461,13 @@ local function GetQuestTitleText()
         return "", quest and quest.Visible or false
     end
 
-    local container = quest.Container
-    local titleGui  = container:FindFirstChild("QuestTitle")
-    if not titleGui then
+    local container  = quest.Container
+    local questTitle = container:FindFirstChild("QuestTitle")
+    if not questTitle then
         return "", quest.Visible
     end
 
-    local titleLabel = titleGui:FindFirstChild("Title")
+    local titleLabel = questTitle:FindFirstChild("Title")
     if not titleLabel or not titleLabel:IsA("TextLabel") then
         return "", quest.Visible
     end
@@ -473,7 +476,7 @@ local function GetQuestTitleText()
 end
 
 ---------------------
--- ВСПОМОГАТЕЛЬНОЕ ДЛЯ TUSHITA (из 12к)
+-- TUSHITA: CheckNameBoss / факелы
 ---------------------
 local function CheckNameBoss(a)
     for _, v in next, game.ReplicatedStorage:GetChildren() do
@@ -508,11 +511,16 @@ local function CheckNameBoss(a)
     return nil
 end
 
+-- CheckTorch, который умеет Turtle и Floating Turtle
 local function CheckTorch()
-    local ws = Workspace
-    local torches = ws.Map
-                     and ws.Map:FindFirstChild("Turtle")
-                     and ws.Map.Turtle:FindFirstChild("QuestTorches")
+    local ws  = Workspace
+    local map = ws:FindFirstChild("Map")
+    if not map then return nil end
+
+    local turtle = map:FindFirstChild("Turtle") or map:FindFirstChild("Floating Turtle")
+    if not turtle then return nil end
+
+    local torches = turtle:FindFirstChild("QuestTorches")
     if not torches then return nil end
 
     local a
@@ -545,6 +553,42 @@ local function FindEliteBoss()
     return CheckNameBoss({"Diablo","Deandre","Urban"})
 end
 
+-- Поиск SealedKatana с фоллбеком по всему Workspace
+local function GetSealedKatanaHandle()
+    local map = Workspace:FindFirstChild("Map")
+    if map then
+        local waterfall = map:FindFirstChild("Waterfall")
+        if waterfall then
+            local sealed = waterfall:FindFirstChild("SealedKatana")
+            if sealed then
+                local handle = sealed:FindFirstChild("Handle") or sealed
+                local cd     = handle:FindFirstChildOfClass("ClickDetector")
+                             or handle:FindFirstChild("ClickDetector")
+                return handle, cd
+            end
+        end
+    end
+
+    local sealedModel
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "SealedKatana" then
+            sealedModel = obj
+            break
+        end
+    end
+
+    if sealedModel then
+        local handle = sealedModel:FindFirstChild("Handle")
+                      or sealedModel:FindFirstChildWhichIsA("BasePart")
+                      or sealedModel
+        local cd     = handle:FindFirstChildOfClass("ClickDetector")
+                     or handle:FindFirstChild("ClickDetector")
+        return handle, cd
+    end
+
+    return nil, nil
+end
+
 ---------------------
 -- ЛОГИКА YAMA
 ---------------------
@@ -562,8 +606,9 @@ local function RunYamaLogic()
         return
     end
 
-    -- кэш прогресса EliteHunter — не чаще 1 раза/мин
     local now = tick()
+
+    -- прогресс Elite Hunter — не чаще 1 раза/мин
     if now - lastEliteProgressCheck >= 60 or cachedEliteProgress == 0 then
         cachedEliteProgress    = GetEliteProgress()
         lastEliteProgressCheck = now
@@ -574,27 +619,14 @@ local function RunYamaLogic()
     if progress >= 30 then
         UpdateStatus("Yama: прогресс 30+, открываю SealedKatana.")
 
-        local map = Workspace:FindFirstChild("Map")
-        if not map then
-            AddLog("❌ Map не найден.")
+        local handle, cd = GetSealedKatanaHandle()
+        if not handle then
+            if tick() - lastWaterfallLog > 5 then
+                AddLog("❌ SealedKatana / Waterfall не найдены. Проверь путь и названия моделей.")
+                lastWaterfallLog = tick()
+            end
             return
         end
-
-        local waterfall = map:FindFirstChild("Waterfall")
-        if not waterfall then
-            AddLog("❌ Waterfall не найден.")
-            return
-        end
-
-        local sealed = waterfall:FindFirstChild("SealedKatana")
-        if not sealed then
-            AddLog("❌ SealedKatana не найден.")
-            return
-        end
-
-        local handle = sealed:FindFirstChild("Handle") or sealed
-        local cd = handle:FindFirstChildOfClass("ClickDetector")
-                 or handle:FindFirstChild("ClickDetector")
 
         SimpleTeleport(handle.CFrame * CFrame.new(0, 4, 2), "SealedKatana")
 
@@ -614,7 +646,7 @@ local function RunYamaLogic()
         if HasSword("Yama") then
             AddLog("✅ Yama получена после кликов.")
         else
-            AddLog("⚠️ Не удалось получить Yama (проверь условия открытия).")
+            AddLog("⚠️ Не удалось получить Yama (проверь условия открытия / модель SealedKatana).")
         end
 
         return
@@ -649,7 +681,7 @@ local function RunYamaLogic()
                 remote:InvokeServer("EliteHunter")
             end)
             lastEliteRequest       = now
-            lastEliteProgressCheck = 0   -- после взятия квеста форсим обновление прогресса
+            lastEliteProgressCheck = 0
             AddLog("Квест EliteHunter запрошен.")
         else
             AddLog("Не удалось подойти к Elite Hunter NPC (слишком далеко).")
@@ -662,9 +694,7 @@ local function RunYamaLogic()
     if elite then
         AddLog("Нашёл элитного босса: " .. elite.Name .. ", начинаю бой.")
         FightBossOnce(elite, "Elite " .. elite.Name)
-
-        lastEliteProgressCheck = 0 -- после убийства обновим прогресс при следующем цикле
-
+        lastEliteProgressCheck = 0
         if AutoYama then
             SimpleTeleport(EliteNPCPos, "Elite Hunter NPC (после боя)")
         end
@@ -681,7 +711,7 @@ local function RunTushitaLogic()
         if not WarnNoThirdSeaForTushita then
             WarnNoThirdSeaForTushita = true
             UpdateStatus("Tushita: нужно быть в 3-м море (остров Turtle).")
-            AddLog("❌ Не вижу World3/Map.Turtle — включи Auto Tushita, когда будешь в 3-м море.")
+            AddLog("❌ Не вижу 3-е море — включи Auto Tushita в нужном мире.")
         end
         return
     end
@@ -697,11 +727,15 @@ local function RunTushitaLogic()
         return
     end
 
-    local turtle = map:FindFirstChild("Turtle")
+    -- пробуем найти модель острова; если её нет — летим на координаты Floating Turtle
+    local turtle = map:FindFirstChild("Turtle") or map:FindFirstChild("Floating Turtle")
     if not turtle then
-        if not WarnNoThirdSeaForTushita then
-            WarnNoThirdSeaForTushita = true
-            UpdateStatus("Tushita: Turtle не найден (нужно 3-е море).")
+        local now = tick()
+        if now - lastTurtleTeleport > 15 then
+            lastTurtleTeleport = now
+            UpdateStatus("Tushita: лечу на Floating Turtle.")
+            AddLog("Turtle не найден в Map, телепортируюсь на Floating Turtle.")
+            SimpleTeleport(FloatingTurtlePos, "Floating Turtle")
         end
         return
     end
@@ -847,7 +881,7 @@ local function CreateGui()
     YamaButton.Text = "Auto Yama: OFF"
     YamaButton.Parent = MainFrame
 
-    -- ЛОГИ
+    -- Логи
     local LogsFrame = Instance.new("Frame")
     LogsFrame.Size = UDim2.new(1, -20, 0, 150)
     LogsFrame.Position = UDim2.new(0, 10, 0, 100)
@@ -877,7 +911,7 @@ local function CreateGui()
     LogsText.Text = ""
     LogsText.Parent = scroll
 
-    -- КНОПКИ
+    -- Кнопки
     TushitaButton.MouseButton1Click:Connect(function()
         AutoTushita = not AutoTushita
         if AutoTushita then
