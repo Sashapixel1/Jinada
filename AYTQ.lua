@@ -616,7 +616,7 @@ local function CreateGui()
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 420, 0, 600) -- высота 600
+    MainFrame.Size = UDim2.new(0, 500, 0, 600) -- высота 600
     MainFrame.Position = UDim2.new(0, 40, 0, 100)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderSizePixel = 0
