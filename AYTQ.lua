@@ -5,18 +5,18 @@
 -----------------------------
 -- НАСТРОЙКИ
 -----------------------------
-local WeaponName = "Godhuman"           -- чем бить боссов
-local TeleportSpeed = 300               -- макс. скорость твина (юнитов/сек)
-local FarmOffset = CFrame.new(0, 10, 0) -- позиция над целью
+local WeaponName   = "Godhuman"           -- чем бить боссов
+local TeleportSpeed = 300                 -- макс. скорость твина (юнитов/сек)
+local FarmOffset    = CFrame.new(0, 10, 0)
 
 -----------------------------
 -- СЕРВИСЫ
 -----------------------------
-local Players          = game:GetService("Players")
-local TweenService     = game:GetService("TweenService")
-local ReplicatedStorage= game:GetService("ReplicatedStorage")
-local Workspace        = game:GetService("Workspace")
-local RunService       = game:GetService("RunService")
+local Players           = game:GetService("Players")
+local TweenService      = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace         = game:GetService("Workspace")
+local RunService        = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
@@ -57,15 +57,23 @@ local IsTeleporting = false
 local StopTween     = false
 local NoclipEnabled = false
 
+-- Elite Hunter (Yama)
 local lastEliteQuestRequest   = 0
 local ELITE_QUEST_INTERVAL    = 60
 local lastEliteProgressCheck  = 10
 local ELITE_PROGRESS_INTERVAL = 10
 local CachedEliteProgress     = 0
 
-local FloatingTurtlePos   = CFrame.new(-9552, 392, -9537)
-local LongmaSpawnPos      = CFrame.new(-10238.8759, 389.7913, -9549.7939)
-local CastleOnSeaPos      = CFrame.new(-5037, 316, -3154)
+-- Rip Indra Summon
+local lastRipSummonAttempt = 0
+local RIP_SUMMON_INTERVAL  = 30
+local lastRipNotSpawnLog   = 0
+local RIP_LOG_INTERVAL     = 10
+
+-- точки
+local FloatingTurtlePos = CFrame.new(-9552, 392, -9537)
+local LongmaSpawnPos    = CFrame.new(-10238.8759, 389.7913, -9549.7939)
+local CastleOnSeaPos    = CFrame.new(-5037, 316, -3154)
 
 -----------------------------
 -- ЛОГИ / GUI
@@ -223,10 +231,10 @@ local function SimpleTeleport(targetCFrame, label)
         return
     end
 
-    local distance = (hrp.Position - targetCFrame.Position).Magnitude
+    local distance   = (hrp.Position - targetCFrame.Position).Magnitude
     local travelTime = distance / TeleportSpeed
     if travelTime < 0.5 then travelTime = 0.5 end
-    if travelTime > 60 then travelTime = 60 end
+    if travelTime > 60  then travelTime = 60  end
 
     AddLog(string.format("Телепорт к %s (%.0f stud, speed=%d)", label, distance, TeleportSpeed))
 
@@ -321,7 +329,7 @@ local function CheckNameBoss(nameOrList)
         end
     end
 
-    local rep = ReplicatedStorage
+    local rep     = ReplicatedStorage
     local enemies = Workspace:FindFirstChild("Enemies")
 
     local found = checkContainer(rep)
@@ -478,6 +486,51 @@ local function FightBossOnce(bossModel, bossLabel)
 end
 
 -----------------------------
+-- SUMMON RIP INDRA (через ZQuestProgress)
+-----------------------------
+local function SummonRipIndra()
+    lastRipSummonAttempt = tick()
+    AddLog("Статус: Tushita: пытаюсь призвать rip_indra.")
+
+    -- 1. Проверяем состояние ZQuest
+    local okCheck, checkState = pcall(function()
+        return remote:InvokeServer("ZQuestProgress", "Check")
+    end)
+
+    if not okCheck then
+        AddLog("Ошибка ZQuestProgress Check: "..tostring(checkState))
+        return
+    end
+
+    AddLog("ZQuestProgress Check: "..tostring(checkState))
+
+    if checkState == 0 then
+        -- Квест ещё не начат, запускаем
+        local okBegin, beginRes = pcall(function()
+            return remote:InvokeServer("ZQuestProgress", "Begin")
+        end)
+        if okBegin then
+            AddLog("Пробую призвать rip_indra через ZQuestProgress Begin: "..tostring(beginRes))
+        else
+            AddLog("Ошибка при ZQuestProgress Begin: "..tostring(beginRes))
+        end
+    else
+        -- Уже есть какой-то прогресс, смотрим General
+        local okGen, gen = pcall(function()
+            return remote:InvokeServer("ZQuestProgress", "Progress", "General")
+        end)
+        if okGen then
+            AddLog("ZQuestProgress General: "..tostring(gen))
+            if gen ~= 0 and gen ~= nil then
+                AddLog("ZQuestProgress General != 0 (nil), ивент уже активен или в процессе.")
+            end
+        else
+            AddLog("Ошибка ZQuestProgress Progress General: "..tostring(gen))
+        end
+    end
+end
+
+-----------------------------
 -- ЛОГИКА YAMA
 -----------------------------
 local function RunYamaLogic()
@@ -553,6 +606,7 @@ local function RunTushitaLogic()
         return
     end
 
+    -- 1) Если двери ещё нет — фарм Longma
     if not turtleMap:FindFirstChild("TushitaGate") then
         UpdateStatus("Tushita: фарм Longma для открытия двери.")
 
@@ -566,11 +620,13 @@ local function RunTushitaLogic()
         return
     end
 
+    -- 2) Дверь уже есть => работаем с rip_indra / Holy Torch
     local ripIndra = CheckNameBoss("rip_indra True Form [Lv. 5000] [Raid Boss]") or
                      CheckNameBoss("rip_indra True Form") or
                      CheckNameBoss("rip_indra")
 
     if ripIndra then
+        -- rip_indra есть
         if not LocalPlayer.Character:FindFirstChild("Holy Torch")
            and not LocalPlayer.Backpack:FindFirstChild("Holy Torch") then
             UpdateStatus("Tushita: нужен Holy Torch, иду к секретной комнате Waterfall.")
@@ -598,14 +654,28 @@ local function RunTushitaLogic()
         end
         return
     else
-        UpdateStatus("Tushita: дверь есть, работаю с rip_indra / Holy Torch.")
-        AddLog("Rip Indra не заспавнен, жду и/или проверь квест Summon.")
+        -- rip_indra ещё нет: логируем не чаще, чем раз в RIP_LOG_INTERVAL,
+        -- и раз в RIP_SUMMON_INTERVAL пробуем его призвать.
+        local now = tick()
+
+        if now - lastRipNotSpawnLog > RIP_LOG_INTERVAL then
+            lastRipNotSpawnLog = now
+            AddLog("Rip Indra не заспавнен, жду и/или проверь квест Summon.")
+        end
+
+        if now - lastRipSummonAttempt > RIP_SUMMON_INTERVAL then
+            UpdateStatus("Tushita: дверь есть, пытаюсь призвать rip_indra.")
+            SummonRipIndra()
+        else
+            UpdateStatus("Tushita: дверь есть, работаю с rip_indra / Holy Torch.")
+        end
+
         return
     end
 end
 
 -----------------------------
--- GUI (увеличен по высоте до 600)
+-- GUI (высота 600)
 -----------------------------
 local function CreateGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
@@ -616,7 +686,7 @@ local function CreateGui()
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 600, 0, 600) -- высота 600
+    MainFrame.Size = UDim2.new(0, 420, 0, 600)
     MainFrame.Position = UDim2.new(0, 40, 0, 100)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderSizePixel = 0
@@ -665,7 +735,7 @@ local function CreateGui()
     YamaButton.Parent = MainFrame
 
     local LogsFrame = Instance.new("Frame")
-    LogsFrame.Size = UDim2.new(1, -20, 0, 480) -- больше высоты под логи
+    LogsFrame.Size = UDim2.new(1, -20, 0, 480)
     LogsFrame.Position = UDim2.new(0, 10, 0, 100)
     LogsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     LogsFrame.BorderSizePixel = 0
