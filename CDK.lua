@@ -8,7 +8,7 @@ local SwordName = "Yama"                      -- каким мечом бить
 local TeleportSpeed = 150                     -- скорость телепорта при подлёте
 local FarmOffset = CFrame.new(0, 10, -3)      -- позиция над мобом
 
--- точки патруля по карте
+-- точки патруля по карте (ВСЕ из 3-го моря, взяты из 12к скрипта)
 local PatrolPoints = {
     -- Pirate Port – Pistol Billionaire
     CFrame.new(-187.3301544189453, 86.23987579345703, 6013.513671875),
@@ -17,6 +17,22 @@ local PatrolPoints = {
     -- Haunted Castle район
     CFrame.new(-12361.7060546875, 603.3547973632812, -6550.5341796875),
     CFrame.new(-13451.46484375, 543.712890625, -6961.0029296875),
+
+    -- Deep Forest / Mythological Pirates / Jungle Pirates (3-е море)
+    CFrame.new(-13274.478515625, 332.3781433105469, -7769.58056640625),
+    CFrame.new(-13680.607421875, 501.08154296875, -6991.189453125),
+    CFrame.new(-13457.904296875, 391.545654296875, -9859.177734375),
+    CFrame.new(-12256.16015625, 331.73828125, -10485.8369140625),
+
+    -- Frozen/Sea of Treats кластеры
+    CFrame.new(-1887.8099365234375, 77.6185073852539, -12998.3505859375),
+    CFrame.new(-21.55328369140625, 80.57499694824219, -12352.3876953125),
+    CFrame.new(582.590576171875, 77.18809509277344, -12463.162109375),
+
+    -- Дальний кластер (3-е море)
+    CFrame.new(-16641.6796875, 235.7825469970703, 1031.282958984375),
+    CFrame.new(-16587.896484375, 154.21299743652344, 1533.40966796875),
+    CFrame.new(-16885.203125, 114.12911224365234, 1627.949951171875),
 }
 
 ---------------------
@@ -31,9 +47,10 @@ local NoclipEnabled = false
 local IsFarming = false
 
 local patrolIndex = 1
-local lastPatrol = 0         -- cooldown патруля
+local lastPatrol = 0             -- cooldown перед следующим перелётом
+local PatrolHoldUntil = 0        -- время, до которого нужно стоять на текущей точке
 
-local HazeKillCount = 0      -- счётчик убитых HazeESP мобов
+local HazeKillCount = 0          -- счётчик убитых HazeESP мобов
 
 ---------------------
 -- СЕРВИСЫ
@@ -322,8 +339,17 @@ end
 local function PatrolStep()
     if not AutoYamaQuest2 then return end
     if #PatrolPoints == 0 then return end
-    if IsTeleporting then return end             -- не стартуем новый полёт, если ещё летим
-    if tick() - lastPatrol < 8 then return end   -- cooldown 8 секунд
+    if IsTeleporting then return end
+
+    -- если ещё не отстояли 5 секунд на текущей точке – не перелетаем дальше
+    if tick() < PatrolHoldUntil then
+        return
+    end
+
+    -- доп. cooldown между прыжками (чтоб не спамить телепортами)
+    if tick() - lastPatrol < 2 then
+        return
+    end
 
     local idx = patrolIndex
     patrolIndex = patrolIndex + 1
@@ -335,7 +361,13 @@ local function PatrolStep()
     local targetCF = PatrolPoints[idx] * FarmOffset
     AddLog("Патруль: лечу на точку #" .. tostring(idx))
     UpdateStatus("Патруль, поиск Haze-мобов (точка "..tostring(idx)..")")
+
+    -- прыгаем на точку
     SimpleTeleport(targetCF, "патруль Yama2 #" .. tostring(idx))
+
+    -- после прилёта на точку стоим тут ещё 5 секунд, даём мобам заспавниться
+    PatrolHoldUntil = tick() + 5
+    AddLog("Жду спавна мобов ~5 секунд на точке #" .. tostring(idx))
 end
 
 ---------------------
@@ -356,7 +388,6 @@ local function FarmYamaQuest2Once()
 
         -- если HazeESP-мобов нет рядом, патрулируем карту
         if not target then
-            AddLog("HazeESP мобов рядом нет, запускаю патруль...")
             PatrolStep()
             return
         end
