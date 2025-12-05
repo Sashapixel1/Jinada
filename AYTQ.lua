@@ -1,8 +1,5 @@
 --========================================================
 --  Auto Yama / Auto Tushita (каркас + логика из 12к)
---  Использует:
---    - Net / RegisterAttack / RegisterHit (как в AutoBones)
---    - AutoHaki + EquipToolByName из твоего скрипта
 --========================================================
 
 -----------------------------
@@ -56,22 +53,19 @@ local AutoYama    = false
 
 local CurrentStatus = "Idle"
 
--- для телепорта
 local IsTeleporting = false
 local StopTween     = false
 local NoclipEnabled = false
 
--- для Yama / Elite Hunter
 local lastEliteQuestRequest   = 0
-local ELITE_QUEST_INTERVAL    = 60     -- раз в минуту брать квест у NPC
-local lastEliteProgressCheck  = 10     -- чтобы сразу дернуть первый раз
-local ELITE_PROGRESS_INTERVAL = 10     -- прогресс раз в 10 секунд
+local ELITE_QUEST_INTERVAL    = 60
+local lastEliteProgressCheck  = 10
+local ELITE_PROGRESS_INTERVAL = 10
 local CachedEliteProgress     = 0
 
--- точки
-local FloatingTurtlePos   = CFrame.new(-9552, 392, -9537)   -- общая точка на острове
-local LongmaSpawnPos      = CFrame.new(-10238.8759, 389.7913, -9549.7939) -- спот Лонгмы из 12к
-local CastleOnSeaPos      = CFrame.new(-5037, 316, -3154)   -- пример Castle On The Sea (для Yama)
+local FloatingTurtlePos   = CFrame.new(-9552, 392, -9537)
+local LongmaSpawnPos      = CFrame.new(-10238.8759, 389.7913, -9549.7939)
+local CastleOnSeaPos      = CFrame.new(-5037, 316, -3154)
 
 -----------------------------
 -- ЛОГИ / GUI
@@ -392,7 +386,6 @@ local function GetEliteHunterProgress()
 end
 
 local function TeleportToEliteHunterNpc()
-    -- в Castle On The Sea NPC стоит рядом с доской квестов, можно тпшиться в центр
     SimpleTeleport(CastleOnSeaPos, "Elite Hunter NPC")
 end
 
@@ -435,8 +428,7 @@ local function FightBossOnce(bossModel, bossLabel)
     local lastAttack   = 0
     local lastRecenter = 0
 
-    while
-        AutoTushita or AutoYama do
+    while AutoTushita or AutoYama do
         if not bossModel.Parent then break end
         hum = bossModel:FindFirstChild("Humanoid")
         hrp = bossModel:FindFirstChild("HumanoidRootPart")
@@ -494,7 +486,6 @@ local function RunYamaLogic()
         return
     end
 
-    -- 1) проверяем, что мы в 3-м море (Castle On The Sea)
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     if not (char and hrp) then return end
@@ -506,16 +497,13 @@ local function RunYamaLogic()
         return
     end
 
-    -- 2) прогресс элиток
     local progress = GetEliteHunterProgress()
     if progress < 30 then
         UpdateStatus(string.format("Yama: фарм Elite Hunter (%d/30).", progress))
-        -- берём квест раз в минуту и ждём, пока твой отдельный фарм элиток сделает своё дело
         RequestEliteHunterQuestIfNeeded()
         return
     end
 
-    -- 3) прогресс >= 30: кликаем по SealedKatana до получения Yama (как в 12к)
     UpdateStatus("Yama: прогресс 30/30, кликаю SealedKatana.")
 
     local handle, cd = GetSealedKatanaHandle()
@@ -558,7 +546,6 @@ local function RunTushitaLogic()
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     if not (char and hrp) then return end
 
-    -- 1) гарантируем, что мы на Floating Turtle
     local turtleMap = GetTurtleMap()
     if not turtleMap then
         UpdateStatus("Tushita: лечу на Floating Turtle.")
@@ -566,7 +553,6 @@ local function RunTushitaLogic()
         return
     end
 
-    -- 2) если TushitaGate ещё НЕТ -> стадия Longma (как в 12к)
     if not turtleMap:FindFirstChild("TushitaGate") then
         UpdateStatus("Tushita: фарм Longma для открытия двери.")
 
@@ -580,21 +566,19 @@ local function RunTushitaLogic()
         return
     end
 
-    -- 3) TushitaGate уже есть -> стадия rip_indra / Holy Torch (логика из 12к)
     local ripIndra = CheckNameBoss("rip_indra True Form [Lv. 5000] [Raid Boss]") or
                      CheckNameBoss("rip_indra True Form") or
                      CheckNameBoss("rip_indra")
 
     if ripIndra then
-        -- есть rip_indra: нужно Holy Torch и бегать по квест-торчам
         if not LocalPlayer.Character:FindFirstChild("Holy Torch")
            and not LocalPlayer.Backpack:FindFirstChild("Holy Torch") then
             UpdateStatus("Tushita: нужен Holy Torch, иду к секретной комнате Waterfall.")
             local map = Workspace:FindFirstChild("Map")
             local wf  = map and map:FindFirstChild("Waterfall")
             local secret = wf and wf:FindFirstChild("SecretRoom")
-            local door   = secret and secret:FindFirstChild("Room")
-            door = door and door:FindFirstChild("Door")
+            local room   = secret and secret:FindFirstChild("Room")
+            local door   = room and room:FindFirstChild("Door")
             local hitbox = door and door:FindFirstChild("Door") and door.Door:FindFirstChild("Hitbox")
 
             if hitbox then
@@ -603,7 +587,6 @@ local function RunTushitaLogic()
                 AddLog("❌ Не удалось найти Hitbox двери SecretRoom.")
             end
         else
-            -- Holy Torch есть: ищем незажжённый торч (через CheckTorch из 12к)
             UpdateStatus("Tushita: есть Holy Torch, ищу незажжённый факел.")
             EquipToolByName("Holy Torch")
             local torch = CheckTorch()
@@ -615,7 +598,6 @@ local function RunTushitaLogic()
         end
         return
     else
-        -- rip_indra нет: просто логируем, что его нет (как в 12к)
         UpdateStatus("Tushita: дверь есть, работаю с rip_indra / Holy Torch.")
         AddLog("Rip Indra не заспавнен, жду и/или проверь квест Summon.")
         return
@@ -623,7 +605,7 @@ local function RunTushitaLogic()
 end
 
 -----------------------------
--- GUI
+-- GUI (увеличен по высоте до 600)
 -----------------------------
 local function CreateGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
@@ -634,8 +616,8 @@ local function CreateGui()
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 420, 0, 320)
-    MainFrame.Position = UDim2.new(0, 40, 0, 200)
+    MainFrame.Size = UDim2.new(0, 420, 0, 600) -- высота 600
+    MainFrame.Position = UDim2.new(0, 40, 0, 100)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
@@ -683,7 +665,7 @@ local function CreateGui()
     YamaButton.Parent = MainFrame
 
     local LogsFrame = Instance.new("Frame")
-    LogsFrame.Size = UDim2.new(1, -20, 0, 220)
+    LogsFrame.Size = UDim2.new(1, -20, 0, 480) -- больше высоты под логи
     LogsFrame.Position = UDim2.new(0, 10, 0, 100)
     LogsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     LogsFrame.BorderSizePixel = 0
@@ -694,7 +676,7 @@ local function CreateGui()
     scroll.Position = UDim2.new(0, 2, 0, 2)
     scroll.BackgroundTransparency = 1
     scroll.BorderSizePixel = 0
-    scroll.CanvasSize = UDim2.new(0,0,5,0)
+    scroll.CanvasSize = UDim2.new(0,0,8,0)
     scroll.ScrollBarThickness = 6
     scroll.Parent = LogsFrame
 
@@ -711,7 +693,6 @@ local function CreateGui()
     LogsText.Text = ""
     LogsText.Parent = scroll
 
-    -- переключатели
     TushitaButton.MouseButton1Click:Connect(function()
         AutoTushita = not AutoTushita
         if AutoTushita then
