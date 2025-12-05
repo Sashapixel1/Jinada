@@ -73,7 +73,7 @@ function AttackModule:AttackEnemyModel(enemyModel)
 end
 
 ---------------------
--- ЛОГИ
+-- ЛОГИ / GUI-ПЕРЕМЕННЫЕ
 ---------------------
 local StatusLogs = {}
 local MaxLogs = 60
@@ -378,13 +378,16 @@ local function FarmYamaQuest2Once()
         local fightDeadline = tick() + 35
         local lastPosAdjust = 0
         local lastAttack = 0
-        local killedThisTarget = false
+
+        local engaged = false   -- реально ли мы бились с этим мобом
 
         while AutoYamaQuest2
             and target.Parent
             and target:FindFirstChild("Humanoid")
             and target.Humanoid.Health > 0
             and tick() < fightDeadline do
+
+            engaged = true
 
             char = LocalPlayer.Character
             hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -435,19 +438,29 @@ local function FarmYamaQuest2Once()
                 lastAttack = tick()
             end
 
-            -- фикс кила (увеличиваем счётчик один раз)
-            if not killedThisTarget and target.Humanoid.Health <= 0 then
-                killedThisTarget = true
-                HazeKillCount = HazeKillCount + 1
-                UpdateKillsLabel()
-                AddLog("✅ Убит HazeESP моб. Всего: " .. tostring(HazeKillCount))
-                if target.Humanoid:FindFirstChild("Animator") then
-                    target.Humanoid.Animator:Destroy()
-                end
-                break
+            RunService.Heartbeat:Wait()
+        end
+
+        -- после боя считаем, что моб "засчитан", если:
+        -- 1) мы реально с ним дрались (engaged == true)
+        -- 2) он умер / исчез / потерял HazeESP
+        if engaged then
+            local humanoidOk, hum = pcall(function()
+                return target:FindFirstChild("Humanoid")
+            end)
+
+            local hazeStillThere = target:FindFirstChild("HazeESP") ~= nil
+            local dead = false
+
+            if humanoidOk and hum then
+                dead = (hum.Health <= 0)
             end
 
-            RunService.Heartbeat:Wait()
+            if (not target.Parent) or dead or (not hazeStillThere) then
+                HazeKillCount = HazeKillCount + 1
+                UpdateKillsLabel()
+                AddLog("✅ Засчитан HazeESP моб. Всего: " .. tostring(HazeKillCount))
+            end
         end
     end)
 
