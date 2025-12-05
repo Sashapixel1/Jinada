@@ -1,16 +1,18 @@
 -- Auto Bones Farm + Hallow Essence Hunter
--- фарм костей в Haunted Castle + роллы у Death King
--- ТЕПЕРЬ ИСПОЛЬЗУЕТ MELEE "Godhuman" и скорость полёта 300 юнитов/сек
+-- Фарм костей в Haunted Castle + роллы у Death King
+-- Использует MELEE "Godhuman", скорость полёта 300
+-- Счётчик костей берётся из инвентаря (материал "Bones" через getInventory)
+-- Автопролёт к Haunted Castle перед фармом
 
 ---------------------
 -- НАСТРОЙКИ
 ---------------------
-local WeaponName = "Godhuman"           -- чем бить скелетов (MELEE)
-local TeleportSpeed = 300               -- СКОРОСТЬ ПОЛЁТА (было 150)
-local FarmOffset = CFrame.new(0, 10, -3)-- позиция над мобом
+local WeaponName = "Godhuman"            -- чем бить скелетов (MELEE)
+local TeleportSpeed = 300                -- скорость полёта
+local FarmOffset = CFrame.new(0, 10, -3) -- позиция над мобом
 
-local MaxRollsPerSession = 10           -- 10 роллов = 500 костей
-local MinBonesToRoll = 500              -- минимум костей, чтобы пойти роллить
+local MaxRollsPerSession = 10            -- 10 роллов = 500 костей
+local MinBonesToRoll = 500               -- минимум костей, чтобы пойти роллить
 
 ---------------------
 -- ПЕРЕМЕННЫЕ
@@ -232,7 +234,7 @@ local function SimpleTeleport(targetCFrame, label)
     AddLog(string.format("Телепорт к %s (%.0f юнитов)", label or "цели", distance))
 
     local travelTime = distance / TeleportSpeed
-    if travelTime < 0.5 then travelTime = 0.5 end   -- БЫЛО 3, теперь 0.5
+    if travelTime < 0.5 then travelTime = 0.5 end
     if travelTime > 60 then travelTime = 60 end
 
     local tween = TweenService:Create(
@@ -329,23 +331,27 @@ local function UpdateHallowStatus()
 end
 
 ---------------------
--- ЧЕКЕР КОСТЕЙ
+-- GetCountMaterials из 12к (для Bones в stash/inventory)
 ---------------------
-local function RefreshBonesCount()
-    local c = 0
-    local ok, result = pcall(function()
-        return remote:InvokeServer("Bones", "Check")
+local function GetCountMaterials(MaterialName)
+    local ok, Inventory = pcall(function()
+        return remote:InvokeServer("getInventory")
     end)
-
-    if ok and typeof(result) == "number" then
-        c = result
-    else
-        local data = LocalPlayer:FindChild("Data")
-        if data and data:FindFirstChild("Bones") and data.Bones.Value then
-            c = data.Bones.Value
+    if ok and type(Inventory) == "table" then
+        for _, v in pairs(Inventory) do
+            if v.Name == MaterialName then
+                return v.Count or v.count or 0
+            end
         end
     end
+    return 0
+end
 
+---------------------
+-- ЧЕКЕР КОСТЕЙ (ТОЛЬКО через GetCountMaterials)
+---------------------
+local function RefreshBonesCount()
+    local c = GetCountMaterials("Bones")
     BonesCount = c or 0
     UpdateBonesLabel()
 end
@@ -444,7 +450,33 @@ local function DoDeathKingRolls()
 end
 
 ---------------------
--- ПОИСК СКЕЛЕТОВ ДЛЯ ФАРМА КОСТЕЙ
+-- ЦЕЛЬ HAUNTED CASTLE + ПРОВЕРКА, ЧТО МЫ НА ОСТРОВЕ
+---------------------
+local HauntedIslandPos = CFrame.new(-9515.129, 142.233, 6200.441)
+-- центр двора Haunted Castle (примерные координаты, можно подправить)
+
+local function EnsureOnHauntedIsland()
+    local char = LocalPlayer.Character
+    if not char then return false end
+
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local dist = (hrp.Position - HauntedIslandPos.Position).Magnitude
+
+    if dist > 600 then
+        UpdateStatus("Лечу к Haunted Castle...")
+        AddLog("Персонаж далеко от Haunted Castle ("..math.floor(dist).." stud), лечу обратно...")
+        SimpleTeleport(HauntedIslandPos, "Haunted Castle")
+        task.wait(1.2)
+        return false
+    end
+
+    return true
+end
+
+---------------------
+-- ПОИСК СКЕЛЕТОВ ТОЛЬКО В РАЙОНЕ Haunted Castle
 ---------------------
 local function IsBoneMob(mob)
     local name = tostring(mob.Name)
@@ -457,22 +489,26 @@ end
 local function GetNearestBoneMob(maxDistance)
     maxDistance = maxDistance or 9999
     local enemiesFolder = Workspace:FindFirstChild("Enemies")
+    if not enemiesFolder then return nil end
+
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not enemiesFolder or not hrp then
-        return nil
-    end
+    if not hrp then return nil end
 
     local nearest
     local bestDist = maxDistance
 
     for _, v in ipairs(enemiesFolder:GetChildren()) do
-        if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
-            if IsBoneMob(v) then
-                local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
-                if d < bestDist then
-                    bestDist = d
-                    nearest = v
+        if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
+            if v.Humanoid.Health > 0 and IsBoneMob(v) then
+                -- берём только тех, кто рядом с Haunted Castle
+                local distFromIsland = (v.HumanoidRootPart.Position - HauntedIslandPos.Position).Magnitude
+                if distFromIsland < 450 then
+                    local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+                    if d < bestDist then
+                        bestDist = d
+                        nearest = v
+                    end
                 end
             end
         end
@@ -497,7 +533,7 @@ local function FarmBonesOnce()
 
         local target = GetNearestBoneMob(9999)
         if not target then
-            UpdateStatus("Скелеты не найдены поблизости")
+            UpdateStatus("Скелеты рядом с Haunted Castle не найдены")
             return
         end
 
@@ -601,18 +637,26 @@ spawn(function()
                 RefreshBonesCount()
                 UpdateHallowStatus()
 
+                -- 1. Сначала всегда летим к Haunted Castle
+                if not EnsureOnHauntedIsland() then
+                    return
+                end
+
+                -- 2. Если Hallow Essence уже есть — просто фармим кости
                 if HasHallow then
                     UpdateStatus("Hallow Essence уже есть, фармлю кости")
                     FarmBonesOnce()
                     return
                 end
 
+                -- 3. Если костей >=500 — роллим у Death King
                 if BonesCount >= MinBonesToRoll and RollsUsed < MaxRollsPerSession then
                     DoDeathKingRolls()
                     return
                 end
 
-                UpdateStatus("Фарм костей (Haunted Castle)")
+                -- 4. Иначе просто фармим скелетов на Haunted Castle
+                UpdateStatus("Фарм скелетов на Haunted Castle")
                 FarmBonesOnce()
             end)
 
