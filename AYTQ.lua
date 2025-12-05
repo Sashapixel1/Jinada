@@ -38,20 +38,19 @@ local WarnNoThirdSeaForTushita = false
 local WarnNoThirdSeaForYama    = false
 
 -- Elite Hunter
-local lastEliteRequest       = 0            -- кулдаун запроса квеста
-local lastEliteProgressCheck = 0            -- когда последний раз брали прогресс
-local cachedEliteProgress    = 0            -- кэш прогресса
+local lastEliteRequest       = 0
+local lastEliteProgressCheck = 0
+local cachedEliteProgress    = 0
 
 -- антиспам логов по SealedKatana/Waterfall
 local lastWaterfallLog = 0
 
 -- координаты Floating Turtle (как в 12к)
 local FloatingTurtlePos   = CFrame.new(-13274.528320313, 531.82073974609, -7579.22265625)
-local lastTurtleTeleport  = 0              -- кулдаун телепорта к острову
+local lastTurtleTeleport  = 0
 
--- Rip Indra: алтарь ZQuestProgress (как в 12к)
-local IndraSummonPos         = CFrame.new(-1926.3221435547, 12.819851875305, 1738.3092041016)
-local lastIndraSummonAttempt = 0           -- чтобы не спамить вызов
+-- Rip Indra: просто форсим Begin, без координат
+local lastIndraSummonAttempt = 0
 
 ---------------------
 -- NET MODULE (как в 12к)
@@ -599,7 +598,7 @@ local function GetSealedKatanaHandle()
 end
 
 ---------------------
--- Призыв rip_indra (ZQuestProgress)
+-- Призыв rip_indra (ZQuestProgress, без телепорта)
 ---------------------
 local function EnsureRipIndraSummoned()
     local now = tick()
@@ -608,35 +607,16 @@ local function EnsureRipIndraSummoned()
     end
     lastIndraSummonAttempt = now
 
-    AddLog("Пробую призвать rip_indra через ZQuestProgress.")
+    AddLog("Пробую призвать rip_indra через ZQuestProgress (без телепорта).")
 
-    local ok, general = pcall(function()
-        return remote:InvokeServer("ZQuestProgress", "General")
+    local ok, res = pcall(function()
+        return remote:InvokeServer("ZQuestProgress", "Begin")
     end)
 
     if ok then
-        AddLog("ZQuestProgress General: " .. tostring(general))
+        AddLog("ZQuestProgress Begin отправлен: " .. tostring(res))
     else
-        AddLog("Ошибка ZQuestProgress General: " .. tostring(general))
-    end
-
-    -- В оффлайн-проекте просто всегда пытаемся Begin
-    SimpleTeleport(IndraSummonPos, "Алтарь rip_indra")
-    task.wait(1.5)
-
-    local char = LocalPlayer.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if hrp and (hrp.Position - IndraSummonPos.Position).Magnitude <= 15 then
-        local ok2, res2 = pcall(function()
-            return remote:InvokeServer("ZQuestProgress", "Begin")
-        end)
-        if ok2 then
-            AddLog("Отправлен ZQuestProgress Begin: " .. tostring(res2))
-        else
-            AddLog("Ошибка ZQuestProgress Begin: " .. tostring(res2))
-        end
-    else
-        AddLog("Не удалось подойти к алтарю rip_indra (слишком далеко).")
+        AddLog("Ошибка ZQuestProgress Begin: " .. tostring(res))
     end
 end
 
@@ -711,8 +691,10 @@ local function RunYamaLogic()
         or string.find(title, "Urban")
     )
 
+    local now2 = tick()
+
     if not haveQuest then
-        local diff = now - lastEliteRequest
+        local diff = now2 - lastEliteRequest
 
         if diff < 60 then
             if math.floor(diff) % 10 == 0 then
@@ -730,7 +712,7 @@ local function RunYamaLogic()
             pcall(function()
                 remote:InvokeServer("EliteHunter")
             end)
-            lastEliteRequest       = now
+            lastEliteRequest       = now2
             lastEliteProgressCheck = 0
             AddLog("Квест EliteHunter запрошен.")
         else
@@ -754,7 +736,7 @@ local function RunYamaLogic()
 end
 
 ---------------------
--- ЛОГИКА TUSHITA
+-- ЛОГИКА TUSHITA (по образцу Auto Get Tushita из 12к)
 ---------------------
 local function RunTushitaLogic()
     if not IsThirdSea() then
@@ -791,84 +773,65 @@ local function RunTushitaLogic()
 
     local gate = turtle:FindFirstChild("TushitaGate")
 
-    -- 1) если нет двери → убиваем Longma
+    -- если двери нет — точь-в-точь логика Longma из 12к
     if not gate then
         UpdateStatus("Tushita: убиваю Longma для открытия двери.")
-        local longma = CheckNameBoss("Longma [Lv. 2000] [Boss]")
-        if longma then
-            AddLog("Нашёл Longma, начинаю бой.")
-            FightBossOnce(longma, "Longma")
+        local v = CheckNameBoss("Longma [Lv. 2000] [Boss]")
+        if v then
+            FightBossOnce(v, "Longma")
         else
             AddLog("Longma не найден, жду спавна.")
         end
         return
     end
 
-    -- 2) дверь есть → rip_indra / Holy Torch / факелы
-    local indra = CheckNameBoss("rip_indra True Form [Lv. 5000] [Raid Boss]") or CheckNameBoss("rip_indra")
-    if not indra then
-        UpdateStatus("Tushita: пытаюсь призвать rip_indra.")
-        EnsureRipIndraSummoned()
-        return
-    end
+    -- если дверь есть и rip_indra заспавнен — Holy Torch / факелы (из 12к)
+    local indra = CheckNameBoss("rip_indra True Form [Lv. 5000] [Raid Boss]")
+    if indra then
+        UpdateStatus("Tushita: дверь есть, rip_indra есть, Holy Torch / факелы.")
 
-    UpdateStatus("Tushita: дверь есть, работаю с rip_indra / Holy Torch / факелами.")
+        if not HasItemSimple("Holy Torch") then
+            local waterfall = map:FindFirstChild("Waterfall")
+            if waterfall
+               and waterfall:FindFirstChild("SecretRoom")
+               and waterfall.SecretRoom:FindFirstChild("Room")
+               and waterfall.SecretRoom.Room:FindFirstChild("Door")
+               and waterfall.SecretRoom.Room.Door:FindFirstChild("Door")
+               and waterfall.SecretRoom.Room.Door.Door:FindFirstChild("Hitbox") then
 
-    local hasTorch = HasItemSimple("Holy Torch")
-
-    if not hasTorch then
-        AddLog("Нет Holy Torch — лечу к SecretRoom для факела.")
-        local waterfall = map:FindFirstChild("Waterfall")
-        if not waterfall then
-            AddLog("❌ Waterfall не найден.")
-            return
-        end
-
-        local secretRoom = waterfall:FindFirstChild("SecretRoom")
-        if not secretRoom or not secretRoom:FindFirstChild("Room") then
-            AddLog("❌ SecretRoom.Room не найден.")
-            return
-        end
-
-        local doorObj = secretRoom.Room:FindFirstChild("Door")
-        local hitbox
-        if doorObj then
-            if doorObj:FindFirstChild("Door") and doorObj.Door:FindFirstChild("Hitbox") then
-                hitbox = doorObj.Door.Hitbox
+                SimpleTeleport(waterfall.SecretRoom.Room.Door.Door.Hitbox.CFrame * CFrame.new(0,4,2),
+                               "SecretRoom (Holy Torch)")
+                AddLog("Подлетел к двери SecretRoom за Holy Torch.")
             else
-                hitbox = doorObj:FindFirstChild("Hitbox")
+                AddLog("❌ SecretRoom / Door / Hitbox не найдены.")
             end
+            return
         end
 
-        if hitbox and hitbox:IsA("BasePart") then
-            SimpleTeleport(hitbox.CFrame * CFrame.new(0, 4, 2), "SecretRoom (Holy Torch)")
-            AddLog("Подлетел к двери SecretRoom, дальше бери Holy Torch по условиям квеста.")
+        -- Holy Torch есть → ставим факелы
+        EquipToolByName("Holy Torch")
+        local torch = CheckTorch()
+        if torch then
+            AddLog("Нашёл неактивный факел: " .. torch.Name .. ", лечу и жму E.")
+            SimpleTeleport(torch.CFrame * CFrame.new(0, 4, 2), "QuestTorch "..torch.Name)
+
+            task.wait(0.5)
+            VirtualInputManager:SendKeyEvent(true, "E", false, game)
+            task.wait(0.1)
+            VirtualInputManager:SendKeyEvent(false, "E", false, game)
+
+            AddLog("Нажал E у факела " .. torch.Name .. ".")
         else
-            AddLog("❌ Hitbox двери SecretRoom не найден.")
+            AddLog("Все факелы, похоже, уже зажжены или следующий не найден.")
         end
 
         return
     end
 
-    -- Holy Torch есть → активируем факелы
-    EquipToolByName("Holy Torch")
-    UpdateStatus("Tushita: активирую факелы на Turtle (Holy Torch).")
-
-    local torch = CheckTorch()
-    if not torch then
-        AddLog("Все факелы, похоже, уже зажжены или следующий факел не найден.")
-        return
-    end
-
-    AddLog("Нашёл неактивный факел: " .. torch.Name .. ", лечу и жму E.")
-    SimpleTeleport(torch.CFrame * CFrame.new(0, 4, 2), "QuestTorch "..torch.Name)
-
-    task.wait(0.5)
-    VirtualInputManager:SendKeyEvent(true, "E", false, game)
-    task.wait(0.1)
-    VirtualInputManager:SendKeyEvent(false, "E", false, game)
-
-    AddLog("Нажал E у факела " .. torch.Name .. ".")
+    -- rip_indra нет — как в 12к: Rip Indra Not Spawn + наш форс-призыв
+    UpdateStatus("Tushita: Rip Indra не заспавнен, пытаюсь призвать.")
+    AddLog("Rip Indra Not Spawn (по данным боссов).")
+    EnsureRipIndraSummoned()
 end
 
 ---------------------
@@ -883,7 +846,7 @@ local function CreateGui()
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 420, 0, 320) -- было 260, сделал выше
+    MainFrame.Size = UDim2.new(0, 420, 0, 320)
     MainFrame.Position = UDim2.new(0, 40, 0, 200)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
     MainFrame.BorderSizePixel = 0
@@ -931,9 +894,8 @@ local function CreateGui()
     YamaButton.Text = "Auto Yama: OFF"
     YamaButton.Parent = MainFrame
 
-    -- Логи (увеличил высоту)
     local LogsFrame = Instance.new("Frame")
-    LogsFrame.Size = UDim2.new(1, -20, 0, 210) -- было 150
+    LogsFrame.Size = UDim2.new(1, -20, 0, 210)
     LogsFrame.Position = UDim2.new(0, 10, 0, 100)
     LogsFrame.BackgroundColor3 = Color3.fromRGB(15,15,15)
     LogsFrame.BorderSizePixel = 0
@@ -944,7 +906,7 @@ local function CreateGui()
     scroll.Position = UDim2.new(0, 2, 0, 2)
     scroll.BackgroundTransparency = 1
     scroll.BorderSizePixel = 0
-    scroll.CanvasSize = UDim2.new(0, 0, 8, 0) -- больше высота канвы
+    scroll.CanvasSize = UDim2.new(0, 0, 8, 0)
     scroll.ScrollBarThickness = 4
     scroll.Parent = LogsFrame
 
@@ -961,7 +923,6 @@ local function CreateGui()
     LogsText.Text = ""
     LogsText.Parent = scroll
 
-    -- Кнопки
     TushitaButton.MouseButton1Click:Connect(function()
         AutoTushita = not AutoTushita
         if AutoTushita then
