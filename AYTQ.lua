@@ -1,26 +1,23 @@
 --========================================================
--- Auto Yama / Auto Tushita (получение мечей)
--- На основе:
---   - логики атаки/телепорта из Auto Bones (код2)
---   - Auto Yama / Auto Get Tushita из 12к
+-- Auto Yama / Auto Tushita (получение мечей) + GUI + ЛОГИ
 --========================================================
 
 ---------------------
 -- НАСТРОЙКИ
 ---------------------
-local WeaponName   = "Godhuman"             -- чем бить боссов
-local TeleportSpeed = 300                   -- скорость полёта
-local BossOffset   = CFrame.new(0, 10, -3)  -- позиция над целью
+local WeaponName    = "Godhuman"             -- чем бить боссов
+local TeleportSpeed = 300                    -- скорость полёта
+local BossOffset    = CFrame.new(0, 10, -3)  -- позиция над целью
 
 ---------------------
 -- СЕРВИСЫ
 ---------------------
-local Players              = game:GetService("Players")
-local TweenService         = game:GetService("TweenService")
-local ReplicatedStorage    = game:GetService("ReplicatedStorage")
-local Workspace            = game:GetService("Workspace")
-local RunService           = game:GetService("RunService")
-local VirtualInputManager  = game:GetService("VirtualInputManager")
+local Players             = game:GetService("Players")
+local TweenService        = game:GetService("TweenService")
+local ReplicatedStorage   = game:GetService("ReplicatedStorage")
+local Workspace           = game:GetService("Workspace")
+local RunService          = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
@@ -37,8 +34,12 @@ local StopTween     = false
 local NoclipEnabled = false
 local IsFighting    = false
 
+-- предупреждения, чтобы не спамить
+local WarnNoThirdSeaForTushita = false
+local WarnNoThirdSeaForYama    = false
+
 ---------------------
--- NET MODULE (как в код2 / 12к)
+-- NET MODULE (как в 12к)
 ---------------------
 local modules        = ReplicatedStorage:WaitForChild("Modules")
 local net            = modules:WaitForChild("Net")
@@ -311,7 +312,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 ---------------------
--- ОБЩИЙ БОЙ С БОССОМ (аналог FarmBonesOnce)
+-- ОБЩИЙ БОЙ С БОССОМ
 ---------------------
 local function FightBossOnce(target, label)
     if IsFighting then return end
@@ -408,6 +409,18 @@ local function FightBossOnce(target, label)
 end
 
 ---------------------
+-- ОПРЕДЕЛЕНИЕ 3 МОРЯ
+---------------------
+local function IsThirdSea()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return false end
+    if map:FindFirstChild("Turtle") then return true end
+    if map:FindFirstChild("HauntedCastle") then return true end
+    if map:FindFirstChild("Castle On The Sea") then return true end
+    return false
+end
+
+---------------------
 -- ВСПОМОГАТЕЛЬНОЕ ДЛЯ YAMA (Elite Hunter)
 ---------------------
 local EliteNPCPos = CFrame.new(-5418.892578125, 313.74130249023, -2826.2260742188)
@@ -449,22 +462,6 @@ local function GetQuestTitleText()
     return tostring(titleLabel.Text), quest.Visible
 end
 
-local function FindEliteBoss()
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then return nil end
-
-    for _, v in ipairs(enemies:GetChildren()) do
-        if EliteNames[v.Name] then
-            local hum = v:FindFirstChild("Humanoid")
-            local hrp = v:FindFirstChild("HumanoidRootPart")
-            if hum and hrp and hum.Health > 0 then
-                return v
-            end
-        end
-    end
-    return nil
-end
-
 ---------------------
 -- ВСПОМОГАТЕЛЬНОЕ ДЛЯ TUSHITA (из 12к)
 ---------------------
@@ -482,16 +479,19 @@ local function CheckNameBoss(a)
             end
         end
     end
-    for _, v in next, Workspace.Enemies:GetChildren() do
-        if v:IsA("Model")
-           and v:FindFirstChild("Humanoid")
-           and v.Humanoid.Health > 0 then
-            if typeof(a) == "table" then
-                if table.find(a, v.Name) then
+    local enemiesFolder = Workspace:FindFirstChild("Enemies")
+    if enemiesFolder then
+        for _, v in next, enemiesFolder:GetChildren() do
+            if v:IsA("Model")
+               and v:FindFirstChild("Humanoid")
+               and v.Humanoid.Health > 0 then
+                if typeof(a) == "table" then
+                    if table.find(a, v.Name) then
+                        return v
+                    end
+                elseif v.Name == a then
                     return v
                 end
-            elseif v.Name == a then
-                return v
             end
         end
     end
@@ -499,7 +499,7 @@ local function CheckNameBoss(a)
 end
 
 local function CheckTorch()
-    local ws = game:GetService("Workspace")
+    local ws = Workspace
     local torches = ws.Map
                      and ws.Map:FindFirstChild("Turtle")
                      and ws.Map.Turtle:FindFirstChild("QuestTorches")
@@ -531,10 +531,23 @@ local function CheckTorch()
     return nil
 end
 
+local function FindEliteBoss()
+    return CheckNameBoss({"Diablo","Deandre","Urban"})
+end
+
 ---------------------
 -- ЛОГИКА YAMA (получение меча)
 ---------------------
 local function RunYamaLogic()
+    -- проверка на 3 море
+    if not IsThirdSea() then
+        if not WarnNoThirdSeaForYama then
+            WarnNoThirdSeaForYama = true
+            UpdateStatus("Yama: нужно быть в 3-м море (Castle On The Sea).")
+        end
+        return
+    end
+
     if HasSword("Yama") then
         UpdateStatus("Yama уже есть (меч в инвентаре).")
         return
@@ -603,7 +616,7 @@ local function RunYamaLogic()
         or string.find(title, "Urban")
     )
 
-    -- если квеста нет / заголовок не совпадает → берём квест
+    -- если квеста нет → берём квест у NPC
     if not haveQuest then
         AddLog("Пробую взять квест Elite Hunter.")
         SimpleTeleport(EliteNPCPos, "Elite Hunter NPC")
@@ -632,6 +645,16 @@ end
 -- ЛОГИКА TUSHITA (получение меча)
 ---------------------
 local function RunTushitaLogic()
+    -- проверка на 3 море / Turtle
+    if not IsThirdSea() then
+        if not WarnNoThirdSeaForTushita then
+            WarnNoThirdSeaForTushita = true
+            UpdateStatus("Tushita: нужно быть в 3-м море (остров Turtle).")
+            AddLog("❌ Map.Turtle не найден — включи Auto Tushita, когда будешь в 3-м море.")
+        end
+        return
+    end
+
     if HasSword("Tushita") then
         UpdateStatus("Tushita уже есть (меч в инвентаре).")
         return
@@ -645,7 +668,11 @@ local function RunTushitaLogic()
 
     local turtle = map:FindFirstChild("Turtle")
     if not turtle then
-        AddLog("❌ Turtle не найден.")
+        -- сюда сейчас не попадём из-за IsThirdSea, но оставлю на всякий
+        if not WarnNoThirdSeaForTushita then
+            WarnNoThirdSeaForTushita = true
+            UpdateStatus("Tushita: Turtle не найден (нужно 3-е море).")
+        end
         return
     end
 
@@ -834,6 +861,7 @@ local function CreateGui()
 
             NoclipEnabled = true
             StopTween     = false
+            WarnNoThirdSeaForTushita = false
             UpdateStatus("Фарм Tushita / Longma / факелы.")
         else
             TushitaButton.Text = "Auto Tushita: OFF"
@@ -859,6 +887,7 @@ local function CreateGui()
 
             NoclipEnabled = true
             StopTween     = false
+            WarnNoThirdSeaForYama = false
             UpdateStatus("Фарм Yama / Elite Hunter.")
         else
             YamaButton.Text = "Auto Yama: OFF"
