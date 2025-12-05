@@ -37,7 +37,7 @@ local IsFighting    = false
 local WarnNoThirdSeaForTushita = false
 local WarnNoThirdSeaForYama    = false
 
--- кулдаун на запрос квеста Elite Hunter
+-- кулдаун на запрос квеста Elite Hunter (сек)
 local lastEliteRequest = 0
 
 ---------------------
@@ -411,14 +411,21 @@ local function FightBossOnce(target, label)
 end
 
 ---------------------
--- ОПРЕДЕЛЕНИЕ 3 МОРЯ
+-- ОПРЕДЕЛЕНИЕ 3 МОРЯ (через World3 + фоллбек по Map)
 ---------------------
 local function IsThirdSea()
+    -- 12к ставит глобальный World3 = true по placeId
+    if type(World3) == "boolean" and World3 == true then
+        return true
+    end
+
     local map = Workspace:FindFirstChild("Map")
     if not map then return false end
     if map:FindFirstChild("Turtle") then return true end
-    if map:FindFirstChild("HauntedCastle") then return true end
+    if map:FindFirstChild("Haunted Castle") then return true end
     if map:FindFirstChild("Castle On The Sea") then return true end
+    if map:FindFirstChild("Floating Turtle") then return true end
+
     return false
 end
 
@@ -538,14 +545,14 @@ local function FindEliteBoss()
 end
 
 ---------------------
--- ЛОГИКА YAMA (получение меча) с кулдауном 60 сек на квест
+-- ЛОГИКА YAMA (получение меча) с кулдауном и возвратом к NPC
 ---------------------
 local function RunYamaLogic()
     -- проверка на 3 море
     if not IsThirdSea() then
         if not WarnNoThirdSeaForYama then
             WarnNoThirdSeaForYama = true
-            UpdateStatus("Yama: нужно быть в 3-м море (Castle On The Sea).")
+            UpdateStatus("Yama: нужно быть в 3-м море (Castle On The Sea / Floating Turtle).")
         end
         return
     end
@@ -624,7 +631,6 @@ local function RunYamaLogic()
         local diff = now - lastEliteRequest
 
         if diff < 60 then
-            -- лёгкий лог раз в 10 сек, чтобы не засирать панель
             if math.floor(diff) % 10 == 0 then
                 AddLog("Жду кулдаун Elite Hunter: " .. tostring(60 - math.floor(diff)) .. " сек.")
             end
@@ -649,10 +655,16 @@ local function RunYamaLogic()
         return
     end
 
+    -- Квест есть → ищем элитного и дерёмся
     local elite = FindEliteBoss()
     if elite then
         AddLog("Нашёл элитного босса: " .. elite.Name .. ", начинаю бой.")
         FightBossOnce(elite, "Elite " .. elite.Name)
+
+        -- НОВОЕ: после убийства возвращаемся к NPC, чтобы сразу стоять у него
+        if AutoYama then
+            SimpleTeleport(EliteNPCPos, "Elite Hunter NPC (после боя)")
+        end
     else
         AddLog("Элитный босс не найден, жду спавна.")
     end
@@ -662,12 +674,11 @@ end
 -- ЛОГИКА TUSHITA (получение меча)
 ---------------------
 local function RunTushitaLogic()
-    -- проверка на 3 море / Turtle
     if not IsThirdSea() then
         if not WarnNoThirdSeaForTushita then
             WarnNoThirdSeaForTushita = true
             UpdateStatus("Tushita: нужно быть в 3-м море (остров Turtle).")
-            AddLog("❌ Map.Turtle не найден — включи Auto Tushita, когда будешь в 3-м море.")
+            AddLog("❌ Не вижу World3/Map.Turtle — включи Auto Tushita, когда будешь в 3-м море.")
         end
         return
     end
