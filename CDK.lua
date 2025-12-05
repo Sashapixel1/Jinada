@@ -1,12 +1,23 @@
--- Auto Yama Quest 2 (offline BF project, отдельный скрипт)
--- НЕТ фарма мастери, НЕТ полного CDK — только квест с HazeESP
+-- Auto Yama Quest 2 (отдельный скрипт под твой оффлайн BF-проект)
+-- Только второй квест Yama (HazeESP), без мастери и без полного CDK.
 
 ---------------------
 -- НАСТРОЙКИ
 ---------------------
-local SwordName = "Yama"         -- каким мечом бить
-local TeleportSpeed = 150        -- скорость телепорта при подлёте
-local FarmOffset = CFrame.new(0, 10, -3) -- позиция над мобом
+local SwordName = "Yama"                      -- каким мечом бить
+local TeleportSpeed = 150                     -- скорость телепорта при подлёте
+local FarmOffset = CFrame.new(0, 10, -3)      -- позиция над мобом
+
+-- точки патруля по карте (координаты из 12k-скрипта)
+local PatrolPoints = {
+    -- Pirate Port – Pistol Billionaire
+    CFrame.new(-187.3301544189453, 86.23987579345703, 6013.513671875),
+    -- Marine Tree Island – Marine Commodore
+    CFrame.new(2286.0078125, 73.13391876220703, -7159.80908203125),
+    -- Haunted Castle район
+    CFrame.new(-12361.7060546875, 603.3547973632812, -6550.5341796875),
+    CFrame.new(-13451.46484375, 543.712890625, -6961.0029296875),
+}
 
 ---------------------
 -- ПЕРЕМЕННЫЕ
@@ -18,6 +29,9 @@ local IsTeleporting = false
 local StopTween = false
 local NoclipEnabled = false
 local IsFarming = false
+
+local patrolIndex = 1
+local lastPatrol = 0         -- таймер для cooldown патруля (чтобы не спамить телепорты)
 
 ---------------------
 -- СЕРВИСЫ
@@ -46,8 +60,11 @@ function AttackModule:AttackEnemyModel(enemyModel)
     local hrp = enemyModel:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    local hitTable = {{enemyModel, hrp}}
+    local hitTable = {
+        {enemyModel, hrp}
+    }
 
+    -- мягкий fast-attack
     RegisterAttack:FireServer(0)
     RegisterAttack:FireServer(1)
     RegisterHit:FireServer(hrp, hitTable)
@@ -134,6 +151,7 @@ local function IsToolEquipped(name)
 end
 
 local function EquipToolByName(name)
+    -- уже в руках нужный меч? не трогаем и не логируем
     if IsToolEquipped(name) then
         return
     end
@@ -257,8 +275,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 
     char:WaitForChild("HumanoidRootPart", 10)
     AddLog("HRP найден, фарм можно продолжать")
-    -- после смерти ставим статус ожидания мобов
-    UpdateStatus("Ожидание Haze-мобов (возьми квест, если сбросился)")
+    UpdateStatus("Ожидание Haze-мобов / патруль")
 end)
 
 ---------------------
@@ -292,6 +309,28 @@ local function GetNearestHazeEnemy(maxDistance)
 end
 
 ---------------------
+-- ПАТРУЛЬ, ЕСЛИ HazeESP НЕТ
+---------------------
+local function PatrolStep()
+    if not AutoYamaQuest2 then return end
+    if #PatrolPoints == 0 then return end
+    -- не чаще раза в 8 секунд
+    if tick() - lastPatrol < 8 then return end
+
+    local idx = patrolIndex
+    patrolIndex = patrolIndex + 1
+    if patrolIndex > #PatrolPoints then
+        patrolIndex = 1
+    end
+    lastPatrol = tick()
+
+    local targetCF = PatrolPoints[idx] * FarmOffset
+    AddLog("Патруль: лечу на точку #" .. tostring(idx))
+    UpdateStatus("Патруль, поиск Haze-мобов (точка "..tostring(idx)..")")
+    SimpleTeleport(targetCF, "патруль Yama2 #" .. tostring(idx))
+end
+
+---------------------
 -- ОСНОВНОЙ БОЙ ДЛЯ YAMA QUEST 2
 ---------------------
 local function FarmYamaQuest2Once()
@@ -307,10 +346,10 @@ local function FarmYamaQuest2Once()
 
         local target = GetNearestHazeEnemy(9999)
 
-        -- НЕТ HazeESP-мобов → ничего бить, вероятно, квест не активен
+        -- если HazeESP-мобов нет рядом, патрулируем карту
         if not target then
-            UpdateStatus("Ожидание Haze-мобов (запусти/повтори квест)")
-            AddLog("HazeESP мобов не найдено. Скорее всего, квест не активен или сброшен смертью. Возьми его заново у NPC.")
+            AddLog("HazeESP мобов рядом нет, запускаю патруль...")
+            PatrolStep()
             return
         end
 
@@ -392,7 +431,7 @@ local function FarmYamaQuest2Once()
 end
 
 ---------------------
--- HazeESP TWEAK
+-- HazeESP TWEAK (увеличиваем рамку)
 ---------------------
 spawn(function()
     while task.wait(0.2) do
@@ -521,7 +560,7 @@ local function CreateGui()
             ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
             NoclipEnabled = true
             AddLog("Auto Yama Quest 2 включен (noclip ON)")
-            UpdateStatus("Ожидание Haze-мобов (запусти квест)")
+            UpdateStatus("Патруль / поиск Haze-мобов")
         else
             ToggleButton.Text = "Auto Yama Quest 2: OFF"
             ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
@@ -537,7 +576,7 @@ end
 -- ЗАПУСК GUI + ТАЙМЕР
 ---------------------
 CreateGui()
-AddLog("Скрипт Yama Quest 2 загружен. Нажми кнопку, когда испытание запущено.")
+AddLog("Скрипт Yama Quest 2 загружен. Включи кнопку, когда испытание уже запущено у NPC.")
 
 spawn(function()
     while task.wait(1) do
