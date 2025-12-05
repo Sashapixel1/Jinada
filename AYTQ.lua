@@ -1,5 +1,6 @@
 --========================================================
 -- Auto Yama / Auto Tushita (получение мечей) + GUI + ЛОГИ
+-- с кулдауном на EliteHunter и кэшем прогресса
 --========================================================
 
 ---------------------
@@ -38,7 +39,10 @@ local WarnNoThirdSeaForTushita = false
 local WarnNoThirdSeaForYama    = false
 
 -- кулдаун на запрос квеста Elite Hunter (сек)
-local lastEliteRequest = 0
+local lastEliteRequest       = 0
+-- кэш прогресса EliteHunter + время последней проверки
+local lastEliteProgressCheck = 0
+local cachedEliteProgress    = 0
 
 ---------------------
 -- NET MODULE (как в 12к)
@@ -88,11 +92,19 @@ local function AddLog(msg)
 end
 
 local function UpdateStatus(text)
-    CurrentStatus = text
-    if StatusLabel then
-        StatusLabel.Text = "Статус: " .. tostring(text)
+    -- лог только при изменении статуса
+    if text ~= CurrentStatus then
+        CurrentStatus = text
+        if StatusLabel then
+            StatusLabel.Text = "Статус: " .. tostring(text)
+        end
+        AddLog("Статус: " .. tostring(text))
+    else
+        CurrentStatus = text
+        if StatusLabel then
+            StatusLabel.Text = "Статус: " .. tostring(text)
+        end
     end
-    AddLog("Статус: " .. tostring(text))
 end
 
 ---------------------
@@ -239,7 +251,7 @@ local function HasItemSimple(name)
 end
 
 ---------------------
--- ТЕЛЕПОРТ (как в bones)
+-- ТЕЛЕПОРТ
 ---------------------
 local function SimpleTeleport(targetCFrame, label)
     if IsTeleporting then return end
@@ -411,22 +423,11 @@ local function FightBossOnce(target, label)
 end
 
 ---------------------
--- ОПРЕДЕЛЕНИЕ 3 МОРЯ (через World3 + фоллбек по Map)
+-- ОПРЕДЕЛЕНИЕ 3 МОРЯ (для оффлайна — просто true)
 ---------------------
 local function IsThirdSea()
-    -- 12к ставит глобальный World3 = true по placeId
-    if type(World3) == "boolean" and World3 == true then
-        return true
-    end
-
-    local map = Workspace:FindFirstChild("Map")
-    if not map then return false end
-    if map:FindFirstChild("Turtle") then return true end
-    if map:FindFirstChild("Haunted Castle") then return true end
-    if map:FindFirstChild("Castle On The Sea") then return true end
-    if map:FindFirstChild("Floating Turtle") then return true end
-
-    return false
+    -- В твоём оффлайн-проекте считаем, что скрипт включают только в 3-м море.
+    return true
 end
 
 ---------------------
@@ -545,10 +546,9 @@ local function FindEliteBoss()
 end
 
 ---------------------
--- ЛОГИКА YAMA (получение меча) с кулдауном и возвратом к NPC
+-- ЛОГИКА YAMA
 ---------------------
 local function RunYamaLogic()
-    -- проверка на 3 море
     if not IsThirdSea() then
         if not WarnNoThirdSeaForYama then
             WarnNoThirdSeaForYama = true
@@ -562,10 +562,15 @@ local function RunYamaLogic()
         return
     end
 
-    local progress = GetEliteProgress()
-    AddLog("EliteHunter прогресс: " .. tostring(progress) .. "/30")
+    -- кэш прогресса EliteHunter — не чаще 1 раза/мин
+    local now = tick()
+    if now - lastEliteProgressCheck >= 60 or cachedEliteProgress == 0 then
+        cachedEliteProgress    = GetEliteProgress()
+        lastEliteProgressCheck = now
+        AddLog("EliteHunter прогресс: " .. tostring(cachedEliteProgress) .. "/30")
+    end
+    local progress = cachedEliteProgress
 
-    -- если прогресс 30+ — SealedKatana
     if progress >= 30 then
         UpdateStatus("Yama: прогресс 30+, открываю SealedKatana.")
 
@@ -615,7 +620,6 @@ local function RunYamaLogic()
         return
     end
 
-    -- иначе фарм элитных
     UpdateStatus("Yama: фарм Elite Hunter (" .. tostring(progress) .. "/30).")
 
     local title, visible = GetQuestTitleText()
@@ -625,9 +629,7 @@ local function RunYamaLogic()
         or string.find(title, "Urban")
     )
 
-    -- если квеста нет → берём квест, но с кулдауном 60 сек
     if not haveQuest then
-        local now  = tick()
         local diff = now - lastEliteRequest
 
         if diff < 60 then
@@ -646,7 +648,8 @@ local function RunYamaLogic()
             pcall(function()
                 remote:InvokeServer("EliteHunter")
             end)
-            lastEliteRequest = now
+            lastEliteRequest       = now
+            lastEliteProgressCheck = 0   -- после взятия квеста форсим обновление прогресса
             AddLog("Квест EliteHunter запрошен.")
         else
             AddLog("Не удалось подойти к Elite Hunter NPC (слишком далеко).")
@@ -655,13 +658,13 @@ local function RunYamaLogic()
         return
     end
 
-    -- Квест есть → ищем элитного и дерёмся
     local elite = FindEliteBoss()
     if elite then
         AddLog("Нашёл элитного босса: " .. elite.Name .. ", начинаю бой.")
         FightBossOnce(elite, "Elite " .. elite.Name)
 
-        -- НОВОЕ: после убийства возвращаемся к NPC, чтобы сразу стоять у него
+        lastEliteProgressCheck = 0 -- после убийства обновим прогресс при следующем цикле
+
         if AutoYama then
             SimpleTeleport(EliteNPCPos, "Elite Hunter NPC (после боя)")
         end
@@ -671,7 +674,7 @@ local function RunYamaLogic()
 end
 
 ---------------------
--- ЛОГИКА TUSHITA (получение меча)
+-- ЛОГИКА TUSHITA
 ---------------------
 local function RunTushitaLogic()
     if not IsThirdSea() then
@@ -705,7 +708,7 @@ local function RunTushitaLogic()
 
     local gate = turtle:FindFirstChild("TushitaGate")
 
-    -- 1) если нет TushitaGate → убиваем Longma
+    -- 1) если нет двери → убиваем Longma
     if not gate then
         UpdateStatus("Tushita: убиваю Longma для открытия двери.")
         local longma = CheckNameBoss("Longma [Lv. 2000] [Boss]")
