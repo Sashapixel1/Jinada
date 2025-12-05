@@ -1,10 +1,11 @@
 -- Auto Bones Farm + Hallow Essence Hunter
--- оффлайн-проект в стиле Blox Fruits, 3-е море, Haunted Castle.
+-- фарм костей в Haunted Castle + роллы у Death King
+-- ТЕПЕРЬ ИСПОЛЬЗУЕТ MELEE "Godhuman"
 
 ---------------------
 -- НАСТРОЙКИ
 ---------------------
-local SwordName = "Yama"                -- чем бить скелетов (можешь сменить на любой свой меч)
+local WeaponName = "Godhuman"           -- чем бить скелетов (MELEE)
 local TeleportSpeed = 150               -- скорость твина при подлёте
 local FarmOffset = CFrame.new(0, 10, -3)-- позиция над мобом
 
@@ -297,19 +298,16 @@ local function HasItemInInventory(itemName)
     local p = LocalPlayer
     if not p then return false end
 
-    -- Backpack
     local backpack = p:FindFirstChild("Backpack")
     if backpack and backpack:FindFirstChild(itemName) then
         return true
     end
 
-    -- В руках
     local char = p.Character
     if char and char:FindFirstChild(itemName) then
         return true
     end
 
-    -- через getInventory
     local ok, invData = pcall(function()
         return remote:InvokeServer("getInventory")
     end)
@@ -342,7 +340,6 @@ local function RefreshBonesCount()
     if ok and typeof(result) == "number" then
         c = result
     else
-        -- запасной вариант: через Data.Bones
         local data = LocalPlayer:FindFirstChild("Data")
         if data and data:FindFirstChild("Bones") and data.Bones.Value then
             c = data.Bones.Value
@@ -375,7 +372,6 @@ end
 local lastRollAttempt = 0
 
 local function DoDeathKingRolls()
-    -- не трогаем, если уже есть Hallow Essence
     UpdateHallowStatus()
     if HasHallow then
         AddLog("Hallow Essence уже есть, роллить не нужно.")
@@ -412,7 +408,6 @@ local function DoDeathKingRolls()
         AddLog("⚠️ Death King в Workspace не найден, но всё равно пробую вызвать Bones->Buy.")
     end
 
-    -- делаем оставшиеся роллы (но не больше, чем позволяет лимит)
     local rollsToDo = MaxRollsPerSession - RollsUsed
     for i = 1, rollsToDo do
         RefreshBonesCount()
@@ -434,7 +429,6 @@ local function DoDeathKingRolls()
             AddLog("Ошибка при ролле #"..tostring(RollsUsed)..": "..tostring(res))
         end
 
-        -- после каждого ролла проверяем, не дали ли Hallow Essence
         UpdateHallowStatus()
         if HasHallow then
             AddLog("🎃 Hallow Essence ПОЛУЧЕНА! Останавливаю роллы.")
@@ -453,7 +447,6 @@ end
 -- ПОИСК СКЕЛЕТОВ ДЛЯ ФАРМА КОСТЕЙ
 ---------------------
 local function IsBoneMob(mob)
-    -- можно расширить, если в проекте другие имена мобов
     local name = tostring(mob.Name)
     if string.find(name, "Skeleton") then return true end
     if string.find(name, "Reborn Skeleton") then return true end
@@ -569,7 +562,7 @@ local function FarmBonesOnce()
             end)
 
             AutoHaki()
-            EquipToolByName(SwordName)
+            EquipToolByName(WeaponName)
 
             if tick() - lastAttack > 0.15 then
                 AttackModule:AttackEnemyModel(target)
@@ -605,24 +598,20 @@ spawn(function()
     while task.wait(0.4) do
         if AutoBones then
             local ok, err = pcall(function()
-                -- сначала обновляем статусы
                 RefreshBonesCount()
                 UpdateHallowStatus()
 
-                -- если уже есть Hallow Essence – просто фармим кости, но не роллим
                 if HasHallow then
                     UpdateStatus("Hallow Essence уже есть, фармлю кости")
                     FarmBonesOnce()
                     return
                 end
 
-                -- если костей >= MinBonesToRoll и ещё есть лимит по роллам – идём к Death King
                 if BonesCount >= MinBonesToRoll and RollsUsed < MaxRollsPerSession then
                     DoDeathKingRolls()
                     return
                 end
 
-                -- иначе – просто фармим кости
                 UpdateStatus("Фарм костей (Haunted Castle)")
                 FarmBonesOnce()
             end)
@@ -657,7 +646,7 @@ local function CreateGui()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 24)
     title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    title.Text = "Auto Bones + Hallow Essence"
+    title.Text = "Auto Bones + Hallow Essence (Godhuman)"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
     title.TextSize = 18
@@ -764,7 +753,7 @@ local function CreateGui()
             ToggleButton.Text = "Auto Bones: ON"
             ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
             NoclipEnabled = true
-            AddLog("Auto Bones включен (noclip ON)")
+            AddLog("Auto Bones включен (noclip ON, Godhuman)")
             UpdateStatus("Фарм костей (Haunted Castle)")
         else
             ToggleButton.Text = "Auto Bones: OFF"
@@ -785,7 +774,7 @@ end
 -- ЗАПУСК GUI + ТАЙМЕР
 ---------------------
 CreateGui()
-AddLog("Auto Bones + Hallow Essence скрипт загружен. Включай кнопку, когда стоишь в 3-м море (Haunted Castle).")
+AddLog("Auto Bones + Hallow Essence (Godhuman) загружен. Включай кнопку в 3-м море (Haunted Castle).")
 
 spawn(function()
     while task.wait(1) do
