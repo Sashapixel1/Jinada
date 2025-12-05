@@ -8,7 +8,7 @@ local SwordName = "Yama"                      -- каким мечом бить
 local TeleportSpeed = 150                     -- скорость телепорта при подлёте
 local FarmOffset = CFrame.new(0, 10, -3)      -- позиция над мобом
 
--- точки патруля по карте (координаты из большого скрипта)
+-- точки патруля по карте
 local PatrolPoints = {
     -- Pirate Port – Pistol Billionaire
     CFrame.new(-187.3301544189453, 86.23987579345703, 6013.513671875),
@@ -32,6 +32,8 @@ local IsFarming = false
 
 local patrolIndex = 1
 local lastPatrol = 0         -- cooldown патруля
+
+local HazeKillCount = 0      -- счётчик убитых HazeESP мобов
 
 ---------------------
 -- СЕРВИСЫ
@@ -76,7 +78,7 @@ end
 local StatusLogs = {}
 local MaxLogs = 60
 
-local ScreenGui, MainFrame, ToggleButton, StatusLabel, UptimeLabel, LogsText
+local ScreenGui, MainFrame, ToggleButton, StatusLabel, UptimeLabel, KillsLabel, LogsText
 
 local function AddLog(msg)
     local timestamp = os.date("%H:%M:%S")
@@ -95,6 +97,12 @@ local function UpdateStatus(newStatus)
     AddLog("Статус: "..newStatus)
     if StatusLabel then
         StatusLabel.Text = "Статус: "..newStatus
+    end
+end
+
+local function UpdateKillsLabel()
+    if KillsLabel then
+        KillsLabel.Text = "Убито HazeESP мобов: " .. tostring(HazeKillCount)
     end
 end
 
@@ -370,6 +378,7 @@ local function FarmYamaQuest2Once()
         local fightDeadline = tick() + 35
         local lastPosAdjust = 0
         local lastAttack = 0
+        local killedThisTarget = false
 
         while AutoYamaQuest2
             and target.Parent
@@ -426,8 +435,16 @@ local function FarmYamaQuest2Once()
                 lastAttack = tick()
             end
 
-            if target.Humanoid.Health <= 0 and target.Humanoid:FindFirstChild("Animator") then
-                target.Humanoid.Animator:Destroy()
+            -- фикс кила (увеличиваем счётчик один раз)
+            if not killedThisTarget and target.Humanoid.Health <= 0 then
+                killedThisTarget = true
+                HazeKillCount = HazeKillCount + 1
+                UpdateKillsLabel()
+                AddLog("✅ Убит HazeESP моб. Всего: " .. tostring(HazeKillCount))
+                if target.Humanoid:FindFirstChild("Animator") then
+                    target.Humanoid.Animator:Destroy()
+                end
+                break
             end
 
             RunService.Heartbeat:Wait()
@@ -485,7 +502,7 @@ local function CreateGui()
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 320, 0, 230)
+    MainFrame.Size = UDim2.new(0, 340, 0, 250)
     MainFrame.Position = UDim2.new(0, 20, 0, 200)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderSizePixel = 0
@@ -534,9 +551,20 @@ local function CreateGui()
     UptimeLabel.Text = "Время работы: 00:00:00"
     UptimeLabel.Parent = MainFrame
 
+    KillsLabel = Instance.new("TextLabel")
+    KillsLabel.Size = UDim2.new(1, -20, 0, 20)
+    KillsLabel.Position = UDim2.new(0, 10, 0, 105)
+    KillsLabel.BackgroundTransparency = 1
+    KillsLabel.TextColor3 = Color3.new(1,1,1)
+    KillsLabel.Font = Enum.Font.SourceSans
+    KillsLabel.TextSize = 14
+    KillsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    KillsLabel.Text = "Убито HazeESP мобов: 0"
+    KillsLabel.Parent = MainFrame
+
     local LogsFrame = Instance.new("Frame")
     LogsFrame.Size = UDim2.new(1, -20, 0, 110)
-    LogsFrame.Position = UDim2.new(0, 10, 0, 110)
+    LogsFrame.Position = UDim2.new(0, 10, 0, 130)
     LogsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     LogsFrame.BorderSizePixel = 0
     LogsFrame.Parent = MainFrame
@@ -581,6 +609,8 @@ local function CreateGui()
             StopTween = true
         end
     end)
+
+    UpdateKillsLabel()
 end
 
 ---------------------
