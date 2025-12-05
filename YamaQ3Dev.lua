@@ -2,7 +2,7 @@
 -- Фарм костей в Haunted Castle + роллы у Death King
 -- Использует MELEE "Godhuman", скорость полёта 300
 -- Счётчик костей берётся из инвентаря (материал "Bones" через getInventory)
--- Автопролёт к Haunted Castle перед фармом
+-- Автопролёт к Death King, затем фарм скелетов вокруг
 
 ---------------------
 -- НАСТРОЙКИ
@@ -216,7 +216,7 @@ local function EquipToolByName(name)
 end
 
 ---------------------
--- ТЕЛЕПОРТ (скорость 300, минимум 0.5 сек)
+-- ТЕЛЕПОРТ
 ---------------------
 local function SimpleTeleport(targetCFrame, label)
     if IsTeleporting then return end
@@ -331,7 +331,7 @@ local function UpdateHallowStatus()
 end
 
 ---------------------
--- GetCountMaterials из 12к (для Bones в stash/inventory)
+-- GetCountMaterials (Bones в stash/inventory)
 ---------------------
 local function GetCountMaterials(MaterialName)
     local ok, Inventory = pcall(function()
@@ -348,7 +348,7 @@ local function GetCountMaterials(MaterialName)
 end
 
 ---------------------
--- ЧЕКЕР КОСТЕЙ (ТОЛЬКО через GetCountMaterials)
+-- ЧЕКЕР КОСТЕЙ
 ---------------------
 local function RefreshBonesCount()
     local c = GetCountMaterials("Bones")
@@ -370,6 +370,19 @@ local function FindDeathKingModel()
         end
     end
     return candidate
+end
+
+-- центр Haunted Castle = Death King (динамически)
+local HauntedFallback = CFrame.new(-9515.129, 142.233, 6200.441) -- запасной вариант
+local function GetHauntedCenterCFrame()
+    local dk = FindDeathKingModel()
+    if dk then
+        local hrp = dk:FindFirstChild("HumanoidRootPart") or dk:FindFirstChild("Head")
+        if hrp then
+            return hrp.CFrame
+        end
+    end
+    return HauntedFallback
 end
 
 ---------------------
@@ -403,16 +416,9 @@ local function DoDeathKingRolls()
     UpdateStatus("Ролл у Death King")
     AddLog("Пытаюсь сделать роллы у Death King...")
 
-    local dk = FindDeathKingModel()
-    if dk then
-        local dkHRP = dk:FindFirstChild("HumanoidRootPart") or dk:FindFirstChild("Head")
-        if dkHRP then
-            SimpleTeleport(dkHRP.CFrame * CFrame.new(0, 4, 3), "Death King")
-            task.wait(1.5)
-        end
-    else
-        AddLog("⚠️ Death King в Workspace не найден, но всё равно пробую вызвать Bones->Buy.")
-    end
+    local center = GetHauntedCenterCFrame()
+    SimpleTeleport(center * CFrame.new(0, 4, 3), "Death King")
+    task.wait(1.5)
 
     local rollsToDo = MaxRollsPerSession - RollsUsed
     for i = 1, rollsToDo do
@@ -450,11 +456,8 @@ local function DoDeathKingRolls()
 end
 
 ---------------------
--- ЦЕЛЬ HAUNTED CASTLE + ПРОВЕРКА, ЧТО МЫ НА ОСТРОВЕ
+-- ПРОВЕРКА, ЧТО МЫ У DEATH KING
 ---------------------
-local HauntedIslandPos = CFrame.new(-9515.129, 142.233, 6200.441)
--- центр двора Haunted Castle (примерные координаты, можно подправить)
-
 local function EnsureOnHauntedIsland()
     local char = LocalPlayer.Character
     if not char then return false end
@@ -462,12 +465,13 @@ local function EnsureOnHauntedIsland()
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
 
-    local dist = (hrp.Position - HauntedIslandPos.Position).Magnitude
+    local center = GetHauntedCenterCFrame()
+    local dist = (hrp.Position - center.Position).Magnitude
 
     if dist > 600 then
-        UpdateStatus("Лечу к Haunted Castle...")
-        AddLog("Персонаж далеко от Haunted Castle ("..math.floor(dist).." stud), лечу обратно...")
-        SimpleTeleport(HauntedIslandPos, "Haunted Castle")
+        UpdateStatus("Лечу к Death King (Haunted Castle)...")
+        AddLog("Персонаж далеко от Death King ("..math.floor(dist).." stud), лечу обратно...")
+        SimpleTeleport(center * CFrame.new(0, 4, 3), "Death King")
         task.wait(1.2)
         return false
     end
@@ -476,7 +480,7 @@ local function EnsureOnHauntedIsland()
 end
 
 ---------------------
--- ПОИСК СКЕЛЕТОВ ТОЛЬКО В РАЙОНЕ Haunted Castle
+-- ПОИСК СКЕЛЕТОВ ВОКРУГ DEATH KING
 ---------------------
 local function IsBoneMob(mob)
     local name = tostring(mob.Name)
@@ -495,15 +499,16 @@ local function GetNearestBoneMob(maxDistance)
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
 
+    local center = GetHauntedCenterCFrame()
     local nearest
     local bestDist = maxDistance
 
     for _, v in ipairs(enemiesFolder:GetChildren()) do
         if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
             if v.Humanoid.Health > 0 and IsBoneMob(v) then
-                -- берём только тех, кто рядом с Haunted Castle
-                local distFromIsland = (v.HumanoidRootPart.Position - HauntedIslandPos.Position).Magnitude
-                if distFromIsland < 450 then
+                -- Берём только тех, кто в радиусе от Death King
+                local distFromCenter = (v.HumanoidRootPart.Position - center.Position).Magnitude
+                if distFromCenter < 800 then
                     local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
                     if d < bestDist then
                         bestDist = d
@@ -637,7 +642,7 @@ spawn(function()
                 RefreshBonesCount()
                 UpdateHallowStatus()
 
-                -- 1. Сначала всегда летим к Haunted Castle
+                -- 1. Всегда сначала летим к Death King
                 if not EnsureOnHauntedIsland() then
                     return
                 end
@@ -655,7 +660,7 @@ spawn(function()
                     return
                 end
 
-                -- 4. Иначе просто фармим скелетов на Haunted Castle
+                -- 4. Иначе просто фармим скелетов вокруг Haunted Castle
                 UpdateStatus("Фарм скелетов на Haunted Castle")
                 FarmBonesOnce()
             end)
@@ -818,7 +823,7 @@ end
 -- ЗАПУСК GUI + ТАЙМЕР
 ---------------------
 CreateGui()
-AddLog("Auto Bones + Hallow Essence (Godhuman, speed 300) загружен. Включай кнопку в 3-м море (Haunted Castle).")
+AddLog("Auto Bones + Hallow Essence (Godhuman, 300 speed) загружен. Включай кнопку в 3-м море (Haunted Castle).")
 
 spawn(function()
     while task.wait(1) do
