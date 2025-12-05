@@ -34,9 +34,11 @@ local StopTween     = false
 local NoclipEnabled = false
 local IsFighting    = false
 
--- предупреждения, чтобы не спамить
 local WarnNoThirdSeaForTushita = false
 local WarnNoThirdSeaForYama    = false
+
+-- кулдаун на запрос квеста Elite Hunter
+local lastEliteRequest = 0
 
 ---------------------
 -- NET MODULE (как в 12к)
@@ -536,7 +538,7 @@ local function FindEliteBoss()
 end
 
 ---------------------
--- ЛОГИКА YAMA (получение меча)
+-- ЛОГИКА YAMA (получение меча) с кулдауном 60 сек на квест
 ---------------------
 local function RunYamaLogic()
     -- проверка на 3 море
@@ -616,8 +618,19 @@ local function RunYamaLogic()
         or string.find(title, "Urban")
     )
 
-    -- если квеста нет → берём квест у NPC
+    -- если квеста нет → берём квест, но с кулдауном 60 сек
     if not haveQuest then
+        local now  = tick()
+        local diff = now - lastEliteRequest
+
+        if diff < 60 then
+            -- лёгкий лог раз в 10 сек, чтобы не засирать панель
+            if math.floor(diff) % 10 == 0 then
+                AddLog("Жду кулдаун Elite Hunter: " .. tostring(60 - math.floor(diff)) .. " сек.")
+            end
+            return
+        end
+
         AddLog("Пробую взять квест Elite Hunter.")
         SimpleTeleport(EliteNPCPos, "Elite Hunter NPC")
 
@@ -627,8 +640,12 @@ local function RunYamaLogic()
             pcall(function()
                 remote:InvokeServer("EliteHunter")
             end)
+            lastEliteRequest = now
             AddLog("Квест EliteHunter запрошен.")
+        else
+            AddLog("Не удалось подойти к Elite Hunter NPC (слишком далеко).")
         end
+
         return
     end
 
@@ -668,7 +685,6 @@ local function RunTushitaLogic()
 
     local turtle = map:FindFirstChild("Turtle")
     if not turtle then
-        -- сюда сейчас не попадём из-за IsThirdSea, но оставлю на всякий
         if not WarnNoThirdSeaForTushita then
             WarnNoThirdSeaForTushita = true
             UpdateStatus("Tushita: Turtle не найден (нужно 3-е море).")
