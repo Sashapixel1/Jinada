@@ -1,8 +1,6 @@
 --========================================================
 -- Auto Yama / Auto Tushita
--- Каркас + логика боёв/перемещений на основе:
---  - Auto Bones (fast attack / SimpleTeleport / AutoHaki / EquipToolByName)
---  - CDK-квеста из 12к (Alucard Fragment, HellDimension / HeavenlyDimension)
+-- CDK-flow + лог-панель
 --========================================================
 
 ---------------------
@@ -20,6 +18,35 @@ local AutoYama      = false
 local CurrentStatus = "Idle"
 
 ---------------------
+-- ЛОГИ
+---------------------
+local StatusLogs   = {}
+local MaxLogs      = 100
+local LogsText     = nil
+local StatusLabel  = nil
+
+local function AddLog(msg)
+    local timestamp = os.date("%H:%M:%S")
+    local entry = "[" .. timestamp .. "] " .. tostring(msg)
+    table.insert(StatusLogs, 1, entry)
+    if #StatusLogs > MaxLogs then
+        table.remove(StatusLogs, #StatusLogs)
+    end
+    if LogsText then
+        LogsText.Text = table.concat(StatusLogs, "\n")
+        -- можно при желании подстраивать CanvasSize тут
+    end
+end
+
+local function UpdateStatus(text)
+    CurrentStatus = text
+    AddLog("Статус: " .. text)
+    if StatusLabel then
+        StatusLabel.Text = "Статус: " .. CurrentStatus
+    end
+end
+
+---------------------
 -- СЕРВИСЫ
 ---------------------
 local Players           = game:GetService("Players")
@@ -33,7 +60,7 @@ local LocalPlayer = Players.LocalPlayer
 local remote     = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 ---------------------
--- NET MODULE (FAST ATTACK, как в Auto Bones)
+-- NET MODULE (FAST ATTACK)
 ---------------------
 local modules        = ReplicatedStorage:WaitForChild("Modules")
 local net            = modules:WaitForChild("Net")
@@ -143,17 +170,17 @@ local function EquipToolByName(name)
     if toolFound then
         hum:UnequipTools()
         hum:EquipTool(toolFound)
-        print("[Equip] " .. toolFound.Name)
+        AddLog("⚔️ Экипирован: " .. toolFound.Name)
     else
         if tick() - lastEquipFailLog > 3 then
-            print("[Equip] Не найдено оружие: " .. name)
+            AddLog("⚠️ Не найдено оружие: " .. name)
             lastEquipFailLog = tick()
         end
     end
 end
 
 ---------------------
--- ТЕЛЕПОРТ (SimpleTeleport по образцу Auto Bones)
+-- ТЕЛЕПОРТ (SimpleTeleport)
 ---------------------
 local IsTeleporting = false
 local StopTween     = false
@@ -171,7 +198,7 @@ local function SimpleTeleport(targetCFrame, label)
 
     local hrp = char.HumanoidRootPart
     local distance = (hrp.Position - targetCFrame.Position).Magnitude
-    print(string.format("[TP] К %s (%.0f)", label or "цели", distance))
+    AddLog(string.format("Телепорт к %s (%.0f юнитов)", label or "цели", distance))
 
     local travelTime = distance / TeleportSpeed
     if travelTime < 0.5 then travelTime = 0.5 end
@@ -189,7 +216,7 @@ local function SimpleTeleport(targetCFrame, label)
         if StopTween then
             tween:Cancel()
             IsTeleporting = false
-            print("[TP] Прерван (StopTween)")
+            AddLog("Телепорт прерван (StopTween)")
             return
         end
 
@@ -225,9 +252,9 @@ end
 LocalPlayer.CharacterAdded:Connect(function(char)
     IsTeleporting = false
     StopTween     = false
-    print("[Char] Персонаж возрождён, жду HRP...")
+    AddLog("Персонаж возрождён, HRP ожидается...")
     char:WaitForChild("HumanoidRootPart", 10)
-    print("[Char] HRP найден.")
+    AddLog("HRP найден, можно продолжать.")
 end)
 
 ---------------------
@@ -286,14 +313,7 @@ local function HasTushita()
 end
 
 ---------------------
--- СТАТУСЫ Alucard Fragment (как в 12к)
--- 0 -> Yama_1
--- 1 -> Yama_2
--- 2 -> Yama_3
--- 3 -> Tushita_1
--- 4 -> Tushita_2
--- 5 -> Tushita_3
--- 6 -> финал CDK
+-- Alucard Fragment стейджи
 ---------------------
 local function NeedYamaQuest2()
     return GetMaterial("Alucard Fragment") == 1
@@ -312,13 +332,17 @@ local function NeedTushitaHeaven()
 end
 
 ---------------------
--- ХЕЛПЕР БОЯ ПО МОДЕЛИ МОНСТРА
+-- ХЕЛПЕР БОЯ
 ---------------------
 local function FightMobModel(target, label, timeout)
     timeout = timeout or 40
 
+    if not target then return end
+
     local startTime = tick()
     local engaged   = false
+
+    AddLog(string.format("Начинаю бой с %s (%s)", target.Name or "?", label or "mob"))
 
     while tick() - startTime < timeout do
         if not target or not target.Parent then break end
@@ -374,10 +398,12 @@ local function FightMobModel(target, label, timeout)
     if engaged then
         local hum = target:FindFirstChild("Humanoid")
         if hum and hum.Health <= 0 then
-            print("[Fight] " .. (target.Name or "?") .. " убит.")
+            AddLog("✅ Моб " .. (target.Name or "?") .. " убит.")
         else
-            print("[Fight] бой прерван: " .. (target.Name or "?"))
+            AddLog("⚠️ Бой с " .. (target.Name or "?") .. " прерван.")
         end
+    else
+        AddLog("⚠️ Не удалось начать бой с " .. (target and target.Name or "?"))
     end
 end
 
@@ -391,19 +417,18 @@ local function FindNearestHazeMob(maxDistance)
 
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
+    if not char or not hrp then return nil end
 
-    local nearest, bestDist
-    bestDist = maxDistance
+    local nearest, bestDist = nil, maxDistance
 
     for _, v in ipairs(enemies:GetChildren()) do
-        local hum = v:FindFirstChild("Humanoid")
+        local hum  = v:FindFirstChild("Humanoid")
         local tHRP = v:FindFirstChild("HumanoidRootPart")
         if hum and tHRP and hum.Health > 0 and v:FindFirstChild("HazeESP") then
             local d = (tHRP.Position - hrp.Position).Magnitude
             if d < bestDist then
                 bestDist = d
-                nearest = v
+                nearest  = v
             end
         end
     end
@@ -437,17 +462,21 @@ local function RunYamaQuest2()
         return
     end
 
+    local af = GetMaterial("Alucard Fragment")
+    AddLog("YamaQuest2: Alucard Fragment = " .. tostring(af))
+
+    UpdateStatus("Yama Quest 2: поиск HazeESP")
     BoostHazeESP()
 
     local target = FindNearestHazeMob(9999)
     if not target then
-        CurrentStatus = "Yama Quest 2: HazeESP не найден"
-        print("[Yama2] HazeESP моб не найден.")
+        AddLog("YamaQuest2: HazeESP моб не найден, жду...")
+        task.wait(2)
         return
     end
 
-    CurrentStatus = "Yama Quest 2: бой с " .. target.Name
-    print("[Yama2] Цель: " .. target.Name)
+    AddLog("YamaQuest2: цель " .. target.Name)
+    UpdateStatus("Yama Quest 2: бой с " .. target.Name)
     FightMobModel(target, "YamaQuest2", 60)
 end
 
@@ -459,39 +488,45 @@ local function RunYamaQuest3()
         return
     end
 
+    local af = GetMaterial("Alucard Fragment")
+    AddLog("YamaQuest3: Alucard Fragment = " .. tostring(af))
+
+    local map = Workspace:FindFirstChild("Map")
+
     -- 1) если Hallow Essence в рюкзаке -> идём к Summoner
-    if HasItemInInventory("Hallow Essence") then
-        local map = Workspace:FindFirstChild("Map")
-        if map and map:FindFirstChild("Haunted Castle") then
-            local summoner = map["Haunted Castle"]:FindFirstChild("Summoner")
-            if summoner and summoner:FindFirstChild("Detection") then
-                CurrentStatus = "Yama Quest 3: Summoner (Haunted Castle)"
-                SimpleTeleport(summoner.Detection.CFrame, "Summoner")
-                return
-            end
+    if HasItemInInventory("Hallow Essence") and map and map:FindFirstChild("Haunted Castle") then
+        local summoner = map["Haunted Castle"]:FindFirstChild("Summoner")
+        if summoner and summoner:FindFirstChild("Detection") then
+            UpdateStatus("Yama Quest 3: Summoner (Haunted Castle)")
+            SimpleTeleport(summoner.Detection.CFrame, "Summoner")
+            task.wait(1.5)
         end
     end
 
-    -- 2) если открыт HellDimension -> фармим Cursed Skeleton / Hell's Messenger
-    local map = Workspace:FindFirstChild("Map")
+    map = Workspace:FindFirstChild("Map")
     if map and map:FindFirstChild("HellDimension") then
-        CurrentStatus = "Yama Quest 3: HellDimension"
-        print("[Yama3] HellDimension найден.")
+        UpdateStatus("Yama Quest 3: HellDimension")
+        AddLog("YamaQuest3: HellDimension найден.")
 
         local enemies = Workspace:FindFirstChild("Enemies")
-        if not enemies then return end
+        if not enemies then
+            AddLog("YamaQuest3: enemies не найдены.")
+            return
+        end
 
         local char = LocalPlayer.Character
         local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        if not char or not hrp then return end
+        if not char or not hrp then
+            AddLog("YamaQuest3: нет персонажа / HRP.")
+            return
+        end
 
         local function pickHellMob()
-            local best, bestDist
-            bestDist = 9999
+            local best, bestDist = nil, 9999
             for _, v in ipairs(enemies:GetChildren()) do
                 local name = v.Name
                 if name == "Cursed Skeleton" or name == "Cursed Skeleton Boss" or name == "Hell's Messenger" then
-                    local hum = v:FindFirstChild("Humanoid")
+                    local hum  = v:FindFirstChild("Humanoid")
                     local tHRP = v:FindFirstChild("HumanoidRootPart")
                     if hum and tHRP and hum.Health > 0 then
                         local d = (tHRP.Position - hrp.Position).Magnitude
@@ -505,18 +540,18 @@ local function RunYamaQuest3()
             return best
         end
 
-        -- крутим до тех пор, пока Alucard Fragment не станет 3
         while NeedYamaQuest3() do
             local mob = pickHellMob()
             if not mob then
-                print("[Yama3] Мобов в аду нет, жду...")
+                AddLog("YamaQuest3: мобов в аду нет, жду...")
                 task.wait(2)
             else
-                print("[Yama3] Бой: " .. mob.Name)
+                AddLog("YamaQuest3: бой с " .. mob.Name)
                 FightMobModel(mob, "HellDimension", 60)
             end
+
             if GetMaterial("Alucard Fragment") >= 3 then
-                print("[Yama3] Alucard Fragment >= 3, выхожу из ада.")
+                AddLog("YamaQuest3: Alucard Fragment >= 3, этап ада закончен.")
                 break
             end
         end
@@ -524,23 +559,25 @@ local function RunYamaQuest3()
         return
     end
 
-    -- 3) иначе пытаемся зайти в HellDimension (активируем факел/свиток в 12к это через Torch)
-    -- тут просто телепорт к Torch1 HellDimension, и жмём "E"
+    -- 3) попытка активировать HellDimension
     if map and map:FindFirstChild("HellDimension") and map.HellDimension:FindFirstChild("Torch1") then
-        CurrentStatus = "Yama Quest 3: активация ада"
+        UpdateStatus("Yama Quest 3: активация ада (Torch1)")
         SimpleTeleport(map.HellDimension.Torch1.CFrame, "Hell Torch1")
         task.wait(1.5)
+        AddLog("YamaQuest3: пробую нажать E у факела.")
         VirtualInput:SendKeyEvent(true, "E", false, game)
-        task.wait(0.5)
+        task.wait(0.3)
         VirtualInput:SendKeyEvent(false, "E", false, game)
+    else
+        AddLog("YamaQuest3: HellDimension / Torch1 не найдены в карте.")
     end
 end
 
 ---------------------
--- TUSHITA TRIAL (факела + HeavenlyDimension)
+-- TUSHITA TRIAL
 ---------------------
 
--- Координаты факелов из 12к (Auto_Quest_Tushita_1)
+-- Координаты факелов (Tushita_1)
 local TorchRoute = {
     CFrame.new(-9546.990234375, 21.139892578125, 4686.1142578125),
     CFrame.new(-6120.0576171875, 16.455780029296875, -2250.697265625),
@@ -548,44 +585,53 @@ local TorchRoute = {
 }
 
 local function RunTushitaTorchRoute()
-    CurrentStatus = "Tushita Trial: маршрут факелов"
-    print("[Tushita] Старт маршрута факелов.")
+    UpdateStatus("Tushita: маршрут факелов")
+    AddLog("Tushita: старт маршрута факелов (этап 3).")
+
     for i, cf in ipairs(TorchRoute) do
         SimpleTeleport(cf, "Torch " .. i)
-        print("[Tushita] Torch " .. i)
+        AddLog("Tushita: Torch " .. i .. " достигнут, жду 5 сек.")
         task.wait(5)
     end
 end
 
 local function RunTushitaHeaven()
     local map = Workspace:FindFirstChild("Map")
-    if not map then return end
+    if not map then
+        AddLog("Tushita: Map не найден.")
+        return
+    end
 
     if not map:FindFirstChild("HeavenlyDimension") then
-        -- пробуем подлететь к порталу (из 12к телепорт был в этот район)
-        CurrentStatus = "Tushita Trial: ищу портал в небесное измерение"
+        UpdateStatus("Tushita: ищу портал в небесное измерение")
+        AddLog("Tushita: HeavenlyDimension ещё не открыт, лечу к порталу.")
         SimpleTeleport(CFrame.new(-709.3132934570312, 381.6005859375, -11011.396484375), "Heaven portal")
         task.wait(3)
         return
     end
 
-    CurrentStatus = "Tushita Trial: HeavenlyDimension"
-    print("[Tushita] HeavenlyDimension найден.")
+    UpdateStatus("Tushita: HeavenlyDimension")
+    AddLog("Tushita: HeavenlyDimension найден.")
 
     local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then return end
+    if not enemies then
+        AddLog("Tushita: enemies не найдены.")
+        return
+    end
 
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if not char or not hrp then return end
+    if not char or not hrp then
+        AddLog("Tushita: нет персонажа / HRP.")
+        return
+    end
 
     local function pickHeavenMob()
-        local best, bestDist
-        bestDist = 9999
+        local best, bestDist = nil, 9999
         for _, v in ipairs(enemies:GetChildren()) do
             local name = v.Name
             if name == "Cursed Skeleton" or name == "Cursed Skeleton Boss" or name == "Heaven's Guardian" then
-                local hum = v:FindFirstChild("Humanoid")
+                local hum  = v:FindFirstChild("Humanoid")
                 local tHRP = v:FindFirstChild("HumanoidRootPart")
                 if hum and tHRP and hum.Health > 0 then
                     local d = (tHRP.Position - hrp.Position).Magnitude
@@ -602,26 +648,32 @@ local function RunTushitaHeaven()
     while NeedTushitaHeaven() do
         local mob = pickHeavenMob()
         if not mob then
-            print("[Tushita] Мобов в небесном измерении нет, жду...")
+            AddLog("Tushita: мобов в небесном измерении нет, жду...")
             task.wait(2)
         else
-            print("[Tushita] Бой: " .. mob.Name)
+            AddLog("Tushita: бой с " .. mob.Name)
             FightMobModel(mob, "HeavenlyDimension", 60)
         end
+
         if GetMaterial("Alucard Fragment") >= 6 then
-            print("[Tushita] Alucard Fragment >= 6, выходим из небесного измерения.")
+            AddLog("Tushita: Alucard Fragment >= 6, HeavenlyDimension-этап закончен.")
             break
         end
     end
 end
 
 local function RunTushitaTrial()
-    -- Структура по Alucard Fragment:
+    local af = GetMaterial("Alucard Fragment")
+    AddLog("TushitaTrial: Alucard Fragment = " .. tostring(af))
+
     if NeedTushitaTorchRoute() then
+        AddLog("TushitaTrial: активен этап факелов (3).")
         RunTushitaTorchRoute()
-    end
-    if NeedTushitaHeaven() then
+    elseif NeedTushitaHeaven() then
+        AddLog("TushitaTrial: активен этап HeavenlyDimension (5).")
         RunTushitaHeaven()
+    else
+        AddLog("TushitaTrial: сейчас не Tushita-этап (нужны AF=3 или AF=5).")
     end
 end
 
@@ -630,30 +682,34 @@ end
 ---------------------
 local function RunTushitaLogic()
     if HasTushita() then
-        CurrentStatus = "Tushita уже есть"
-        print("[Tushita] Меч уже в инвентаре.")
+        UpdateStatus("Tushita уже есть")
+        AddLog("TushitaLogic: меч уже в инвентаре.")
         return
     end
 
-    CurrentStatus = "Фарм Tushita / фрагментов"
-    -- основной сценарий: двигаем CDK-прогресс в части Тушиты
+    UpdateStatus("Фарм Tushita / фрагментов")
     RunTushitaTrial()
 end
 
 local function RunYamaLogic()
     if HasYama() then
-        CurrentStatus = "Yama уже есть"
-        print("[Yama] Меч уже в инвентаре.")
+        UpdateStatus("Yama уже есть")
+        AddLog("YamaLogic: меч уже в инвентаре.")
         return
     end
 
+    local af = GetMaterial("Alucard Fragment")
+    AddLog("YamaLogic: Alucard Fragment = " .. tostring(af))
+
     if NeedYamaQuest2() then
+        UpdateStatus("Yama Quest 2 (HazeESP)")
         RunYamaQuest2()
     elseif NeedYamaQuest3() then
+        UpdateStatus("Yama Quest 3 (HellDimension)")
         RunYamaQuest3()
     else
-        CurrentStatus = "Жду подходящий этап (Alucard Fragment)"
-        print("[Yama] Сейчас не этап 2/3 по фрагментам.")
+        UpdateStatus("Жду подходящий этап (Alucard Fragment)")
+        AddLog("YamaLogic: сейчас не 2/3 этап по фрагментам (нужны AF=1 или AF=2).")
     end
 end
 
@@ -669,7 +725,7 @@ local function CreateGui()
     ScreenGui.Parent = pg
 
     local Frame = Instance.new("Frame")
-    Frame.Size = UDim2.new(0, 340, 0, 180)
+    Frame.Size = UDim2.new(0, 380, 0, 260)
     Frame.Position = UDim2.new(0, 40, 0, 200)
     Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     Frame.BorderSizePixel = 0
@@ -686,7 +742,7 @@ local function CreateGui()
     Title.TextSize = 18
     Title.Parent = Frame
 
-    local StatusLabel = Instance.new("TextLabel")
+    StatusLabel = Instance.new("TextLabel")
     StatusLabel.Size = UDim2.new(1, -20, 0, 22)
     StatusLabel.Position = UDim2.new(0, 10, 0, 32)
     StatusLabel.BackgroundTransparency = 1
@@ -709,7 +765,7 @@ local function CreateGui()
 
     local YamaButton = Instance.new("TextButton")
     YamaButton.Size = UDim2.new(0, 145, 0, 32)
-    YamaButton.Position = UDim2.new(0, 180, 0, 65)
+    YamaButton.Position = UDim2.new(0, 200, 0, 65)
     YamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
     YamaButton.TextColor3 = Color3.new(1,1,1)
     YamaButton.Font = Enum.Font.SourceSansBold
@@ -717,6 +773,37 @@ local function CreateGui()
     YamaButton.Text = "Auto Yama: OFF"
     YamaButton.Parent = Frame
 
+    -- Лог-панель
+    local LogsFrame = Instance.new("Frame")
+    LogsFrame.Size = UDim2.new(1, -20, 0, 130)
+    LogsFrame.Position = UDim2.new(0, 10, 0, 105)
+    LogsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    LogsFrame.BorderSizePixel = 0
+    LogsFrame.Parent = Frame
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -4, 1, -4)
+    scroll.Position = UDim2.new(0, 2, 0, 2)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.CanvasSize = UDim2.new(0, 0, 5, 0)
+    scroll.ScrollBarThickness = 4
+    scroll.Parent = LogsFrame
+
+    LogsText = Instance.new("TextLabel")
+    LogsText.Size = UDim2.new(1, -4, 0, 20)
+    LogsText.Position = UDim2.new(0, 0, 0, 0)
+    LogsText.BackgroundTransparency = 1
+    LogsText.TextColor3 = Color3.new(1,1,1)
+    LogsText.Font = Enum.Font.Code
+    LogsText.TextSize = 12
+    LogsText.TextXAlignment = Enum.TextXAlignment.Left
+    LogsText.TextYAlignment = Enum.TextYAlignment.Top
+    LogsText.TextWrapped = false
+    LogsText.Text = ""
+    LogsText.Parent = scroll
+
+    -- Кнопки
     TushitaButton.MouseButton1Click:Connect(function()
         AutoTushita = not AutoTushita
         if AutoTushita then
@@ -727,18 +814,17 @@ local function CreateGui()
             TushitaButton.Text = "Auto Tushita: ON"
             TushitaButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
 
-            CurrentStatus  = "Фарм Tushita..."
-            NoclipEnabled  = true
-            StopTween      = false
+            NoclipEnabled = true
+            StopTween     = false
+            UpdateStatus("Фарм Tushita / фрагментов")
         else
             TushitaButton.Text = "Auto Tushita: OFF"
             TushitaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 
-            CurrentStatus  = "Остановлен"
-            NoclipEnabled  = false
-            StopTween      = true
+            NoclipEnabled = false
+            StopTween     = true
+            UpdateStatus("Остановлен")
         end
-        StatusLabel.Text = "Статус: " .. CurrentStatus
     end)
 
     YamaButton.MouseButton1Click:Connect(function()
@@ -751,30 +837,36 @@ local function CreateGui()
             YamaButton.Text = "Auto Yama: ON"
             YamaButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
 
-            CurrentStatus  = "Фарм Yama..."
-            NoclipEnabled  = true
-            StopTween      = false
+            NoclipEnabled = true
+            StopTween     = false
+            UpdateStatus("Фарм Yama...")
         else
             YamaButton.Text = "Auto Yama: OFF"
             YamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 
-            CurrentStatus  = "Остановлен"
-            NoclipEnabled  = false
-            StopTween      = true
+            NoclipEnabled = false
+            StopTween     = true
+            UpdateStatus("Остановлен")
         end
-        StatusLabel.Text = "Статус: " .. CurrentStatus
     end)
 
+    -- Основной цикл
     task.spawn(function()
         while task.wait(0.5) do
             if AutoTushita then
-                pcall(RunTushitaLogic)
+                pcall(function()
+                    RunTushitaLogic()
+                end)
             elseif AutoYama then
-                pcall(RunYamaLogic)
+                pcall(function()
+                    RunYamaLogic()
+                end)
             end
-            StatusLabel.Text = "Статус: " .. CurrentStatus
         end
     end)
+
+    -- стартовый лог
+    AddLog("Auto Yama / Tushita загружен. Использует CDK-фрагменты и Hell/Heaven Dimension.")
 end
 
 CreateGui()
