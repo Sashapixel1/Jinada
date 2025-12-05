@@ -6,7 +6,7 @@
 -- НАСТРОЙКИ
 ---------------------
 local WeaponName    = "Godhuman"             -- чем бить боссов
-local TeleportSpeed = 300                    -- скорость полёта
+local TeleportSpeed = 300                    -- желаемая скорость полёта (но не выше 300)
 local BossOffset    = CFrame.new(0, 10, -3)  -- позиция над целью
 
 ---------------------
@@ -48,6 +48,10 @@ local lastWaterfallLog = 0
 -- координаты Floating Turtle (как в 12к)
 local FloatingTurtlePos   = CFrame.new(-13274.528320313, 531.82073974609, -7579.22265625)
 local lastTurtleTeleport  = 0              -- кулдаун телепорта к острову
+
+-- Rip Indra: алтарь ZQuestProgress (из 12к)
+local IndraSummonPos         = CFrame.new(-1926.3221435547, 12.819851875305, 1738.3092041016)
+local lastIndraSummonAttempt = 0           -- чтобы не спамить вызов
 
 ---------------------
 -- NET MODULE (как в 12к)
@@ -256,7 +260,7 @@ local function HasItemSimple(name)
 end
 
 ---------------------
--- ТЕЛЕПОРТ
+-- ТЕЛЕПОРТ (ограничение 300 юнитов/сек)
 ---------------------
 local function SimpleTeleport(targetCFrame, label)
     if IsTeleporting then return end
@@ -271,9 +275,18 @@ local function SimpleTeleport(targetCFrame, label)
 
     local hrp      = char.HumanoidRootPart
     local distance = (hrp.Position - targetCFrame.Position).Magnitude
-    AddLog(string.format("Телепорт к %s (%.0f stud)", label or "цели", distance))
 
-    local travelTime = distance / TeleportSpeed
+    -- Жёстко ограничиваем скорость максимум 300
+    local speed = TeleportSpeed
+    if speed > 300 then
+        speed = 300
+    elseif speed <= 0 then
+        speed = 300
+    end
+
+    AddLog(string.format("Телепорт к %s (%.0f stud, speed=%.0f)", label or "цели", distance, speed))
+
+    local travelTime = distance / speed
     if travelTime < 0.5 then travelTime = 0.5 end
     if travelTime > 60  then travelTime = 60  end
 
@@ -590,6 +603,52 @@ local function GetSealedKatanaHandle()
 end
 
 ---------------------
+-- Призыв rip_indra (ZQuestProgress из 12к)
+---------------------
+local function EnsureRipIndraSummoned()
+    local now = tick()
+    if now - lastIndraSummonAttempt < 30 then
+        -- не спамим вызов чаще, чем раз в 30 сек
+        return
+    end
+    lastIndraSummonAttempt = now
+
+    AddLog("Пробую призвать rip_indra через ZQuestProgress.")
+
+    local ok, general = pcall(function()
+        return remote:InvokeServer("ZQuestProgress", "General")
+    end)
+
+    if not ok then
+        AddLog("Ошибка ZQuestProgress General: " .. tostring(general))
+        return
+    end
+
+    if type(general) == "number" and general == 0 then
+        -- по 12к: если General == 0 — летим к позиции алтаря и жмём Begin
+        SimpleTeleport(IndraSummonPos, "Алтарь rip_indra")
+        task.wait(1.5)
+
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp and (hrp.Position - IndraSummonPos.Position).Magnitude <= 15 then
+            local ok2, res2 = pcall(function()
+                return remote:InvokeServer("ZQuestProgress", "Begin")
+            end)
+            if ok2 then
+                AddLog("Отправлен ZQuestProgress Begin, жду появления rip_indра (" .. tostring(res2) .. ").")
+            else
+                AddLog("Ошибка ZQuestProgress Begin: " .. tostring(res2))
+            end
+        else
+            AddLog("Не удалось подойти к алтарю rip_indra (слишком далеко).")
+        end
+    else
+        AddLog("ZQuestProgress General != 0 (" .. tostring(general) .. "), ивент уже активен или недоступен.")
+    end
+end
+
+---------------------
 -- ЛОГИКА YAMA
 ---------------------
 local function RunYamaLogic()
@@ -755,12 +814,14 @@ local function RunTushitaLogic()
         return
     end
 
-    -- 2) дверь есть → rip_indra / Holy Torch / факела
+    -- 2) дверь есть → rip_indra / Holy Torch / факелы
     UpdateStatus("Tushita: дверь есть, работаю с rip_indra / Holy Torch / факелами.")
 
-    local indra = CheckNameBoss("rip_indra True Form [Lv. 5000] [Raid Boss]")
+    -- ищем rip_indra и его True Form
+    local indra = CheckNameBoss("rip_indra True Form [Lv. 5000] [Raid Boss]") or CheckNameBoss("rip_indra")
     if not indra then
-        AddLog("Rip Indra не заспавнен. Жду рейд босса.")
+        UpdateStatus("Tushita: пытаюсь призвать rip_indra.")
+        EnsureRipIndraSummoned()
         return
     end
 
