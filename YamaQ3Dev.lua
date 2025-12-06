@@ -6,12 +6,13 @@
 ---------------------
 -- НАСТРОЙКИ
 ---------------------
-local WeaponName   = "Godhuman"            -- чем бить скелетов / мобов
-local TeleportSpeed = 300                  -- скорость полёта
-local FarmOffset    = CFrame.new(0, 10, -3) -- позиция над мобом
+local WeaponName    = "Godhuman"             -- чем бить скелетов / мобов
+local TeleportSpeed = 300                    -- скорость полёта
+local FarmOffset    = CFrame.new(0, 10, -3)  -- позиция над мобом
 
-local MaxRollsPerSession = 10              -- 10 роллов = 500 костей
-local MinBonesToRoll     = 500             -- минимум костей, чтобы пойти роллить
+local MaxRollsPerSession = 10                -- максимум роллов за окно
+local MinBonesToRoll     = 500               -- минимум костей, чтобы пойти роллить
+local RollCooldown       = 7500             -- 2 часа 5 минут в секундах
 
 -- точки для Yama Quest 3 / Soul Reaper
 local SoulReaperSpawnCFrame = CFrame.new(-9570.033203125, 315.9346923828125, 6726.89306640625)
@@ -19,18 +20,21 @@ local SoulReaperSpawnCFrame = CFrame.new(-9570.033203125, 315.9346923828125, 672
 ---------------------
 -- ПЕРЕМЕННЫЕ
 ---------------------
-local AutoBones     = false
-local StartTime     = os.time()
-local CurrentStatus = "Idle"
+local AutoBones      = false
+local StartTime      = os.time()
+local CurrentStatus  = "Idle"
 
-local IsTeleporting = false
-local StopTween     = false
-local NoclipEnabled = false
-local IsFighting    = false
+local IsTeleporting  = false
+local StopTween      = false
+local NoclipEnabled  = false
+local IsFighting     = false
 
-local BonesCount   = 0
-local RollsUsed    = 0
-local HasHallow    = false
+local BonesCount     = 0
+local RollsUsed      = 0
+local HasHallow      = false
+
+local RollSessionStartTime = os.time()  -- когда начались текущие роллы
+local YamaModeActive       = false      -- сейчас в стадии Yama3 или нет
 
 ---------------------
 -- СЕРВИСЫ
@@ -389,11 +393,23 @@ local function GetHauntedCenterCFrame()
 end
 
 ---------------------
--- РОЛЛЫ У DEATH KING
+-- РОЛЛЫ У DEATH KING (10 за 2 часа)
 ---------------------
 local lastRollAttempt = 0
 
+local function MaybeResetRollsSession()
+    local now = os.time()
+    if now - RollSessionStartTime > RollCooldown then
+        RollsUsed = 0
+        RollSessionStartTime = now
+        AddLog("⏱ Лимит роллов сброшен — прошло больше 2ч 5мин.")
+        UpdateRollsLabel()
+    end
+end
+
 local function DoDeathKingRolls()
+    MaybeResetRollsSession()
+
     UpdateHallowStatus()
     if HasHallow then
         AddLog("Hallow Essence уже есть, роллить не нужно.")
@@ -407,7 +423,7 @@ local function DoDeathKingRolls()
     end
 
     if RollsUsed >= MaxRollsPerSession then
-        AddLog("Лимит роллов в сессию ("..MaxRollsPerSession..") достигнут.")
+        AddLog("Лимит роллов ("..MaxRollsPerSession..") исчерпан, ждём отката 2 часа.")
         return
     end
 
@@ -424,7 +440,13 @@ local function DoDeathKingRolls()
     task.wait(1.5)
 
     local rollsToDo = MaxRollsPerSession - RollsUsed
-    for i = 1, rollsToDo do
+    for _ = 1, rollsToDo do
+        MaybeResetRollsSession()
+        if RollsUsed >= MaxRollsPerSession then
+            AddLog("Лимит роллов достигнут во время серии.")
+            break
+        end
+
         RefreshBonesCount()
         if BonesCount < 50 then
             AddLog("Костей меньше 50, остановка роллов.")
@@ -451,10 +473,6 @@ local function DoDeathKingRolls()
         end
 
         task.wait(1.5)
-    end
-
-    if RollsUsed >= MaxRollsPerSession then
-        AddLog("Лимит роллов в сессию достигнут, далее только фарм костей.")
     end
 end
 
@@ -507,10 +525,9 @@ local function GetNearestBoneMob(maxDistance)
     local bestDist = maxDistance
 
     for _, v in ipairs(enemiesFolder:GetChildren()) do
-        local hum = v:FindFirstChild("Humanoid")
+        local hum  = v:FindFirstChild("Humanoid")
         local tHRP = v:FindFirstChild("HumanoidRootPart")
         if hum and tHRP and hum.Health > 0 and IsBoneMob(v) then
-            -- Берём только тех, кто в радиусе от Death King
             local distFromCenter = (tHRP.Position - center.Position).Magnitude
             if distFromCenter < 800 then
                 local d = (tHRP.Position - hrp.Position).Magnitude
@@ -568,9 +585,9 @@ local function FightYamaMobOnce(target, label)
         end
 
         pcall(function()
-            tHRP.CanCollide     = false
-            target.Humanoid.WalkSpeed  = 0
-            target.Humanoid.JumpPower  = 0
+            tHRP.CanCollide             = false
+            target.Humanoid.WalkSpeed   = 0
+            target.Humanoid.JumpPower   = 0
         end)
 
         AutoHaki()
@@ -615,21 +632,19 @@ local function ShouldRunYamaQuest3(alucardCount)
         return false
     end
 
+    -- 1) если уже открыт HellDimension или заспавнен Soul Reaper / его копия в RepStorage
+    local map      = Workspace:FindFirstChild("Map")
+    local hell     = map and map:FindFirstChild("HellDimension")
+    local enemies  = Workspace:FindFirstChild("Enemies")
+    local hasSoul  = enemies and enemies:FindFirstChild("Soul Reaper")
+    local repSoul  = ReplicatedStorage:FindFirstChild("Soul Reaper [Lv. 2100] [Raid Boss]")
+
+    if hell or hasSoul or repSoul then
+        return true
+    end
+
+    -- 2) или просто есть Hallow Essence (ещё не использована)
     if HasItemInInventory("Hallow Essence") then
-        return true
-    end
-
-    local map = Workspace:FindFirstChild("Map")
-    if map and map:FindFirstChild("HellDimension") then
-        return true
-    end
-
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if enemies and enemies:FindFirstChild("Soul Reaper") then
-        return true
-    end
-
-    if ReplicatedStorage:FindFirstChild("Soul Reaper [Lv. 2100] [Raid Boss]") then
         return true
     end
 
@@ -647,7 +662,7 @@ local function RunYamaQuest3(alucardCount)
         return
     end
 
-    -- 1) Hallow Essence есть -> использовать у Summoner
+    -- 1) Hallow Essence есть -> использовать у Summoner (как в 12к)
     if HasItemInInventory("Hallow Essence") then
         local map   = Workspace:FindFirstChild("Map")
         local hc    = map and map:FindFirstChild("Haunted Castle")
@@ -662,7 +677,7 @@ local function RunYamaQuest3(alucardCount)
         return
     end
 
-    -- 2) В аду (HellDimension)
+    -- 2) В аду (HellDimension) — приоритет, если он уже существует
     local hell = GetHellDimension()
     if hell then
         local enemies = Workspace:FindFirstChild("Enemies")
@@ -684,7 +699,7 @@ local function RunYamaQuest3(alucardCount)
             FightYamaMobOnce(target, target.Name)
             return
         else
-            -- факела
+            -- факела (Torch1/2/3) + Exit
             UpdateStatus("Yama3: HellDimension, зажигаю факелы и иду к Exit.")
             local function tpAndPressE(partName)
                 local part = hell:FindFirstChild(partName)
@@ -854,15 +869,25 @@ spawn(function()
             local ok, err = pcall(function()
                 RefreshBonesCount()
                 UpdateHallowStatus()
+                MaybeResetRollsSession()
 
-                -- Аллукард-фрагменты для Yama3
                 local alucardCount = GetCountMaterials("Alucard Fragment") or 0
 
-                -- Сначала проверяем, не нужно ли выполнять Yama Quest 3
-                if ShouldRunYamaQuest3(alucardCount) then
+                -- Сначала проверяем HellDimension / Soul Reaper / Hallow Essence
+                local needYama = ShouldRunYamaQuest3(alucardCount)
+                if needYama then
+                    if not YamaModeActive then
+                        YamaModeActive = true
+                        AddLog("Переключаюсь на режим Yama Quest 3 (обнаружены HellDimension / Soul Reaper / Hallow Essence).")
+                    end
                     UpdateStatus("Yama3: выполнение квеста (Alucard Fragment "..tostring(alucardCount).."/3).")
                     RunYamaQuest3(alucardCount)
                     return
+                else
+                    if YamaModeActive then
+                        YamaModeActive = false
+                        AddLog("Yama Quest 3: стадия завершена/недоступна, возвращаюсь к фарму костей.")
+                    end
                 end
 
                 -- 1. Всегда сначала летим к Death King
@@ -918,7 +943,7 @@ local function CreateGui()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 24)
     title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    title.Text = "Auto Bones + Hallow + Yama3 (Godhuman, 300 speed)"
+    title.Text = "Auto Bones + Hallow + Yama3 (10 roll / 2h)"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
     title.TextSize = 18
@@ -1046,7 +1071,7 @@ end
 -- ЗАПУСК GUI + ТАЙМЕР
 ---------------------
 CreateGui()
-AddLog("Auto Bones + Hallow + Yama Quest 3 загружен. Включай кнопку в 3-м море (Haunted Castle).")
+AddLog("Auto Bones + Hallow + Yama Quest 3 (10 roll / 2h) загружен. Включай кнопку в 3-м море (Haunted Castle).")
 
 spawn(function()
     while task.wait(1) do
