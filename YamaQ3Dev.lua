@@ -543,7 +543,7 @@ local function GetNearestBoneMob(maxDistance)
 end
 
 ---------------------
--- ФАЙТ ОБЩИЙ ДЛЯ YAMA3 (Hell / Soul Reaper)
+-- ФАЙТ ОБЩИЙ ДЛЯ YAMA3 (мобы в аду и т.п.)
 ---------------------
 local function FightYamaMobOnce(target, label)
     if not target then return end
@@ -606,6 +606,64 @@ local function FightYamaMobOnce(target, label)
         AddLog("✅ "..label.." убит в рамках Yama3.")
     else
         AddLog("⚠️ Бой с "..label.." завершён/прерван.")
+    end
+end
+
+---------------------
+-- Soul Reaper: встать и умереть, НЕ атаковать
+---------------------
+local function WaitForSoulReaperDeath(soul)
+    local enemies = Workspace:FindFirstChild("Enemies")
+    local map     = Workspace:FindFirstChild("Map")
+
+    if not enemies or not soul or not soul.Parent then
+        AddLog("Yama3: Soul Reaper не найден для ожидания смерти.")
+        return
+    end
+
+    local hum  = soul:FindFirstChild("Humanoid")
+    local tHRP = soul:FindFirstChild("HumanoidRootPart")
+    if not hum or not tHRP then
+        AddLog("Yama3: у Soul Reaper нет Humanoid / HRP.")
+        return
+    end
+
+    UpdateStatus("Yama3: стою рядом с Soul Reaper, жду смерти персонажа / открытия HellDimension.")
+    AddLog("Yama3: НЕ атакую Soul Reaper, просто стою рядом.")
+
+    while AutoBones do
+        -- если ад появился — выходим, дальше RunYamaQuest3 сам пойдёт в HellDimension
+        map = Workspace:FindFirstChild("Map")
+        if map and map:FindFirstChild("HellDimension") then
+            AddLog("Yama3: HellDimension появился во время Soul Reaper, выхожу из ожидания.")
+            return
+        end
+
+        -- если Soul Reaper исчез / умер — выходим
+        if not soul.Parent or not hum or hum.Health <= 0 then
+            AddLog("Yama3: Soul Reaper исчез / умер, проверяю HellDimension на следующем цикле.")
+            return
+        end
+
+        -- если персонажа больше нет (умер) — тоже выходим, основной цикл после respawn продолжит
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if not char or not hrp then
+            AddLog("Yama3: персонаж умер во время Soul Reaper, жду возрождения.")
+            return
+        end
+
+        -- держим персонажа рядом с Soul Reaper, без полёта над ним и без атак
+        tHRP = soul:FindFirstChild("HumanoidRootPart")
+        if tHRP then
+            local nearCF = tHRP.CFrame * CFrame.new(0, 0, 5) -- перед боссом, на земле
+            hrp.CFrame                  = nearCF
+            hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
+            hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+            -- CanCollide оставляем false (noclip), урон в BF обычно не зависит от коллизий
+        end
+
+        RunService.Heartbeat:Wait()
     end
 end
 
@@ -730,12 +788,12 @@ local function RunYamaQuest3(alucardCount)
         end
     end
 
-    -- 3) Soul Reaper (до ада)
+    -- 3) Soul Reaper (до ада) — СТОИМ И УМИРАЕМ, НЕ АТАКУЕМ
     local enemies = Workspace:FindFirstChild("Enemies")
     local soul    = enemies and enemies:FindFirstChild("Soul Reaper") or nil
     if soul then
-        UpdateStatus("Yama3: бой с Soul Reaper.")
-        FightYamaMobOnce(soul, "Soul Reaper")
+        UpdateStatus("Yama3: Soul Reaper, стою рядом и жду смерти / HellDimension.")
+        WaitForSoulReaperDeath(soul)
         return
     end
 
