@@ -1,54 +1,57 @@
--- Auto Bones Farm + Hallow Essence Hunter
+-- Auto Bones Farm + Hallow Essence + Yama Quest 3 (Alucard Fragment)
 -- Фарм костей в Haunted Castle + роллы у Death King
+-- После получения Hallow Essence автоматически запускает этап Auto_Quest_Yama_3
 -- Использует MELEE "Godhuman", скорость полёта 300
--- Счётчик костей берётся из инвентаря (материал "Bones" через getInventory)
--- Автопролёт к Death King, затем фарм скелетов вокруг
 
 ---------------------
 -- НАСТРОЙКИ
 ---------------------
-local WeaponName = "Godhuman"            -- чем бить скелетов (MELEE)
-local TeleportSpeed = 300                -- скорость полёта
-local FarmOffset = CFrame.new(0, 10, -3) -- позиция над мобом
+local WeaponName   = "Godhuman"            -- чем бить скелетов / мобов
+local TeleportSpeed = 300                  -- скорость полёта
+local FarmOffset    = CFrame.new(0, 10, -3) -- позиция над мобом
 
-local MaxRollsPerSession = 10            -- 10 роллов = 500 костей
-local MinBonesToRoll = 500               -- минимум костей, чтобы пойти роллить
+local MaxRollsPerSession = 10              -- 10 роллов = 500 костей
+local MinBonesToRoll     = 500             -- минимум костей, чтобы пойти роллить
+
+-- точки для Yama Quest 3 / Soul Reaper
+local SoulReaperSpawnCFrame = CFrame.new(-9570.033203125, 315.9346923828125, 6726.89306640625)
 
 ---------------------
 -- ПЕРЕМЕННЫЕ
 ---------------------
-local AutoBones = false
-local StartTime = os.time()
+local AutoBones     = false
+local StartTime     = os.time()
 local CurrentStatus = "Idle"
 
 local IsTeleporting = false
-local StopTween = false
+local StopTween     = false
 local NoclipEnabled = false
-local IsFighting = false
+local IsFighting    = false
 
-local BonesCount = 0
-local RollsUsed = 0
-local HasHallow = false
+local BonesCount   = 0
+local RollsUsed    = 0
+local HasHallow    = false
 
 ---------------------
 -- СЕРВИСЫ
 ---------------------
-local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
+local Players           = game:GetService("Players")
+local TweenService      = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
+local Workspace         = game:GetService("Workspace")
+local RunService        = game:GetService("RunService")
+local VirtualInput      = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
-local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 ---------------------
 -- NET MODULE ДЛЯ FAST ATTACK
 ---------------------
-local modules = ReplicatedStorage:WaitForChild("Modules")
-local net = modules:WaitForChild("Net")
+local modules        = ReplicatedStorage:WaitForChild("Modules")
+local net            = modules:WaitForChild("Net")
 local RegisterAttack = net:WaitForChild("RE/RegisterAttack")
-local RegisterHit = net:WaitForChild("RE/RegisterHit")
+local RegisterHit    = net:WaitForChild("RE/RegisterHit")
 
 local AttackModule = {}
 
@@ -70,7 +73,7 @@ end
 -- ЛОГИ / GUI
 ---------------------
 local StatusLogs = {}
-local MaxLogs = 80
+local MaxLogs    = 80
 
 local ScreenGui, MainFrame, ToggleButton
 local StatusLabel, UptimeLabel, BonesLabel, RollsLabel, HallowLabel, LogsText
@@ -174,7 +177,7 @@ local function EquipToolByName(name)
     if not p then return end
 
     local char = p.Character or p.CharacterAdded:Wait()
-    local hum = char:FindFirstChildOfClass("Humanoid")
+    local hum  = char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
 
     local nameLower = string.lower(name)
@@ -221,7 +224,7 @@ end
 local function SimpleTeleport(targetCFrame, label)
     if IsTeleporting then return end
     IsTeleporting = true
-    StopTween = false
+    StopTween     = false
 
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then
@@ -229,13 +232,13 @@ local function SimpleTeleport(targetCFrame, label)
         return
     end
 
-    local hrp = char.HumanoidRootPart
+    local hrp      = char.HumanoidRootPart
     local distance = (hrp.Position - targetCFrame.Position).Magnitude
     AddLog(string.format("Телепорт к %s (%.0f юнитов)", label or "цели", distance))
 
     local travelTime = distance / TeleportSpeed
     if travelTime < 0.5 then travelTime = 0.5 end
-    if travelTime > 60 then travelTime = 60 end
+    if travelTime > 60  then travelTime = 60  end
 
     local tween = TweenService:Create(
         hrp,
@@ -254,28 +257,28 @@ local function SimpleTeleport(targetCFrame, label)
         end
 
         local c = LocalPlayer.Character
-        hrp = c and c:FindFirstChild("HumanoidRootPart")
+        hrp     = c and c:FindFirstChild("HumanoidRootPart")
         if not c or not hrp then
             tween:Cancel()
             IsTeleporting = false
             return
         end
 
-        hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+        hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
         hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-        hrp.CanCollide = false
+        hrp.CanCollide              = false
 
         task.wait(0.2)
     end
 
     tween:Cancel()
     local c = LocalPlayer.Character
-    hrp = c and c:FindFirstChild("HumanoidRootPart")
+    hrp     = c and c:FindFirstChild("HumanoidRootPart")
     if hrp then
-        hrp.CFrame = targetCFrame
-        hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+        hrp.CFrame                  = targetCFrame
+        hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
         hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-        hrp.CanCollide = false
+        hrp.CanCollide              = false
     end
 
     IsTeleporting = false
@@ -284,8 +287,8 @@ end
 -- ФИКС ПОСЛЕ СМЕРТИ
 LocalPlayer.CharacterAdded:Connect(function(char)
     IsTeleporting = false
-    StopTween = false
-    IsFighting = false
+    StopTween     = false
+    IsFighting    = false
     AddLog("Персонаж возрождён, жду HRP...")
 
     char:WaitForChild("HumanoidRootPart", 10)
@@ -331,7 +334,7 @@ local function UpdateHallowStatus()
 end
 
 ---------------------
--- GetCountMaterials (Bones в stash/inventory)
+-- GetCountMaterials (универсальный)
 ---------------------
 local function GetCountMaterials(MaterialName)
     local ok, Inventory = pcall(function()
@@ -466,7 +469,7 @@ local function EnsureOnHauntedIsland()
     if not hrp then return false end
 
     local center = GetHauntedCenterCFrame()
-    local dist = (hrp.Position - center.Position).Magnitude
+    local dist   = (hrp.Position - center.Position).Magnitude
 
     if dist > 600 then
         UpdateStatus("Лечу к Death King (Haunted Castle)...")
@@ -496,30 +499,240 @@ local function GetNearestBoneMob(maxDistance)
     if not enemiesFolder then return nil end
 
     local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
 
-    local center = GetHauntedCenterCFrame()
-    local nearest
+    local center   = GetHauntedCenterCFrame()
+    local nearest  = nil
     local bestDist = maxDistance
 
     for _, v in ipairs(enemiesFolder:GetChildren()) do
-        if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
-            if v.Humanoid.Health > 0 and IsBoneMob(v) then
-                -- Берём только тех, кто в радиусе от Death King
-                local distFromCenter = (v.HumanoidRootPart.Position - center.Position).Magnitude
-                if distFromCenter < 800 then
-                    local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
-                    if d < bestDist then
-                        bestDist = d
-                        nearest = v
-                    end
+        local hum = v:FindFirstChild("Humanoid")
+        local tHRP = v:FindFirstChild("HumanoidRootPart")
+        if hum and tHRP and hum.Health > 0 and IsBoneMob(v) then
+            -- Берём только тех, кто в радиусе от Death King
+            local distFromCenter = (tHRP.Position - center.Position).Magnitude
+            if distFromCenter < 800 then
+                local d = (tHRP.Position - hrp.Position).Magnitude
+                if d < bestDist then
+                    bestDist = d
+                    nearest  = v
                 end
             end
         end
     end
 
     return nearest
+end
+
+---------------------
+-- ФАЙТ ОБЩИЙ ДЛЯ YAMA3 (Hell / Soul Reaper)
+---------------------
+local function FightYamaMobOnce(target, label)
+    if not target then return end
+    local hum  = target:FindFirstChild("Humanoid")
+    local tHRP = target:FindFirstChild("HumanoidRootPart")
+    if not hum or not tHRP or hum.Health <= 0 then
+        return
+    end
+
+    label = label or tostring(target.Name)
+    AddLog("Yama3: бой с "..label..".")
+
+    local fightDeadline = tick() + 90
+    local lastPosAdjust = 0
+    local lastAttack    = 0
+
+    while AutoBones
+        and target.Parent
+        and target:FindFirstChild("Humanoid")
+        and target.Humanoid.Health > 0
+        and tick() < fightDeadline do
+
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        tHRP       = target:FindFirstChild("HumanoidRootPart")
+        if not (char and hrp and tHRP) then break end
+
+        local dist = (tHRP.Position - hrp.Position).Magnitude
+        if dist > 2000 then
+            SimpleTeleport(tHRP.CFrame * FarmOffset, label)
+        else
+            if tick() - lastPosAdjust > 0.05 then
+                hrp.CFrame                  = tHRP.CFrame * FarmOffset
+                hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
+                hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                hrp.CanCollide              = false
+                lastPosAdjust               = tick()
+            end
+        end
+
+        pcall(function()
+            tHRP.CanCollide     = false
+            target.Humanoid.WalkSpeed  = 0
+            target.Humanoid.JumpPower  = 0
+        end)
+
+        AutoHaki()
+        EquipToolByName(WeaponName)
+
+        if tick() - lastAttack > 0.15 then
+            AttackModule:AttackEnemyModel(target)
+            lastAttack = tick()
+        end
+
+        RunService.Heartbeat:Wait()
+    end
+
+    hum = target:FindFirstChild("Humanoid")
+    if hum and hum.Health <= 0 then
+        AddLog("✅ "..label.." убит в рамках Yama3.")
+    else
+        AddLog("⚠️ Бой с "..label.." завершён/прерван.")
+    end
+end
+
+---------------------
+-- Yama Quest 3: вспомогательные
+---------------------
+local function GetHellDimension()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return nil end
+    return map:FindFirstChild("HellDimension")
+end
+
+local function IsHellMob(model)
+    if not model then return false end
+    local name = tostring(model.Name)
+    if string.find(name, "Cursed Skeleton") then return true end
+    if string.find(name, "Hell's Messenger") then return true end
+    return false
+end
+
+local function ShouldRunYamaQuest3(alucardCount)
+    alucardCount = alucardCount or 0
+    if alucardCount >= 3 then
+        return false
+    end
+
+    if HasItemInInventory("Hallow Essence") then
+        return true
+    end
+
+    local map = Workspace:FindFirstChild("Map")
+    if map and map:FindFirstChild("HellDimension") then
+        return true
+    end
+
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if enemies and enemies:FindFirstChild("Soul Reaper") then
+        return true
+    end
+
+    if ReplicatedStorage:FindFirstChild("Soul Reaper [Lv. 2100] [Raid Boss]") then
+        return true
+    end
+
+    return false
+end
+
+---------------------
+-- Yama Quest 3: основной цикл
+---------------------
+local function RunYamaQuest3(alucardCount)
+    alucardCount = alucardCount or GetCountMaterials("Alucard Fragment") or 0
+
+    if alucardCount >= 3 then
+        UpdateStatus("Yama3: уже есть "..tostring(alucardCount).." Alucard Fragment (>=3).")
+        return
+    end
+
+    -- 1) Hallow Essence есть -> использовать у Summoner
+    if HasItemInInventory("Hallow Essence") then
+        local map   = Workspace:FindFirstChild("Map")
+        local hc    = map and map:FindFirstChild("Haunted Castle")
+        local summ  = hc and hc:FindFirstChild("Summoner")
+        local detect = summ and summ:FindFirstChild("Detection")
+        if detect then
+            UpdateStatus("Yama3: не использован Hallow Essence, лечу к Summoner.")
+            SimpleTeleport(detect.CFrame, "Summoner Hallow Essence")
+        else
+            AddLog("Yama3: Summoner.Detection не найден.")
+        end
+        return
+    end
+
+    -- 2) В аду (HellDimension)
+    local hell = GetHellDimension()
+    if hell then
+        local enemies = Workspace:FindFirstChild("Enemies")
+        local target  = nil
+
+        if enemies then
+            for _, v in ipairs(enemies:GetChildren()) do
+                local hum  = v:FindFirstChild("Humanoid")
+                local tHRP = v:FindFirstChild("HumanoidRootPart")
+                if hum and tHRP and hum.Health > 0 and IsHellMob(v) then
+                    target = v
+                    break
+                end
+            end
+        end
+
+        if target then
+            UpdateStatus("Yama3: HellDimension, бой с "..target.Name..".")
+            FightYamaMobOnce(target, target.Name)
+            return
+        else
+            -- факела
+            UpdateStatus("Yama3: HellDimension, зажигаю факелы и иду к Exit.")
+            local function tpAndPressE(partName)
+                local part = hell:FindFirstChild(partName)
+                if part and part:IsA("BasePart") then
+                    SimpleTeleport(part.CFrame, "Hell "..partName)
+                    task.wait(1.5)
+                    pcall(function()
+                        VirtualInput:SendKeyEvent(true, "E", false, game)
+                        VirtualInput:SendKeyEvent(false, "E", false, game)
+                    end)
+                    task.wait(1.0)
+                else
+                    AddLog("Yama3: "..partName.." не найден в HellDimension.")
+                end
+            end
+
+            tpAndPressE("Torch1")
+            tpAndPressE("Torch2")
+            tpAndPressE("Torch3")
+
+            local exitPart = hell:FindFirstChild("Exit")
+            if exitPart and exitPart:IsA("BasePart") then
+                SimpleTeleport(exitPart.CFrame, "Hell Exit")
+            else
+                AddLog("Yama3: Exit не найден в HellDimension.")
+            end
+            return
+        end
+    end
+
+    -- 3) Soul Reaper (до ада)
+    local enemies = Workspace:FindFirstChild("Enemies")
+    local soul    = enemies and enemies:FindFirstChild("Soul Reaper") or nil
+    if soul then
+        UpdateStatus("Yama3: бой с Soul Reaper.")
+        FightYamaMobOnce(soul, "Soul Reaper")
+        return
+    end
+
+    local repSoul = ReplicatedStorage:FindFirstChild("Soul Reaper [Lv. 2100] [Raid Boss]")
+    if repSoul then
+        UpdateStatus("Yama3: Soul Reaper ещё в ReplicatedStorage, лечу к спавну.")
+        SimpleTeleport(SoulReaperSpawnCFrame, "Soul Reaper spawn")
+        return
+    end
+
+    -- 4) Ничего из стадий не найдено
+    AddLog("Yama3: стадия не определена (нет Hallow, HellDimension, Soul Reaper). Возвращаюсь к фарму костей.")
 end
 
 ---------------------
@@ -531,7 +744,7 @@ local function FarmBonesOnce()
 
     local ok, err = pcall(function()
         local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
         if not char or not hrp then
             return
         end
@@ -552,8 +765,8 @@ local function FarmBonesOnce()
 
         local fightDeadline = tick() + 40
         local lastPosAdjust = 0
-        local lastAttack = 0
-        local engaged = false
+        local lastAttack    = 0
+        local engaged       = false
 
         while AutoBones
             and target.Parent
@@ -564,7 +777,7 @@ local function FarmBonesOnce()
             engaged = true
 
             char = LocalPlayer.Character
-            hrp = char and char:FindFirstChild("HumanoidRootPart")
+            hrp  = char and char:FindFirstChild("HumanoidRootPart")
             tHRP = target:FindFirstChild("HumanoidRootPart")
             if not (char and hrp and tHRP) then
                 break
@@ -575,11 +788,11 @@ local function FarmBonesOnce()
                 SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий скелет")
             else
                 if tick() - lastPosAdjust > 0.05 then
-                    hrp.CFrame = tHRP.CFrame * FarmOffset
-                    hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                    hrp.CFrame                  = tHRP.CFrame * FarmOffset
+                    hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
                     hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-                    hrp.CanCollide = false
-                    lastPosAdjust = tick()
+                    hrp.CanCollide              = false
+                    lastPosAdjust               = tick()
                 end
             end
 
@@ -614,7 +827,7 @@ local function FarmBonesOnce()
         end
 
         if engaged then
-            local hum = target:FindFirstChild("Humanoid")
+            local hum  = target:FindFirstChild("Humanoid")
             local dead = hum and hum.Health <= 0
             if dead or not target.Parent then
                 AddLog("✅ Скелет убит, кости должны были начислиться.")
@@ -642,12 +855,22 @@ spawn(function()
                 RefreshBonesCount()
                 UpdateHallowStatus()
 
+                -- Аллукард-фрагменты для Yama3
+                local alucardCount = GetCountMaterials("Alucard Fragment") or 0
+
+                -- Сначала проверяем, не нужно ли выполнять Yama Quest 3
+                if ShouldRunYamaQuest3(alucardCount) then
+                    UpdateStatus("Yama3: выполнение квеста (Alucard Fragment "..tostring(alucardCount).."/3).")
+                    RunYamaQuest3(alucardCount)
+                    return
+                end
+
                 -- 1. Всегда сначала летим к Death King
                 if not EnsureOnHauntedIsland() then
                     return
                 end
 
-                -- 2. Если Hallow Essence уже есть — просто фармим кости
+                -- 2. Если Hallow Essence уже есть и Yama3 не нужен — просто фармим кости
                 if HasHallow then
                     UpdateStatus("Hallow Essence уже есть, фармлю кости")
                     FarmBonesOnce()
@@ -688,14 +911,14 @@ local function CreateGui()
     MainFrame.Position = UDim2.new(0, 20, 0, 200)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderSizePixel = 0
-    MainFrame.Active = true
+    MainFrame.Active   = true
     MainFrame.Draggable = true
-    MainFrame.Parent = ScreenGui
+    MainFrame.Parent   = ScreenGui
 
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 24)
     title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    title.Text = "Auto Bones + Hallow Essence (Godhuman, 300 speed)"
+    title.Text = "Auto Bones + Hallow + Yama3 (Godhuman, 300 speed)"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
     title.TextSize = 18
@@ -823,7 +1046,7 @@ end
 -- ЗАПУСК GUI + ТАЙМЕР
 ---------------------
 CreateGui()
-AddLog("Auto Bones + Hallow Essence (Godhuman, 300 speed) загружен. Включай кнопку в 3-м море (Haunted Castle).")
+AddLog("Auto Bones + Hallow + Yama Quest 3 загружен. Включай кнопку в 3-м море (Haunted Castle).")
 
 spawn(function()
     while task.wait(1) do
