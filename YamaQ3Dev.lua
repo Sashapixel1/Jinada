@@ -1,6 +1,6 @@
 -- Auto Bones Farm + Hallow Essence + Yama Quest 3 (Alucard Fragment)
 -- Фарм костей в Haunted Castle + роллы у Death King
--- После получения Hallow Essence автоматически запускает этап Auto_Quest_Yama_3
+-- После получения/использования Hallow Essence автоматически запускает этап Auto_Quest_Yama_3
 -- Использует MELEE "Godhuman", скорость полёта 300
 
 ---------------------
@@ -12,7 +12,7 @@ local FarmOffset    = CFrame.new(0, 10, -3)  -- позиция над мобом
 
 local MaxRollsPerSession = 10                -- максимум роллов за окно
 local MinBonesToRoll     = 500               -- минимум костей, чтобы пойти роллить
-local RollCooldown       = 7500             -- 2 часа 5 минут в секундах
+local RollCooldown       = 7500              -- 2 часа 5 минут в секундах
 
 -- точки для Yama Quest 3 / Soul Reaper
 local SoulReaperSpawnCFrame = CFrame.new(-9570.033203125, 315.9346923828125, 6726.89306640625)
@@ -585,9 +585,9 @@ local function FightYamaMobOnce(target, label)
         end
 
         pcall(function()
-            tHRP.CanCollide             = false
-            target.Humanoid.WalkSpeed   = 0
-            target.Humanoid.JumpPower   = 0
+            tHRP.CanCollide           = false
+            target.Humanoid.WalkSpeed = 0
+            target.Humanoid.JumpPower = 0
         end)
 
         AutoHaki()
@@ -632,20 +632,17 @@ local function WaitForSoulReaperDeath(soul)
     AddLog("Yama3: НЕ атакую Soul Reaper, просто стою рядом.")
 
     while AutoBones do
-        -- если ад появился — выходим, дальше RunYamaQuest3 сам пойдёт в HellDimension
         map = Workspace:FindFirstChild("Map")
         if map and map:FindFirstChild("HellDimension") then
             AddLog("Yama3: HellDimension появился во время Soul Reaper, выхожу из ожидания.")
             return
         end
 
-        -- если Soul Reaper исчез / умер — выходим
         if not soul.Parent or not hum or hum.Health <= 0 then
             AddLog("Yama3: Soul Reaper исчез / умер, проверяю HellDimension на следующем цикле.")
             return
         end
 
-        -- если персонажа больше нет (умер) — тоже выходим, основной цикл после respawn продолжит
         local char = LocalPlayer.Character
         local hrp  = char and char:FindFirstChild("HumanoidRootPart")
         if not char or not hrp then
@@ -653,14 +650,12 @@ local function WaitForSoulReaperDeath(soul)
             return
         end
 
-        -- держим персонажа рядом с Soul Reaper, без полёта над ним и без атак
         tHRP = soul:FindFirstChild("HumanoidRootPart")
         if tHRP then
-            local nearCF = tHRP.CFrame * CFrame.new(0, 0, 5) -- перед боссом, на земле
+            local nearCF = tHRP.CFrame * CFrame.new(0, 0, 5)
             hrp.CFrame                  = nearCF
             hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
             hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-            -- CanCollide оставляем false (noclip), урон в BF обычно не зависит от коллизий
         end
 
         RunService.Heartbeat:Wait()
@@ -684,13 +679,91 @@ local function IsHellMob(model)
     return false
 end
 
+local function GetAnyHellMob()
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return nil end
+    for _, v in ipairs(enemies:GetChildren()) do
+        local hum = v:FindFirstChild("Humanoid")
+        if hum and hum.Health > 0 and IsHellMob(v) then
+            return v
+        end
+    end
+    return nil
+end
+
+local function KillHellWave(maxDuration)
+    maxDuration = maxDuration or 60
+    local deadline = tick() + maxDuration
+    while AutoBones and tick() < deadline do
+        local mob = GetAnyHellMob()
+        if not mob then
+            return
+        end
+        FightYamaMobOnce(mob, mob.Name)
+        if not AutoBones then return end
+    end
+end
+
+local function RunHellDimensionFlow()
+    local hell = GetHellDimension()
+    if not hell then return end
+
+    local function tpAndPressE(partName)
+        local part = hell:FindFirstChild(partName)
+        if part and part:IsA("BasePart") then
+            SimpleTeleport(part.CFrame, "Hell "..partName)
+            task.wait(1.0)
+            pcall(function()
+                -- ЗАЖИМАЕМ E НА 5 СЕКУНД
+                VirtualInput:SendKeyEvent(true, "E", false, game)
+                task.wait(5)
+                VirtualInput:SendKeyEvent(false, "E", false, game)
+            end)
+            task.wait(0.7)
+        else
+            AddLog("Yama3: "..partName.." не найден в HellDimension.")
+        end
+    end
+
+    -- Torch1
+    UpdateStatus("Yama3: HellDimension — Torch1 (волна скелетов).")
+    tpAndPressE("Torch1")
+    KillHellWave(90)
+
+    -- Torch2
+    if not AutoBones then return end
+    UpdateStatus("Yama3: HellDimension — Torch2 (волна скелетов).")
+    tpAndPressE("Torch2")
+    KillHellWave(90)
+
+    -- Torch3
+    if not AutoBones then return end
+    UpdateStatus("Yama3: HellDimension — Torch3 (волна скелетов).")
+    tpAndPressE("Torch3")
+    KillHellWave(90)
+
+    -- Босс (обычно Hell's Messenger [Boss] — он тоже HellMob)
+    if not AutoBones then return end
+    UpdateStatus("Yama3: HellDimension — босс.")
+    KillHellWave(120)
+
+    -- Exit
+    if not AutoBones then return end
+    local exitPart = hell:FindFirstChild("Exit")
+    if exitPart and exitPart:IsA("BasePart") then
+        UpdateStatus("Yama3: HellDimension — выхожу через Exit.")
+        SimpleTeleport(exitPart.CFrame, "Hell Exit")
+    else
+        AddLog("Yama3: Exit не найден в HellDimension.")
+    end
+end
+
 local function ShouldRunYamaQuest3(alucardCount)
     alucardCount = alucardCount or 0
     if alucardCount >= 3 then
         return false
     end
 
-    -- 1) если уже открыт HellDimension или заспавнен Soul Reaper / его копия в RepStorage
     local map      = Workspace:FindFirstChild("Map")
     local hell     = map and map:FindFirstChild("HellDimension")
     local enemies  = Workspace:FindFirstChild("Enemies")
@@ -701,7 +774,6 @@ local function ShouldRunYamaQuest3(alucardCount)
         return true
     end
 
-    -- 2) или просто есть Hallow Essence (ещё не использована)
     if HasItemInInventory("Hallow Essence") then
         return true
     end
@@ -720,11 +792,11 @@ local function RunYamaQuest3(alucardCount)
         return
     end
 
-    -- 1) Hallow Essence есть -> использовать у Summoner (как в 12к)
+    -- 1) Hallow Essence есть -> использовать у Summoner
     if HasItemInInventory("Hallow Essence") then
-        local map   = Workspace:FindFirstChild("Map")
-        local hc    = map and map:FindFirstChild("Haunted Castle")
-        local summ  = hc and hc:FindFirstChild("Summoner")
+        local map    = Workspace:FindFirstChild("Map")
+        local hc     = map and map:FindFirstChild("Haunted Castle")
+        local summ   = hc and hc:FindFirstChild("Summoner")
         local detect = summ and summ:FindFirstChild("Detection")
         if detect then
             UpdateStatus("Yama3: не использован Hallow Essence, лечу к Summoner.")
@@ -735,57 +807,11 @@ local function RunYamaQuest3(alucardCount)
         return
     end
 
-    -- 2) В аду (HellDimension) — приоритет, если он уже существует
+    -- 2) HellDimension — полный сценарий Torch1/2/3 + босс + Exit
     local hell = GetHellDimension()
     if hell then
-        local enemies = Workspace:FindFirstChild("Enemies")
-        local target  = nil
-
-        if enemies then
-            for _, v in ipairs(enemies:GetChildren()) do
-                local hum  = v:FindFirstChild("Humanoid")
-                local tHRP = v:FindFirstChild("HumanoidRootPart")
-                if hum and tHRP and hum.Health > 0 and IsHellMob(v) then
-                    target = v
-                    break
-                end
-            end
-        end
-
-        if target then
-            UpdateStatus("Yama3: HellDimension, бой с "..target.Name..".")
-            FightYamaMobOnce(target, target.Name)
-            return
-        else
-            -- факела (Torch1/2/3) + Exit
-            UpdateStatus("Yama3: HellDimension, зажигаю факелы и иду к Exit.")
-            local function tpAndPressE(partName)
-                local part = hell:FindFirstChild(partName)
-                if part and part:IsA("BasePart") then
-                    SimpleTeleport(part.CFrame, "Hell "..partName)
-                    task.wait(1.5)
-                    pcall(function()
-                        VirtualInput:SendKeyEvent(true, "E", false, game)
-                        VirtualInput:SendKeyEvent(false, "E", false, game)
-                    end)
-                    task.wait(1.0)
-                else
-                    AddLog("Yama3: "..partName.." не найден в HellDimension.")
-                end
-            end
-
-            tpAndPressE("Torch1")
-            tpAndPressE("Torch2")
-            tpAndPressE("Torch3")
-
-            local exitPart = hell:FindFirstChild("Exit")
-            if exitPart and exitPart:IsA("BasePart") then
-                SimpleTeleport(exitPart.CFrame, "Hell Exit")
-            else
-                AddLog("Yama3: Exit не найден в HellDimension.")
-            end
-            return
-        end
+        RunHellDimensionFlow()
+        return
     end
 
     -- 3) Soul Reaper (до ада) — СТОИМ И УМИРАЕМ, НЕ АТАКУЕМ
