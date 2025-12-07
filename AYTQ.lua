@@ -1,24 +1,24 @@
 --[[
-    Auto Yama / Elite Hunter (патруль островов)
-    - Берёт квест у Elite Hunter (с задержкой между запросами)
-    - Если квест на Diablo / Deandre / Urban активен:
-        * ищет элитку по всей карте (Workspace.Enemies)
-        * если нашёл — летит и убивает её (fast-attack + позиция над мобом)
-        * если не нашёл — патрулирует острова Port Town / Hydra / Great Tree / Floating Turtle,
-          чтобы форсировать спавн элитки
-    - При прогрессе >= 30 пытается открыть водопад и взять Yama
-    - Есть GUI: кнопка ON/OFF + лог-панель (скролл)
+    Auto Yama / Elite Hunter (патруль островов, без завязки на QuestTitle)
+    - Берёт / обновляет квест у Elite Hunter (раз в 60 сек)
+    - Если прогресс < 30:
+        * ищет Diablo / Deandre / Urban в Workspace.Enemies
+        * если нашёл — атакует
+        * если не нашёл — патрулирует Port Town / Hydra / Great Tree / Floating Turtle
+    - Если прогресс >= 30:
+        * летит к водопаду и кликает по SealedKatana, чтобы взять Yama
+    - GUI: кнопка ON/OFF + лог-панель
 ]]
 
 --------------------------------
 -- НАСТРОЙКИ
 --------------------------------
-local WeaponName    = "Godhuman"     -- чем бить элиток (любой твой melee / меч)
-local TeleportSpeed = 300            -- макс скорость полёта (юнитов/сек)
+local WeaponName    = "Godhuman"           -- твой основной дамагер
+local TeleportSpeed = 300                  -- скорость полёта
 local HoverOffset   = CFrame.new(0, 10, -3) -- позиция над элиткой во время боя
 
 --------------------------------
--- ФЛАГИ / СОСТОЯНИЕ
+-- СОСТОЯНИЕ
 --------------------------------
 local AutoYama      = false
 local CurrentStatus = "Idle"
@@ -93,7 +93,7 @@ local function UpdateStatus(newStatus)
 end
 
 --------------------------------
--- Noclip (как в костях)
+-- Noclip
 --------------------------------
 local NoclipEnabled = false
 
@@ -243,10 +243,10 @@ local function SimpleTeleport(targetCFrame, label)
     local c = LocalPlayer.Character
     hrp = c and c:FindFirstChild("HumanoidRootPart")
     if hrp then
-        hrp.CFrame                = targetCFrame
+        hrp.CFrame                 = targetCFrame
         hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
-        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-        hrp.CanCollide            = false
+        hrp.AssemblyAngularVelocity= Vector3.new(0,0,0)
+        hrp.CanCollide             = false
     end
 
     IsTeleporting = false
@@ -262,7 +262,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 --------------------------------
--- ЭЛИТКИ: список имён и острова патруля
+-- ЭЛИТКИ + ПАТРУЛЬ ОСТРОВОВ
 --------------------------------
 local EliteNames = {
     Diablo  = true,
@@ -270,7 +270,6 @@ local EliteNames = {
     Urban   = true,
 }
 
--- Координаты островов, где часто бывают элитки
 local EliteIslands = {
     {
         name   = "Port Town",
@@ -324,15 +323,13 @@ local function PatrolEliteIslands()
 
     if isl and isl.cframe then
         AddLog(("Yama: патруль, лечу на %s."):format(isl.name))
-        SimpleTeleport(isl.cframe, "Патруль элитки: "..isl.name)
+        SimpleTeleport(isl.cframe, "Патруль элитки: " .. isl.name)
     end
 end
 
 --------------------------------
--- ОСНОВНАЯ ЛОГИКА Yama
+-- ЧТЕНИЕ QuestTitle (только для логов)
 --------------------------------
-_G._LastEliteQuestRequest = _G._LastEliteQuestRequest or 0
-
 local function GetQuestTitle()
     local pg = LocalPlayer:FindFirstChild("PlayerGui")
     if not pg then return "" end
@@ -352,15 +349,21 @@ local function GetQuestTitle()
     return label.Text or ""
 end
 
+--------------------------------
+-- ОСНОВНАЯ ЛОГИКА Yama
+--------------------------------
+_G._LastEliteQuestRequest = _G._LastEliteQuestRequest or 0
+
 local function RunYamaLogic()
     if not AutoYama then return end
 
-    local ok, progress = pcall(function()
+    -- 1) прогресс EliteHunter
+    local okProg, progress = pcall(function()
         return remote:InvokeServer("EliteHunter", "Progress")
     end)
-    progress = ok and progress or 0
+    if not okProg then progress = 0 end
 
-    -- 1) если 30/30 — открыть водопад и взять Yama
+    -- 2) если 30/30 — открываем водопад и пытаемся взять Yama
     if progress >= 30 then
         UpdateStatus("Yama: прогресс 30/30, пробую открыть водопад.")
         AddLog("Yama: прогресс Elite Hunter = " .. tostring(progress) .. "/30.")
@@ -383,65 +386,65 @@ local function RunYamaLogic()
         return
     end
 
-    -- 2) читаем активный квест
-    local questTitleText = GetQuestTitle()
-    local eliteQuestActive =
-        questTitleText:find("Diablo") or questTitleText:find("Deandre") or questTitleText:find("Urban")
+    -- 3) пытаемся найти элитку в мире
+    local boss, hum, hrp = FindEliteInWorkspace()
 
-    if eliteQuestActive then
-        -- Квест на элитку есть
-        local boss, hum, hrp = FindEliteInWorkspace()
-
-        if boss and hum and hrp then
-            UpdateStatus("Yama: нашёл элиту '".. boss.Name .."', атакую.")
-            AddLog("Yama: квест = '".. questTitleText .."'. Босс найден: ".. boss.Name)
-
-            local fightDeadline = tick() + 90
-
-            while AutoYama and hum.Health > 0 and boss.Parent and tick() < fightDeadline do
-                local char  = LocalPlayer.Character
-                local chrHrp= char and char:FindFirstChild("HumanoidRootPart")
-                if not char or not chrHrp then break end
-
-                chrHrp.CFrame                = hrp.CFrame * HoverOffset
-                chrHrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
-                chrHrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-                chrHrp.CanCollide            = false
-
-                hrp.CanCollide = false
-
-                AutoHaki()
-                EquipToolByName(WeaponName)
-                AttackModule:AttackEnemyModel(boss)
-
-                RunService.Heartbeat:Wait()
-            end
-
-            if hum.Health <= 0 or (not boss.Parent) then
-                AddLog("Yama: элитка '".. boss.Name .."' убита.")
-            else
-                AddLog("Yama: бой с элиткой прерван или вышел по таймеру.")
-            end
+    if boss and hum and hrp then
+        local qTitle = GetQuestTitle()
+        if qTitle ~= "" then
+            AddLog("Yama: квест = '" .. qTitle .. "'. Босс найден: " .. boss.Name)
         else
-            -- Квест на элиту есть, но рядом никого — патрулируем острова
-            UpdateStatus("Yama: квест на элиту активен, ищу босса.")
-            AddLog("Yama: квест = '".. questTitleText .."', элитка не найдена рядом, патруль островов.")
-            PatrolEliteIslands()
+            AddLog("Yama: элитка найдена: " .. boss.Name .. " (QuestTitle не прочитан).")
+        end
+        UpdateStatus("Yama: элитка '" .. boss.Name .. "', атакую.")
+
+        local fightDeadline = tick() + 90
+
+        while AutoYama and hum.Health > 0 and boss.Parent and tick() < fightDeadline do
+            local char   = LocalPlayer.Character
+            local chrHrp = char and char:FindFirstChild("HumanoidRootPart")
+            if not char or not chrHrp then break end
+
+            chrHrp.CFrame                 = hrp.CFrame * HoverOffset
+            chrHrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+            chrHrp.AssemblyAngularVelocity= Vector3.new(0,0,0)
+            chrHrp.CanCollide             = false
+
+            hrp.CanCollide = false
+
+            AutoHaki()
+            EquipToolByName(WeaponName)
+            AttackModule:AttackEnemyModel(boss)
+
+            RunService.Heartbeat:Wait()
         end
 
-    else
-        -- Квеста на элитку нет — берём новый раз в минуту
-        if tick() - _G._LastEliteQuestRequest > 60 then
-            _G._LastEliteQuestRequest = tick()
-            UpdateStatus("Yama: беру квест у Elite Hunter.")
-            AddLog("Yama: пробую взять новый квест Elite Hunter.")
-            pcall(function()
-                remote:InvokeServer("EliteHunter")
-            end)
+        if hum.Health <= 0 or not boss.Parent then
+            AddLog("Yama: элитка '" .. boss.Name .. "' убита.")
         else
-            UpdateStatus("Yama: жду перезарядки квеста Elite Hunter.")
+            AddLog("Yama: бой с элиткой прерван или вышел по таймеру.")
         end
+
+        return
     end
+
+    -- 4) элитки нет в мире — патрулируем острова и периодически жмём EliteHunter
+    local qTitle = GetQuestTitle()
+    if qTitle ~= "" then
+        UpdateStatus("Yama: квест '" .. qTitle .. "', элитка не найдена, патрулирую острова.")
+    else
+        UpdateStatus("Yama: квест на элиту не виден, патрулирую острова и жду откат квеста.")
+    end
+
+    if tick() - _G._LastEliteQuestRequest > 60 then
+        _G._LastEliteQuestRequest = tick()
+        AddLog("Yama: отправляю запрос EliteHunter (новый / повторный квест).")
+        pcall(function()
+            remote:InvokeServer("EliteHunter")
+        end)
+    end
+
+    PatrolEliteIslands()
 end
 
 --------------------------------
@@ -553,7 +556,7 @@ task.spawn(function()
         if AutoYama then
             local ok, err = pcall(RunYamaLogic)
             if not ok then
-                AddLog("Ошибка в цикле AutoYama: ".. tostring(err))
+                AddLog("Ошибка в цикле AutoYama: " .. tostring(err))
             end
         end
     end
