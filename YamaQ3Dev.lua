@@ -724,11 +724,12 @@ local function HandleHellDimension()
     if not hd then return end
 
     UpdateStatus("Yama3: HellDimension активен.")
+    AddLog("Yama3: HellDimension обнаружен, выполняю квест.")
 
     local Torch1 = hd:FindFirstChild("Torch1")
     local Torch2 = hd:FindFirstChild("Torch2")
     local Torch3 = hd:FindFirstChild("Torch3")
-    local Exit   = hd:FindChild("Exit") or hd:FindFirstChild("Exit")
+    local Exit   = hd:FindFirstChild("Exit")
 
     -- Torch1
     if Torch1 then
@@ -796,13 +797,12 @@ local function HandleSoulReaperPhase()
     local map = Workspace:FindFirstChild("Map")
     local hd = map and map:FindFirstChild("HellDimension")
     if hd then
-        -- Dimension уже открыт, просто обработаем через HandleHellDimension в основном цикле
+        -- Уже есть HellDimension, пусть основной цикл его обработает
         return
     end
 
     local soul, sh, sHRP = FindSoulReaper()
     if not soul then
-        -- Soul Reaper в Workspace нет, возможно, только в ReplicatedStorage (ещё не призван)
         AddLog("Yama3: Soul Reaper не найден в Workspace, лечу к его спавну.")
         SimpleTeleport(CFrame.new(-9570.033203125, 315.9346923828125, 6726.89306640625), "Soul Reaper spawn")
         return
@@ -811,6 +811,17 @@ local function HandleSoulReaperPhase()
     UpdateStatus("Yama3: Soul Reaper найден, подлетаю и жду урона.")
     AddLog("Yama3: подлетаю к Soul Reaper и НЕ атакую, жду, пока он снимет HP до 500 или ниже.")
 
+    local prevNoclip = NoclipEnabled
+    NoclipEnabled = false   -- позволяем ударам нормально попадать
+
+    -- один раз подлетаем близко
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    sHRP       = soul:FindFirstChild("HumanoidRootPart")
+    if hrp and sHRP then
+        hrp.CFrame = sHRP.CFrame * CFrame.new(0, 0, -6)
+    end
+
     local waitDeadline = tick() + 120
     while AutoBones
         and soul.Parent
@@ -818,26 +829,23 @@ local function HandleSoulReaperPhase()
         and tick() < waitDeadline
         and not (Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("HellDimension")) do
 
-        local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        sHRP       = soul:FindFirstChild("HumanoidRootPart")
-        sh         = soul:FindFirstChild("Humanoid")
+        char = LocalPlayer.Character
+        hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        sHRP = soul:FindFirstChild("HumanoidRootPart")
+        sh   = soul:FindFirstChild("Humanoid")
 
         if not (char and hrp and sHRP and sh) then
             break
         end
 
-        -- ТЕЛЕПОРТИРУЕМСЯ РЯДОМ, НО НЕ НАВЕРХ И НЕ НА РАССТОЯНИИ
-        local offset = CFrame.new(0, 0, -8)
-        hrp.CFrame = sHRP.CFrame * offset
-        hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
-        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-        hrp.CanCollide              = false
+        -- если нас откинуло далеко (>120), один раз снова подлетаем
+        local dist = (hrp.Position - sHRP.Position).Magnitude
+        if dist > 120 then
+            AddLog("Yama3: меня откинуло от Soul Reaper, подлетаю обратно.")
+            hrp.CFrame = sHRP.CFrame * CFrame.new(0, 0, -6)
+        end
 
-        -- НЕ атакуем Soul Reaper
-        AutoHaki()  -- если хочешь, можно убрать, чтобы вообще не включал бусо
-
-        -- ПРОВЕРКА HP персонажа
+        -- никакой атаки, просто стоим
         local phum = char:FindFirstChild("Humanoid")
         if phum and phum.Health <= 500 then
             AddLog("Yama3: HP персонажа <= 500, стою на месте 5 сек и жду переноса в HellDimension.")
@@ -845,12 +853,11 @@ local function HandleSoulReaperPhase()
 
             local t0 = tick()
             while AutoBones and tick() - t0 < 5 do
-                -- Просто стоим на месте, не двигаемся, не тпшимся
                 local m = Workspace:FindFirstChild("Map")
                 local hDim = m and m:FindFirstChild("HellDimension")
                 if hDim then
-                    -- HellDimension появился, дальше основной цикл его подхватит
                     AddLog("Yama3: HellDimension появился во время ожидания, не тпшусь принудительно.")
+                    NoclipEnabled = prevNoclip
                     return
                 end
                 task.wait(0.1)
@@ -861,18 +868,34 @@ local function HandleSoulReaperPhase()
             local hDim2 = m2 and m2:FindFirstChild("HellDimension")
             if hDim2 then
                 local torch1 = hDim2:FindFirstChild("Torch1")
-                local fallbackCf = torch1 and torch1.CFrame or hDim2:FindFirstChild("Exit") and hDim2.Exit.CFrame or hDim2:GetModelCFrame()
-                AddLog("Yama3: 5 сек прошло, HellDimension есть, тп туда вручную (fallback).")
-                SimpleTeleport(fallbackCf, "HellDimension fallback")
+                local exit   = hDim2:FindFirstChild("Exit")
+                local fallbackCf
+                if torch1 and torch1.CFrame then
+                    fallbackCf = torch1.CFrame
+                elseif exit and exit.CFrame then
+                    fallbackCf = exit.CFrame
+                elseif hDim2:IsA("Model") and hDim2:GetPrimaryPartCFrame() then
+                    fallbackCf = hDim2:GetPrimaryPartCFrame()
+                end
+
+                if fallbackCf then
+                    AddLog("Yama3: 5 сек прошло, HellDimension есть, тп туда вручную (fallback).")
+                    SimpleTeleport(fallbackCf, "HellDimension fallback")
+                else
+                    AddLog("Yama3: HellDimension есть, но нет Torch1/Exit, пропускаю тп.")
+                end
             else
                 AddLog("Yama3: 5 сек прошло, HellDimension так и не появился, возвращаюсь к обычной логике.")
             end
 
+            NoclipEnabled = prevNoclip
             return
         end
 
         RunService.Heartbeat:Wait()
     end
+
+    NoclipEnabled = prevNoclip
 end
 
 ---------------------
@@ -894,7 +917,6 @@ local function HandleSummonerIfHasHallow()
 
     SimpleTeleport(detection.CFrame, "Summoner Detection")
     task.wait(1.0)
-    -- Обычно просто стоять с Hallow Essence у Summoner достаточно, чтобы вызвать Soul Reaper.
 end
 
 ---------------------
@@ -918,7 +940,7 @@ spawn(function()
 
                 -- 1. Если HellDimension уже существует — выполняем Yama3 внутри
                 if hellDim then
-                    UpdateStatus("Yama3: HellDimension обнаружен, выполняю квест.")
+                    UpdateStatus("Yama3: HellDimension активен.")
                     HandleHellDimension()
                     return
                 end
@@ -939,7 +961,7 @@ spawn(function()
                     return
                 end
 
-                -- 4. Если нет Hallow Essence, но Soul Reaper / его рейд уже активен — тоже обрабатываем
+                -- 4. Если нет Hallow Essence, но Soul Reaper уже активен — тоже обрабатываем
                 local soul = FindSoulReaper()
                 if soul then
                     HandleSoulReaperPhase()
