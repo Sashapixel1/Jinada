@@ -1,5 +1,5 @@
 -- Auto Tushita / Auto Yama (GUI + логика)
--- Использует механику телепорта/боя, похожую на Auto Bones
+-- С фиксами Auto Yama: учитывается активный квест по QuestTitle
 
 ------------------------------------------------
 -- СТАРТ: команда Marines
@@ -15,9 +15,8 @@ local Vim               = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
--- ставим команду (если вдруг надо)
 pcall(function()
-    remote:InvokeServer("SetTeam", "Marines")
+    remote:InvokeServer("SetTeam","Marines")
 end)
 task.wait(5)
 
@@ -27,8 +26,8 @@ task.wait(5)
 local WeaponName       = "Godhuman"                    -- чем биться
 local TeleportSpeed    = 300                           -- скорость полёта
 local HoverOffsetY     = 15                            -- высота зависания над мобом
-local EliteNPCFallback = CFrame.new(-5554, 143, -3016) -- Castle on the Sea (Elite Hunter) ПРИМЕР, поправишь
-local YamaKatanaPos    = CFrame.new(-9545, 251, 6049)  -- Sealed Katana (водопад) ПРИМЕР, поправишь
+local EliteNPCFallback = CFrame.new(-5554, 143, -3016) -- Castle on the Sea (Elite Hunter) ПРИМЕР, поправь
+local YamaKatanaPos    = CFrame.new(-9545, 251, 6049)  -- Sealed Katana (водопад) ПРИМЕР, поправь
 
 -- Holy Torch точки (из 12к-примера)
 local HolyTorchRoute = {
@@ -65,7 +64,6 @@ local StatusLabel, LogsText
 local TushitaButton, YamaButton
 
 local function AddLog(msg)
-    -- лёгкая защита от спама 1-в-1 одинаковых строк подряд
     if lastLogMessage == msg then return end
     lastLogMessage = msg
 
@@ -196,7 +194,7 @@ local function EquipToolByName(name)
 end
 
 ------------------------------------------------
--- ТЕЛЕПОРТ (как в Auto Bones, speed=300)
+-- ТЕЛЕПОРТ (speed=300)
 ------------------------------------------------
 local function SimpleTeleport(targetCFrame, label)
     if IsTeleporting then return end
@@ -214,7 +212,7 @@ local function SimpleTeleport(targetCFrame, label)
 
     local travelTime = dist / TeleportSpeed
     if travelTime < 0.5 then travelTime = 0.5 end
-    if travelTime > 60 then travelTime = 60 end
+    if travelTime > 60  then travelTime = 60  end
 
     AddLog(string.format("Телепорт к %s (%.0f stud, t=%.1f)", label or "точке", dist, travelTime))
 
@@ -262,12 +260,11 @@ local function SimpleTeleport(targetCFrame, label)
     IsTeleporting = false
 end
 
--- сброс состояний после смерти
 LocalPlayer.CharacterAdded:Connect(function(char)
     IsTeleporting = false
     IsFighting    = false
     StopTween     = false
-    AddLog("Персонаж возрождён, жду HRP...")
+    AddLog("Персонаж возрожден, жду HRP...")
     char:WaitForChild("HumanoidRootPart", 10)
     AddLog("HRP найден, скрипт можно продолжать.")
 end)
@@ -404,7 +401,7 @@ local function FightMob(target, label, maxTime)
                 tHRP.CanCollide       = false
                 hum.WalkSpeed         = 0
                 hum.JumpPower         = 0
-                if not tHRP:FindFirstChild("BodyVelocity") then
+                if not tHRP:FindChild("BodyVelocity") and not tHRP:FindFirstChild("BodyVelocity") then
                     local bv = Instance.new("BodyVelocity", tHRP)
                     bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
                     bv.Velocity = Vector3.new(0,0,0)
@@ -484,7 +481,6 @@ local function EnsureAtEliteHunter()
 end
 
 local function ClickSealedKatana()
-    -- Тп к водопаду и кликаем по мечу (Sealed Katana)
     UpdateStatus("Yama: кликаю Sealed Katana...")
     SimpleTeleport(YamaKatanaPos * CFrame.new(0, 3, 0), "Sealed Katana")
     task.wait(0.5)
@@ -508,18 +504,40 @@ local function ClickSealedKatana()
     end
 end
 
+-- ЧТЕНИЕ АКТИВНОГО КВЕСТА (из UI)
+local function GetQuestTitle()
+    local ok, title = pcall(function()
+        return LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text
+    end)
+    if ok and type(title) == "string" then
+        return title
+    end
+    return ""
+end
+
+local function QuestHasEliteTarget()
+    local qt = GetQuestTitle()
+    if qt == "" then return false, nil end
+
+    for _, name in ipairs({"Diablo","Deandre","Urban"}) do
+        if string.find(qt, name) then
+            return true, name
+        end
+    end
+
+    return false, nil
+end
+
 local function RunYamaLogic()
     if HasTool("Yama") then
         UpdateStatus("Yama уже есть.")
         return
     end
 
-    -- сначала всегда телепорт к Elite Hunter
     if not EnsureAtEliteHunter() then
         return
     end
 
-    -- прогресс Elite Hunter
     local progress = 0
     local ok, res = pcall(function()
         return remote:InvokeServer("EliteHunter", "Progress")
@@ -534,27 +552,40 @@ local function RunYamaLogic()
         lastStatusProgressTime = now
     end
 
-    -- если уже >=30, пытаемся получить Yama
     if progress >= 30 then
         UpdateStatus("Yama: прогресс >=30, лечу к мечу.")
         ClickSealedKatana()
         return
     end
 
-    -- если есть активный элитный моб — бьём его
+    -- Проверяем, взят ли уже элит-квест по QuestTitle
+    local hasQuest, questTargetName = QuestHasEliteTarget()
+
+    if hasQuest then
+        local elite = FindEliteTarget()
+        if elite then
+            local labelName = questTargetName or elite.Name
+            UpdateStatus("Yama: активен квест на "..labelName..", фарм элитки.")
+            FightMob(elite, "Elite "..labelName, 120)
+            EnsureAtEliteHunter()
+        else
+            UpdateStatus("Yama: квест '"..GetQuestTitle().."' активен, жду появления элитки.")
+        end
+        return
+    end
+
+    -- сюда попадаем, когда квеста ещё нет
     local elite = FindEliteTarget()
     if elite then
-        UpdateStatus("Yama: фарм Elite "..tostring(elite.Name))
-        FightMob(elite, "Elite Hunter", 90)
-        -- после убийства вернёмся к NPC
+        UpdateStatus("Yama: элитка найдена без квеста, фармлю "..elite.Name)
+        FightMob(elite, "Elite "..elite.Name, 120)
         EnsureAtEliteHunter()
         return
     end
 
-    -- иначе просим новый квест раз в минуту
     if now - lastQuestRequestTime >= questRequestCooldown then
         lastQuestRequestTime = now
-        UpdateStatus("Yama: запрашиваю новый квест у NPC.")
+        UpdateStatus("Yama: запрашиваю НОВЫЙ квест у NPC.")
         pcall(function()
             remote:InvokeServer("EliteHunter")
         end)
@@ -564,7 +595,7 @@ local function RunYamaLogic()
 end
 
 ------------------------------------------------
--- Tushita ЛОГИКА (Holy Torch + Longma)
+-- Tushita (Holy Torch + Longma)
 ------------------------------------------------
 local function DoHolyTorchRoute()
     UpdateStatus("Tushita: маршрут Holy Torch...")
@@ -573,19 +604,13 @@ local function DoHolyTorchRoute()
         AddLog("Tushita: точка Holy Torch "..idx)
         SimpleTeleport(cf * CFrame.new(0, 3, 0), "Holy Torch "..idx)
         task.wait(0.5)
-        -- при желании можно зажимать E:
         HoldEFor(2, "Torch "..idx)
         task.wait(0.5)
     end
 end
 
 local function ClickTushitaBladeOrDoor()
-    -- сюда можно вставить конкретный ClickDetector меча/двери после Longma
-    AddLog("Tushita: пытаюсь кликнуть по мечу/двери после Longma (допиши конкретный ClickDetector под свою карту).")
-    -- пример:
-    -- local map = Workspace:FindFirstChild("Map")
-    -- local door = map and map:FindFirstChild("TushitaDoor")
-    -- и т.д.
+    AddLog("Tushita: кликаю по мечу/двери (дополни под оффлайн-проект, если нужно конкретно).")
 end
 
 local function RunTushitaLogic()
@@ -594,15 +619,12 @@ local function RunTushitaLogic()
         return
     end
 
-    -- сначала Holy Torch маршрут (по желанию можешь сделать одноразовым флагом)
     DoHolyTorchRoute()
 
-    -- затем Longma
     local longma = FindLongma()
     if longma then
         UpdateStatus("Tushita: найден Longma, начинаю бой.")
         FightMob(longma, "Longma", 120)
-        -- после убийства пробуем кликнуть меч/дверь
         ClickTushitaBladeOrDoor()
     else
         UpdateStatus("Tushita: Longma не найден, лечу на остров.")
@@ -611,7 +633,7 @@ local function RunTushitaLogic()
 end
 
 ------------------------------------------------
--- GUI Auto Tushita / Auto Yama
+-- GUI
 ------------------------------------------------
 local function CreateGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
@@ -624,7 +646,7 @@ local function CreateGui()
     MainFrame = Instance.new("Frame")
     MainFrame.Size = UDim2.new(0, 600, 0, 280)
     MainFrame.Position = UDim2.new(0, 40, 0, 180)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
     MainFrame.Draggable = true
@@ -632,7 +654,7 @@ local function CreateGui()
 
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 24)
-    Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    Title.BackgroundColor3 = Color3.fromRGB(30,30,30)
     Title.Text = "Auto Yama / Auto Tushita"
     Title.TextColor3 = Color3.new(1,1,1)
     Title.Font = Enum.Font.SourceSansBold
@@ -653,7 +675,7 @@ local function CreateGui()
     TushitaButton = Instance.new("TextButton")
     TushitaButton.Size = UDim2.new(0, 180, 0, 32)
     TushitaButton.Position = UDim2.new(0, 10, 0, 60)
-    TushitaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    TushitaButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
     TushitaButton.TextColor3 = Color3.new(1,1,1)
     TushitaButton.Font = Enum.Font.SourceSansBold
     TushitaButton.TextSize = 16
@@ -663,7 +685,7 @@ local function CreateGui()
     YamaButton = Instance.new("TextButton")
     YamaButton.Size = UDim2.new(0, 180, 0, 32)
     YamaButton.Position = UDim2.new(0, 210, 0, 60)
-    YamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    YamaButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
     YamaButton.TextColor3 = Color3.new(1,1,1)
     YamaButton.Font = Enum.Font.SourceSansBold
     YamaButton.TextSize = 16
@@ -673,7 +695,7 @@ local function CreateGui()
     local LogsFrame = Instance.new("Frame")
     LogsFrame.Size = UDim2.new(1, -20, 0, 170)
     LogsFrame.Position = UDim2.new(0, 10, 0, 100)
-    LogsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    LogsFrame.BackgroundColor3 = Color3.fromRGB(15,15,15)
     LogsFrame.BorderSizePixel = 0
     LogsFrame.Parent = MainFrame
 
@@ -699,22 +721,21 @@ local function CreateGui()
     LogsText.Text = ""
     LogsText.Parent = scroll
 
-    -- Переключатели
     TushitaButton.MouseButton1Click:Connect(function()
         AutoTushita = not AutoTushita
         if AutoTushita then
             AutoYama = false
             YamaButton.Text = "Auto Yama: OFF"
-            YamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            YamaButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
 
             TushitaButton.Text = "Auto Tushita: ON"
-            TushitaButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+            TushitaButton.BackgroundColor3 = Color3.fromRGB(0,120,0)
 
             StopTween = false
             UpdateStatus("Фарм Tushita...")
         else
             TushitaButton.Text = "Auto Tushita: OFF"
-            TushitaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            TushitaButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
             StopTween = true
             UpdateStatus("Остановлен")
         end
@@ -725,16 +746,16 @@ local function CreateGui()
         if AutoYama then
             AutoTushita = false
             TushitaButton.Text = "Auto Tushita: OFF"
-            TushitaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            TushitaButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
 
             YamaButton.Text = "Auto Yama: ON"
-            YamaButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+            YamaButton.BackgroundColor3 = Color3.fromRGB(0,120,0)
 
             StopTween = false
             UpdateStatus("Фарм Yama...")
         else
             YamaButton.Text = "Auto Yama: OFF"
-            YamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            YamaButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
             StopTween = true
             UpdateStatus("Остановлен")
         end
@@ -762,8 +783,5 @@ task.spawn(function()
     end
 end)
 
-------------------------------------------------
--- СТАРТ GUI
-------------------------------------------------
 CreateGui()
 UpdateStatus("Ожидание...")
