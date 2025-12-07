@@ -12,7 +12,10 @@
 ------------------------------------------------
 local WeaponName    = "Godhuman"                -- оружие для боя
 local TeleportSpeed = 300                       -- скорость полёта
-local FarmOffset    = CFrame.new(0, 10, -3)     -- позиция над мобом
+local FarmOffset    = CFrame.new(0, 10, -3)     -- базовая позиция над мобом
+
+-- отдельный оффсет конкретно для Cake Queen (выше)
+local CakeQueenOffset = CFrame.new(0, 20, -3)
 
 -- позиция Cake Queen (из 12к)
 local CakeQueenIsland = CFrame.new(-709.3132934570312, 381.6005859375, -11011.396484375)
@@ -54,7 +57,16 @@ local MaxLogs    = 200
 local ScreenGui, MainFrame, ToggleButton
 local StatusLabel, LogsText
 
+-- запоминаем последний текст лог-сообщения, чтобы не спамить одинаковыми подряд
+local lastLogMsgText = nil
+
 local function AddLog(msg)
+    -- если это то же самое сообщение, что и прошлое, не логируем
+    if lastLogMsgText == msg then
+        return
+    end
+    lastLogMsgText = msg
+
     local ts   = os.date("%H:%M:%S")
     local line = "["..ts.."] "..tostring(msg)
     table.insert(StatusLogs, 1, line)
@@ -199,7 +211,12 @@ local function SimpleTeleport(targetCFrame, label)
     local dist = (hrp.Position - targetCFrame.Position).Magnitude
     local t    = math.clamp(dist / TeleportSpeed, 0.5, 60)
 
-    AddLog(string.format("Телепорт к %s (%.0f stud, t=%.1f)", label or "точке", dist, t))
+    -- отдельное сообщение для острова Cake Queen, без цифр, чтобы не спамить
+    if label == "остров Cake Queen" then
+        AddLog("Телепорт к острову Cake Queen")
+    else
+        AddLog(string.format("Телепорт к %s (%.0f stud, t=%.1f)", label or "точке", dist, t))
+    end
 
     local tween = TweenService:Create(
         hrp,
@@ -326,11 +343,14 @@ local function GetHeavenlyMob()
     return nil
 end
 
-local function FightMob(target, label, maxTime)
+-- FightMob: добавлен параметр customOffset (по умолчанию FarmOffset)
+local function FightMob(target, label, maxTime, customOffset)
     maxTime = maxTime or 60
     if not target then return end
     if IsFighting then return end
     IsFighting = true
+
+    local offsetCF = customOffset or FarmOffset
 
     local ok, err = pcall(function()
         local char = LocalPlayer.Character
@@ -342,7 +362,7 @@ local function FightMob(target, label, maxTime)
         UpdateStatus(label or "Бой")
         AddLog("Начинаю бой: "..tostring(target.Name))
 
-        SimpleTeleport(tHRP.CFrame * FarmOffset, label or "цель")
+        SimpleTeleport(tHRP.CFrame * offsetCF, label or "цель")
 
         local deadline      = tick() + maxTime
         local lastPosAdjust = 0
@@ -366,10 +386,10 @@ local function FightMob(target, label, maxTime)
 
             local dist = (tHRP.Position - hrp.Position).Magnitude
             if dist > 2000 then
-                SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий моб")
+                SimpleTeleport(tHRP.CFrame * offsetCF, "далёкий моб")
             else
                 if tick() - lastPosAdjust > 0.05 then
-                    hrp.CFrame = tHRP.CFrame * FarmOffset
+                    hrp.CFrame = tHRP.CFrame * offsetCF
                     hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
                     hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
                     hrp.CanCollide = false
@@ -447,9 +467,10 @@ local function RunCakeQueenPhase()
 
     local boss = FindCakeQueen()
     if boss then
-        FightMob(boss, "Tushita3: Cake Queen", 120)
+        -- тут используем повышенный оффсет CakeQueenOffset
+        FightMob(boss, "Tushita3: Cake Queen", 120, CakeQueenOffset)
     else
-        -- антиспам логов раз в минуту
+        -- антиспам логов "не найдена" раз в минуту
         if tick() - lastCakeLogTime > 60 then
             lastCakeLogTime = tick()
             UpdateStatus("Tushita3: Cake Queen не найдена, лечу к острову.")
