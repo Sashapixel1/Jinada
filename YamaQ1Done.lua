@@ -1,5 +1,5 @@
 --========================================================
--- Auto Yama Quest 1 (Mythological Pirate → CDKQuest Evil)
+-- Auto Evil Trial (Yama / Alucard Fragment)
 --========================================================
 
 ---------------------
@@ -16,26 +16,69 @@ local LocalPlayer = Players.LocalPlayer
 local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 ---------------------
+-- МОДУЛЬ CDKTrial (StartEvilTrial)
+---------------------
+local CDKTrialModule = {}
+
+function CDKTrialModule.StartEvilTrial(logFunc)
+    local function Log(msg)
+        if logFunc then
+            logFunc("[CDKTrial] " .. tostring(msg))
+        else
+            print("[CDKTrial] " .. tostring(msg))
+        end
+    end
+
+    -- Проверка прогресса Evil (не обязательно, но полезно для логов)
+    Log("Проверяю прогресс триала Evil...")
+    local okProgress, progress = pcall(function()
+        return remote:InvokeServer("CDKQuest", "Progress", "Evil")
+    end)
+
+    if okProgress then
+        Log("CDKQuest Progress(Evil) = " .. tostring(progress))
+    else
+        Log("Ошибка при Progress(Evil): " .. tostring(progress))
+    end
+
+    task.wait(0.3)
+
+    -- Стартуем триал
+    Log("Пробую запустить StartTrial(Evil)...")
+    local okStart, resStart = pcall(function()
+        return remote:InvokeServer("CDKQuest", "StartTrial", "Evil")
+    end)
+
+    if okStart then
+        Log("✅ StartTrial(Evil) отправлен. Ответ: " .. tostring(resStart))
+    else
+        Log("❌ Ошибка при StartTrial(Evil): " .. tostring(resStart))
+    end
+end
+
+---------------------
 -- ФЛАГИ / СОСТОЯНИЕ
 ---------------------
-local AutoYamaQuest1 = false
-local CurrentStatus  = "Idle"
+local AutoEvilTrial = false
+local CurrentStatus = "Idle"
 
-local IsTeleporting  = false
-local StopTween      = false
-local NoclipEnabled  = false
+local IsTeleporting = false
+local StopTween     = false
+local NoclipEnabled = false
 
-local lastTrialTry       = 0      -- антиспам StartTrial Evil
-local TrialTryCooldown   = 5      -- раз в 5 сек
-local lastTPLog          = ""     -- чтобы не спамить одинаковыми логами
+local lastStartTry        = 0      -- антиспам StartTrial(Evil)
+local StartTryCooldown    = 30     -- раз в 30 секунд
+
+local lastTPLog           = ""     -- чтобы не спамить одинаковыми логами
+local HaveAlucardFragment = false
 
 ---------------------
 -- НАСТРОЙКИ
 ---------------------
-local TeleportSpeed   = 300
-local StandOffset     = CFrame.new(0, 0, -2) -- как в 12к (сзади НПС)
-local MythPirateName  = "Mythological Pirate"
-local MythPirateIslandCFrame = CFrame.new(-13451.46484375, 543.712890625, -6961.0029296875)
+local TeleportSpeed  = 300
+-- Точка на Castle on the Sea (берём позицию возле Elite Hunter NPC,
+-- её мы уже использовали в прошлых скриптах)
+local CastleOnSeaCFrame = CFrame.new(-5418.892578125, 313.74130249023, -2826.2260742188)
 
 ---------------------
 -- ЛОГИ / GUI
@@ -80,15 +123,18 @@ end
 ---------------------
 spawn(function()
     while task.wait(60) do
-        pcall(function()
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.new())
-        end)
+        if AutoEvilTrial then
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+                AddLog("Anti-AFK: фейковый клик, чтобы не кикнуло.")
+            end)
+        end
     end
 end)
 
 ---------------------
--- NOCLIP
+-- NOCLIP (чтобы не застревать)
 ---------------------
 spawn(function()
     while task.wait(0.1) do
@@ -104,6 +150,101 @@ spawn(function()
         end
     end
 end)
+
+---------------------
+-- ИНВЕНТАРЬ / ALCUARD FRAGMENT / YAMA
+---------------------
+local function GetInventory()
+    local ok, invData = pcall(function()
+        return remote:InvokeServer("getInventory")
+    end)
+    if ok and type(invData) == "table" then
+        return invData
+    end
+    return {}
+end
+
+local function HasAlucardFragment()
+    local inv = GetInventory()
+    for _, item in ipairs(inv) do
+        if item.Name == "Alucard Fragment" then
+            local count = item.Count or item.count or 0
+            if count > 0 then
+                return true, count
+            end
+        end
+    end
+    return false, 0
+end
+
+local function IsToolEquipped(name)
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local lower = string.lower(name)
+    for _, obj in ipairs(char:GetChildren()) do
+        if obj:IsA("Tool") and string.lower(obj.Name) == lower then
+            return true
+        end
+    end
+    return false
+end
+
+local lastEquipFailLog = 0
+
+local function BringYamaToBackpack()
+    local p = LocalPlayer
+    if not p then return end
+
+    if (p.Backpack and p.Backpack:FindFirstChild("Yama"))
+        or (p.Character and p.Character:FindFirstChild("Yama")) then
+        return
+    end
+
+    local inv = GetInventory()
+    for _, item in ipairs(inv) do
+        if item.Name == "Yama" then
+            pcall(function()
+                remote:InvokeServer("LoadItem", "Yama")
+            end)
+            AddLog("Пробую загрузить Yama из инвентаря (LoadItem).")
+            break
+        end
+    end
+end
+
+local function EquipYama()
+    local p = LocalPlayer
+    if not p then return end
+
+    if IsToolEquipped("Yama") then
+        return
+    end
+
+    local char = p.Character or p.CharacterAdded:Wait()
+    local hum  = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    local backpack = p:FindFirstChild("Backpack")
+    local tool
+
+    if backpack then
+        tool = backpack:FindFirstChild("Yama")
+    end
+    if not tool then
+        tool = char:FindFirstChild("Yama")
+    end
+
+    if tool then
+        hum:UnequipTools()
+        hum:EquipTool(tool)
+        AddLog("⚔️ Экипирована Yama.")
+    else
+        if tick() - lastEquipFailLog > 5 then
+            AddLog("⚠️ Не удалось найти Yama в Backpack/Character.")
+            lastEquipFailLog = tick()
+        end
+    end
+end
 
 ---------------------
 -- ТЕЛЕПОРТ
@@ -181,71 +322,53 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     StopTween     = false
     AddLog("Персонаж возрождён, жду HRP...")
     char:WaitForChild("HumanoidRootPart", 10)
-    AddLog("HRP найден, продолжаю Auto Yama Quest 1 (если включен).")
+    AddLog("HRP найден, продолжаю цикл триала (если включен).")
 end)
 
 ---------------------
--- ПОИСК Mythological Pirate
+-- ОСНОВНАЯ ЛОГИКА ТРИАЛА
 ---------------------
-local function GetMythologicalPirate()
-    local enemiesFolder = Workspace:FindFirstChild("Enemies")
-    if not enemiesFolder then return nil end
-
-    for _, v in ipairs(enemiesFolder:GetChildren()) do
-        if v.Name == MythPirateName
-           and v:FindFirstChild("Humanoid")
-           and v:FindFirstChild("HumanoidRootPart")
-           and v.Humanoid.Health > 0 then
-            return v
+local function RunEvilTrialLoop()
+    -- 1. Проверяем Alucard Fragment
+    local hasFrag, count = HasAlucardFragment()
+    if hasFrag then
+        if not HaveAlucardFragment then
+            HaveAlucardFragment = true
+            UpdateStatus("Alucard Fragment получен! (" .. tostring(count) .. ")")
+            AddLog("🎉 Alucard Fragment найден в инвентаре. Скрипт прекращает активные действия.")
         end
+        return  -- больше ничего не делаем
     end
 
-    return nil
-end
+    -- если фрагмента нет – продолжаем умирать
+    HaveAlucardFragment = false
+    UpdateStatus("Evil Trial: жду смерть с Yama на Castle on the Sea (Alucard Fragment ещё нет).")
 
----------------------
--- ЛОГИКА QUEST YAMA 1
----------------------
-local function RunYamaQuest1()
+    -- 2. Пробуем периодически запускать StartTrial(Evil)
+    local now = tick()
+    if now - lastStartTry >= StartTryCooldown then
+        lastStartTry = now
+        CDKTrialModule.StartEvilTrial(AddLog)
+    end
+
+    -- 3. Гарантируем, что Yama есть и экипнута
+    BringYamaToBackpack()
+    EquipYama()
+
+    -- 4. Стоим на Castle on the Sea и ждём смерти
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     if not char or not hrp then
-        UpdateStatus("Жду появления персонажа...")
+        AddLog("Жду появления персонажа...")
         return
     end
 
-    local pirate = GetMythologicalPirate()
-
-    if pirate then
-        UpdateStatus("Нашёл Mythological Pirate, подлетаю к нему.")
-        local pHRP = pirate:FindFirstChild("HumanoidRootPart")
-        if pHRP then
-            -- подлетаем к НПС
-            SimpleTeleport(pHRP.CFrame * StandOffset, MythPirateName)
-            task.wait(0.5)
-
-            -- остаёмся рядом, как в 12к (topos loop), но без жесткого цикла
-            local dist = (pHRP.Position - hrp.Position).Magnitude
-            if dist > 5 then
-                hrp.CFrame = pHRP.CFrame * StandOffset
-            end
-
-            -- пробуем стартануть Evil trial (CDKQuest StartTrial Evil)
-            local now = tick()
-            if now - lastTrialTry >= TrialTryCooldown then
-                lastTrialTry = now
-                AddLog("Пробую запустить CDKQuest StartTrial 'Evil'.")
-                pcall(function()
-                    remote:InvokeServer("CDKQuest", "StartTrial", "Evil")
-                end)
-            end
-
-            -- дальше квест уже сам переводит тебя в нужную фазу (статуя / скелеты и т.д.)
-        end
-    else
-        UpdateStatus("Mythological Pirate не найден, лечу к острову квеста.")
-        SimpleTeleport(MythPirateIslandCFrame, "Остров Mythological Pirate")
+    local dist = (hrp.Position - CastleOnSeaCFrame.Position).Magnitude
+    if dist > 300 then
+        SimpleTeleport(CastleOnSeaCFrame, "Castle on the Sea")
     end
+
+    -- дальше ничего не делаем, просто стоим и ждём пока нас убьют
 end
 
 ---------------------
@@ -255,7 +378,7 @@ local function CreateGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
 
     ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "AutoYamaQuest1Gui"
+    ScreenGui.Name = "AutoEvilTrialGui"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = pg
 
@@ -271,7 +394,7 @@ local function CreateGui()
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 24)
     Title.BackgroundColor3 = Color3.fromRGB(30,30,30)
-    Title.Text = "Auto Yama Quest 1 (Mythological Pirate / Evil Trial)"
+    Title.Text = "Auto Evil Trial (Yama → Alucard Fragment)"
     Title.TextColor3 = Color3.new(1,1,1)
     Title.Font = Enum.Font.SourceSansBold
     Title.TextSize = 16
@@ -289,13 +412,13 @@ local function CreateGui()
     StatusLabel.Parent = MainFrame
 
     ToggleButton = Instance.new("TextButton")
-    ToggleButton.Size = UDim2.new(0, 200, 0, 32)
+    ToggleButton.Size = UDim2.new(0, 260, 0, 32)
     ToggleButton.Position = UDim2.new(0, 10, 0, 60)
     ToggleButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
     ToggleButton.TextColor3 = Color3.new(1,1,1)
     ToggleButton.Font = Enum.Font.SourceSansBold
     ToggleButton.TextSize = 16
-    ToggleButton.Text = "Auto Yama Quest 1: OFF"
+    ToggleButton.Text = "Auto Evil Trial: OFF"
     ToggleButton.Parent = MainFrame
 
     local LogsFrame = Instance.new("Frame")
@@ -328,25 +451,28 @@ local function CreateGui()
     LogsText.Parent = scroll
 
     ToggleButton.MouseButton1Click:Connect(function()
-        AutoYamaQuest1 = not AutoYamaQuest1
-        if AutoYamaQuest1 then
-            ToggleButton.Text = "Auto Yama Quest 1: ON"
+        AutoEvilTrial = not AutoEvilTrial
+        if AutoEvilTrial then
+            ToggleButton.Text = "Auto Evil Trial: ON"
             ToggleButton.BackgroundColor3 = Color3.fromRGB(0,120,0)
             NoclipEnabled = true
             StopTween     = false
-            UpdateStatus("Ищу Mythological Pirate / запускаю Evil Trial.")
-            AddLog("Auto Yama Quest 1 включён.")
+            HaveAlucardFragment = false
+            UpdateStatus("Evil Trial активен: стартую триал, эквип Yama, жду смерть.")
+            AddLog("Auto Evil Trial включён.")
+            -- Однократный старт при включении
+            CDKTrialModule.StartEvilTrial(AddLog)
         else
-            ToggleButton.Text = "Auto Yama Quest 1: OFF"
+            ToggleButton.Text = "Auto Evil Trial: OFF"
             ToggleButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
             NoclipEnabled = false
             StopTween     = true
             UpdateStatus("Остановлен")
-            AddLog("Auto Yama Quest 1 выключен.")
+            AddLog("Auto Evil Trial выключен.")
         end
     end)
 
-    AddLog("GUI Auto Yama Quest 1 загружен.")
+    AddLog("GUI Auto Evil Trial загружен.")
 end
 
 CreateGui()
@@ -357,8 +483,8 @@ CreateGui()
 spawn(function()
     while task.wait(0.5) do
         local ok, err = pcall(function()
-            if AutoYamaQuest1 then
-                RunYamaQuest1()
+            if AutoEvilTrial then
+                RunEvilTrialLoop()
             end
         end)
         if not ok then
