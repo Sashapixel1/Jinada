@@ -1,5 +1,5 @@
 --========================================================
--- Auto Yama (логика EliteHunter из 12к, фикс поиска элиток)
+-- Auto Yama (Elite Hunter из 12к, расширенный поиск элиток)
 -- GUI + лог-панель, телепорт 300 speed, Anti-AFK
 --========================================================
 
@@ -356,21 +356,38 @@ local function IsEliteName(name)
     return false
 end
 
+-- >>> ГЛАВНЫЙ ФИКС: ищем элитку во ВСЁМ Workspace
 local function FindEliteInWorkspace()
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then return nil end
+    -- сначала пробуем стандартную папку Enemies (если есть)
+    local enemiesFolder = Workspace:FindFirstChild("Enemies")
+    if enemiesFolder then
+        for _, v in ipairs(enemiesFolder:GetChildren()) do
+            if v:IsA("Model") and IsEliteName(v.Name) then
+                local hum = v:FindFirstChildOfClass("Humanoid")
+                local hrp = v:FindFirstChild("HumanoidRootPart")
+                if hum and hrp and hum.Health > 0 then
+                    AddLog("Нашёл элитку в Enemies: "..v.Name)
+                    return v
+                end
+            end
+        end
+    end
 
-    for _, v in ipairs(enemies:GetChildren()) do
-        if IsEliteName(v.Name) then
+    -- если в Enemies нет — сканируем весь Workspace
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        if v:IsA("Model") and IsEliteName(v.Name) then
             local hum = v:FindFirstChildOfClass("Humanoid")
             local hrp = v:FindFirstChild("HumanoidRootPart")
             if hum and hrp and hum.Health > 0 then
+                AddLog("Нашёл элитку в Workspace: "..v.Name.." ("..v:GetFullName()..")")
                 return v
             end
         end
     end
+
     return nil
 end
+-- <<< КОНЕЦ ФИКСА
 
 local function FightElite(target)
     if not target then return end
@@ -537,7 +554,7 @@ local function CreateGui()
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 26)
     Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    Title.Text = "Auto Yama (Elite Hunter из 12к, FIX)"
+    Title.Text = "Auto Yama (Elite Hunter, deep scan)"
     Title.TextColor3 = Color3.new(1, 1, 1)
     Title.Font = Enum.Font.SourceSansBold
     Title.TextSize = 20
