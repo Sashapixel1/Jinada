@@ -1,48 +1,77 @@
---========================================================
---  Auto Yama / Auto Tushita (GUI + Логи + Server Hop + Holy Torch + Longma)
---========================================================
+-- Auto Tushita / Auto Yama (GUI + логика)
+-- Использует механику телепорта/боя, похожую на Auto Bones
 
------------------------------
--- СЕРВИСЫ
------------------------------
-local Players           = game:GetService("Players")
-local LocalPlayer       = Players.LocalPlayer
+------------------------------------------------
+-- СТАРТ: команда Marines
+------------------------------------------------
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace         = game:GetService("Workspace")
-local HttpService       = game:GetService("HttpService")
-local TeleportService   = game:GetService("TeleportService")
+local Players           = game:GetService("Players")
 local TweenService      = game:GetService("TweenService")
+local Workspace         = game:GetService("Workspace")
 local RunService        = game:GetService("RunService")
+local VirtualUser       = game:GetService("VirtualUser")
+local Vim               = game:GetService("VirtualInputManager")
 
------------------------------
--- ФЛАГИ / НАСТРОЙКИ
------------------------------
-local AutoTushita      = false
-local AutoYama         = false
+local LocalPlayer = Players.LocalPlayer
+local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
-local CurrentStatus     = "Idle"
-local TeleportSpeed     = 300                       -- скорость полёта
-local FarmOffset        = CFrame.new(0, 10, -3)     -- позиция над мобом
-local TushitaWeaponName = "Godhuman"               -- чем бить Longma (поменяй если хочешь)
+-- ставим команду (если вдруг надо)
+pcall(function()
+    remote:InvokeServer("SetTeam", "Marines")
+end)
+task.wait(5)
 
-local IsTeleporting     = false
-local StopTween         = false
+------------------------------------------------
+-- НАСТРОЙКИ
+------------------------------------------------
+local WeaponName       = "Godhuman"                    -- чем биться
+local TeleportSpeed    = 300                           -- скорость полёта
+local HoverOffsetY     = 15                            -- высота зависания над мобом
+local EliteNPCFallback = CFrame.new(-5554, 143, -3016) -- Castle on the Sea (Elite Hunter) ПРИМЕР, поправишь
+local YamaKatanaPos    = CFrame.new(-9545, 251, 6049)  -- Sealed Katana (водопад) ПРИМЕР, поправишь
 
-local HolyTorchDone     = false   -- маршрут Holy Torch пройден?
------------------------------
--- ЛОГИ
------------------------------
-local StatusLogs = {}
-local MaxLogs    = 120
+-- Holy Torch точки (из 12к-примера)
+local HolyTorchRoute = {
+    CFrame.new(-10752, 417, -9366),
+    CFrame.new(-11672, 334, -9474),
+    CFrame.new(-12132, 521, -10655),
+    CFrame.new(-13336, 486, -6985),
+    CFrame.new(-13489, 332, -7925),
+}
+
+-- Longma остров (Tushita)
+local LongmaIslandPos = CFrame.new(-10238.875976563, 389.7912902832, -9549.7939453125)
+
+------------------------------------------------
+-- ФЛАГИ
+------------------------------------------------
+local AutoTushita = false
+local AutoYama    = false
+
+local CurrentStatus = "Idle"
+local IsTeleporting = false
+local IsFighting    = false
+local StopTween     = false
+
+------------------------------------------------
+-- ЛОГИ / GUI
+------------------------------------------------
+local StatusLogs      = {}
+local MaxLogs         = 200
+local lastLogMessage  = nil
 
 local ScreenGui, MainFrame
 local StatusLabel, LogsText
 local TushitaButton, YamaButton
 
 local function AddLog(msg)
-    local timestamp = os.date("%H:%M:%S")
-    local entry = "[" .. timestamp .. "] " .. tostring(msg)
-    table.insert(StatusLogs, 1, entry)
+    -- лёгкая защита от спама 1-в-1 одинаковых строк подряд
+    if lastLogMessage == msg then return end
+    lastLogMessage = msg
+
+    local ts   = os.date("%H:%M:%S")
+    local line = "["..ts.."] "..tostring(msg)
+    table.insert(StatusLogs, 1, line)
     if #StatusLogs > MaxLogs then
         table.remove(StatusLogs, #StatusLogs)
     end
@@ -51,64 +80,26 @@ local function AddLog(msg)
     end
 end
 
-local function UpdateStatus(newStatus)
-    CurrentStatus = newStatus
-    AddLog("Статус: " .. newStatus)
+local function UpdateStatus(text)
+    CurrentStatus = text
     if StatusLabel then
-        StatusLabel.Text = "Статус: " .. newStatus
+        StatusLabel.Text = "Статус: " .. text
     end
+    AddLog("Статус: " .. text)
 end
 
------------------------------
--- SERVER HOP
------------------------------
-local function Hop()
-    local placeId = game.PlaceId
-    local jobId   = game.JobId
-    local url     = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Asc&limit=100"
+------------------------------------------------
+-- ANTI-AFK
+------------------------------------------------
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+    AddLog("Anti-AFK: фейковый клик, чтобы не кикнуло.")
+end)
 
-    AddLog("Server Hop: запрашиваю список серверов...")
-
-    local ok, result = pcall(function()
-        local body = game:HttpGet(url)
-        return HttpService:JSONDecode(body)
-    end)
-
-    if not ok then
-        AddLog("Server Hop: ошибка запроса: " .. tostring(result))
-        return
-    end
-
-    local data   = result.data or {}
-    local chosen = nil
-
-    for _, server in ipairs(data) do
-        if type(server) == "table" and server.id and server.maxPlayers and server.playing then
-            if server.id ~= jobId and server.playing < server.maxPlayers then
-                chosen = server
-                break
-            end
-        end
-    end
-
-    if not chosen then
-        AddLog("Server Hop: подходящий сервер не найден (в этой пачке).")
-        return
-    end
-
-    AddLog(string.format(
-        "Server Hop: прыгаю на сервер %s (%d/%d)",
-        tostring(chosen.id),
-        tonumber(chosen.playing) or -1,
-        tonumber(chosen.maxPlayers) or -1
-    ))
-
-    TeleportService:TeleportToPlaceInstance(placeId, chosen.id, LocalPlayer)
-end
-
------------------------------
--- NET-МОДУЛЬ FAST ATTACK
------------------------------
+------------------------------------------------
+-- NET / FAST ATTACK (как в Auto Bones)
+------------------------------------------------
 local modules        = ReplicatedStorage:WaitForChild("Modules")
 local net            = modules:WaitForChild("Net")
 local RegisterAttack = net:WaitForChild("RE/RegisterAttack")
@@ -130,21 +121,16 @@ function AttackModule:AttackEnemyModel(enemyModel)
     RegisterHit:FireServer(hrp, hitTable)
 end
 
------------------------------
+------------------------------------------------
 -- ХАКИ / ЭКИП
------------------------------
+------------------------------------------------
 local function AutoHaki()
     local char = LocalPlayer.Character
     if not char then return end
-
     if not char:FindFirstChild("HasBuso") then
-        local rem = ReplicatedStorage:FindFirstChild("Remotes")
-        local r   = rem and rem:FindFirstChild("CommF_")
-        if r then
-            pcall(function()
-                r:InvokeServer("Buso")
-            end)
-        end
+        pcall(function()
+            remote:InvokeServer("Buso")
+        end)
     end
 end
 
@@ -162,9 +148,7 @@ local function IsToolEquipped(name)
 end
 
 local function EquipToolByName(name)
-    if IsToolEquipped(name) then
-        return
-    end
+    if IsToolEquipped(name) then return end
 
     local p = LocalPlayer
     if not p then return end
@@ -174,7 +158,7 @@ local function EquipToolByName(name)
     if not hum then return end
 
     local nameLower = string.lower(name)
-    local toolFound = nil
+    local toolFound
 
     local function findToolIn(container)
         if not container then return nil end
@@ -205,15 +189,15 @@ local function EquipToolByName(name)
         AddLog("⚔️ Экипирован: " .. toolFound.Name)
     else
         if tick() - lastEquipFailLog > 3 then
-            AddLog("⚠️ Не удалось найти оружие: " .. name)
+            AddLog("⚠️ Не найдено оружие: " .. name)
             lastEquipFailLog = tick()
         end
     end
 end
 
------------------------------
--- ТЕЛЕПОРТ
------------------------------
+------------------------------------------------
+-- ТЕЛЕПОРТ (как в Auto Bones, speed=300)
+------------------------------------------------
 local function SimpleTeleport(targetCFrame, label)
     if IsTeleporting then return end
     IsTeleporting = true
@@ -225,13 +209,14 @@ local function SimpleTeleport(targetCFrame, label)
         return
     end
 
-    local hrp      = char.HumanoidRootPart
-    local distance = (hrp.Position - targetCFrame.Position).Magnitude
-    AddLog(string.format("Телепорт к %s (%.0f юнитов)", label or "цели", distance))
+    local hrp  = char.HumanoidRootPart
+    local dist = (hrp.Position - targetCFrame.Position).Magnitude
 
-    local travelTime = distance / TeleportSpeed
+    local travelTime = dist / TeleportSpeed
     if travelTime < 0.5 then travelTime = 0.5 end
-    if travelTime > 60  then travelTime = 60  end
+    if travelTime > 60 then travelTime = 60 end
+
+    AddLog(string.format("Телепорт к %s (%.0f stud, t=%.1f)", label or "точке", dist, travelTime))
 
     local tween = TweenService:Create(
         hrp,
@@ -242,348 +227,392 @@ local function SimpleTeleport(targetCFrame, label)
 
     local start = tick()
     while tick() - start < travelTime do
-        if StopTween then
+        if StopTween or (not AutoTushita and not AutoYama) then
             tween:Cancel()
             IsTeleporting = false
-            AddLog("Телепорт прерван (StopTween)")
+            AddLog("Телепорт прерван (OFF/StopTween).")
             return
         end
 
         local c = LocalPlayer.Character
-        hrp     = c and c:FindFirstChild("HumanoidRootPart")
+        hrp = c and c:FindFirstChild("HumanoidRootPart")
         if not c or not hrp then
             tween:Cancel()
             IsTeleporting = false
             return
         end
 
-        hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
-        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-        hrp.CanCollide              = false
+        hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+        hrp.AssemblyAngularVelocity= Vector3.new(0,0,0)
+        hrp.CanCollide             = false
 
-        task.wait(0.15)
+        RunService.Heartbeat:Wait()
     end
 
     tween:Cancel()
-    local c = LocalPlayer.Character
-    hrp     = c and c:FindFirstChild("HumanoidRootPart")
+    local c2 = LocalPlayer.Character
+    hrp = c2 and c2:FindFirstChild("HumanoidRootPart")
     if hrp then
-        hrp.CFrame                  = targetCFrame
-        hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
-        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-        hrp.CanCollide              = false
+        hrp.CFrame                 = targetCFrame
+        hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+        hrp.AssemblyAngularVelocity= Vector3.new(0,0,0)
+        hrp.CanCollide             = false
     end
 
     IsTeleporting = false
 end
 
------------------------------
--- ИНВЕНТАРЬ / МЕЧИ
------------------------------
-local function HasItemInInventory(itemName)
+-- сброс состояний после смерти
+LocalPlayer.CharacterAdded:Connect(function(char)
+    IsTeleporting = false
+    IsFighting    = false
+    StopTween     = false
+    AddLog("Персонаж возрождён, жду HRP...")
+    char:WaitForChild("HumanoidRootPart", 10)
+    AddLog("HRP найден, скрипт можно продолжать.")
+end)
+
+------------------------------------------------
+-- ВСПОМ. ФУНКЦИИ
+------------------------------------------------
+local function HasTool(name)
     local p = LocalPlayer
     if not p then return false end
 
     local backpack = p:FindFirstChild("Backpack")
-    if backpack and backpack:FindFirstChild(itemName) then
+    if backpack and backpack:FindFirstChild(name) then
         return true
     end
 
     local char = p.Character
-    if char and char:FindFirstChild(itemName) then
+    if char and char:FindFirstChild(name) then
         return true
-    end
-
-    local rem = ReplicatedStorage:FindFirstChild("Remotes")
-    local r   = rem and rem:FindFirstChild("CommF_")
-    if r then
-        local ok, invData = pcall(function()
-            return r:InvokeServer("getInventory")
-        end)
-        if ok and type(invData) == "table" then
-            for _, item in ipairs(invData) do
-                local name = item.Name or item.name or tostring(item)
-                if name == itemName then
-                    return true
-                end
-            end
-        end
     end
 
     return false
 end
 
-local function HasSword(name)
-    return HasItemInInventory(name)
+local function GetEnemiesFolder()
+    return Workspace:FindFirstChild("Enemies")
 end
 
-local function HasHolyTorch()
-    return HasItemInInventory("Holy Torch")
+local function IsEliteName(name)
+    return name == "Diablo" or name == "Deandre" or name == "Urban"
 end
 
------------------------------
--- ПОИСК RIP INDRA
------------------------------
-local function FindRipIndra()
-    local enemies = Workspace:FindFirstChild("Enemies")
-
-    if enemies then
-        for _, v in ipairs(enemies:GetChildren()) do
-            if v:IsA("Model") then
-                local nm = tostring(v.Name)
-                if string.find(nm, "rip_indra") or string.find(nm, "Rip_Indra") or string.find(nm, "Rip Indra") then
-                    local hum = v:FindFirstChild("Humanoid")
-                    if hum and hum.Health > 0 then
-                        return v, "Workspace"
-                    end
-                end
-            end
-        end
-    end
-
-    for _, v in ipairs(ReplicatedStorage:GetChildren()) do
-        if v:IsA("Model") then
-            local nm = tostring(v.Name)
-            if string.find(nm, "rip_indra") or string.find(nm, "Rip_Indra") or string.find(nm, "Rip Indra") then
-                return v, "ReplicatedStorage"
-            end
-        end
-    end
-
-    return nil, nil
-end
-
------------------------------
--- АВТО-КЛИК ПО ДВЕРИ / МЕЧУ (ClickDetector)
------------------------------
-local function ClickNearbyClickDetectors(radius)
-    radius = radius or 25
+local function FindEliteTarget()
+    local enemies = GetEnemiesFolder()
+    if not enemies then return nil end
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
+    if not hrp then return nil end
 
-    local count = 0
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("ClickDetector") then
-            local part = obj.Parent
-            if part and part:IsA("BasePart") then
-                local d = (part.Position - hrp.Position).Magnitude
-                if d <= radius then
-                    count += 1
-                    pcall(function()
-                        fireclickdetector(obj)
-                    end)
+    local nearest, bestDist = nil, 99999
+    for _, v in ipairs(enemies:GetChildren()) do
+        if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+            if IsEliteName(v.Name) then
+                local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+                if d < bestDist then
+                    bestDist = d
+                    nearest  = v
                 end
             end
         end
     end
-
-    AddLog("Auto Tushita: кликнул ClickDetector'ов рядом: " .. tostring(count))
+    return nearest
 end
 
------------------------------
--- HOLY TORCH МАРШРУТ
------------------------------
-local HolyTorchRoute = {
-    CFrame.new(-10752.7695, 412.229523, -9366.36328),
-    CFrame.new(-11673.4111, 331.749023, -9474.34668),
-    CFrame.new(-12133.3389, 519.47522, -10653.1904),
-    CFrame.new(-13336.5,    485.280396, -6983.35254),
-    CFrame.new(-13487.4131, 334.84845,  -7926.34863),
-}
-
-local function DoHolyTorchRoute()
-    if HolyTorchDone then return end
-
-    if not HasHolyTorch() then
-        AddLog("Auto Tushita: Holy Torch не найден в инвентаре, маршрут пропускаю.")
-        HolyTorchDone = true -- чтобы не спамить
-        return
+local function FindLongma()
+    local enemies = GetEnemiesFolder()
+    if not enemies then return nil end
+    for _, v in ipairs(enemies:GetChildren()) do
+        if v.Name == "Longma"
+            and v:FindFirstChild("Humanoid")
+            and v:FindFirstChild("HumanoidRootPart")
+            and v.Humanoid.Health > 0 then
+            return v
+        end
     end
+    return nil
+end
 
-    UpdateStatus("Auto Tushita: маршрут Holy Torch.")
-    AddLog("Auto Tushita: запускаю обход факелов с Holy Torch.")
-    EquipToolByName("Holy Torch")
-    task.wait(0.5)
+local function HoldEFor(seconds, label)
+    label = label or "E"
+    AddLog("Зажимаю "..label.." на "..tostring(seconds).." сек.")
+    Vim:SendKeyEvent(true, "E", false, game)
+    task.wait(seconds)
+    Vim:SendKeyEvent(false, "E", false, game)
+end
 
-    for idx, cf in ipairs(HolyTorchRoute) do
-        if not AutoTushita then break end
-        UpdateStatus("Auto Tushita: Holy Torch → факел #" .. idx)
-        SimpleTeleport(cf, "Holy Torch факел #" .. idx)
-        task.wait(1.0)
+------------------------------------------------
+-- БОЙ С МОДЕЛЬЮ
+------------------------------------------------
+local function FightMob(target, label, maxTime)
+    maxTime = maxTime or 90
+    if not target then return end
+    if IsFighting then return end
+    IsFighting = true
 
+    local ok, err = pcall(function()
         local char = LocalPlayer.Character
         local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        local t0   = tick()
-        while AutoTushita and hrp and (hrp.Position - cf.Position).Magnitude > 15 and tick() - t0 < 8 do
-            task.wait(0.3)
+        local hum  = target:FindFirstChild("Humanoid")
+        local tHRP = target:FindFirstChild("HumanoidRootPart")
+        if not (char and hrp and hum and tHRP) then
+            return
+        end
+
+        UpdateStatus(label or "Бой")
+        AddLog("Начинаю бой с: "..tostring(target.Name))
+
+        SimpleTeleport(tHRP.CFrame * CFrame.new(0, HoverOffsetY, -3), label or "моб")
+
+        local deadline      = tick() + maxTime
+        local lastPosAdjust = 0
+        local lastAttack    = 0
+        local engaged       = false
+
+        while (AutoTushita or AutoYama)
+            and target.Parent
+            and hum.Health > 0
+            and tick() < deadline do
+
+            engaged = true
+
             char = LocalPlayer.Character
             hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            hum  = target:FindFirstChild("Humanoid")
+            tHRP = target:FindFirstChild("HumanoidRootPart")
+            if not (char and hrp and hum and tHRP) then
+                break
+            end
+
+            local dist = (tHRP.Position - hrp.Position).Magnitude
+            if dist > 2000 then
+                SimpleTeleport(tHRP.CFrame * CFrame.new(0, HoverOffsetY, -3), "далёкий моб")
+            else
+                if tick() - lastPosAdjust > 0.05 then
+                    hrp.CFrame                 = tHRP.CFrame * CFrame.new(0, HoverOffsetY, -3)
+                    hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                    hrp.AssemblyAngularVelocity= Vector3.new(0,0,0)
+                    hrp.CanCollide             = false
+                    lastPosAdjust              = tick()
+                end
+            end
+
+            pcall(function()
+                tHRP.CanCollide       = false
+                hum.WalkSpeed         = 0
+                hum.JumpPower         = 0
+                if not tHRP:FindFirstChild("BodyVelocity") then
+                    local bv = Instance.new("BodyVelocity", tHRP)
+                    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bv.Velocity = Vector3.new(0,0,0)
+                end
+            end)
+
+            AutoHaki()
+            EquipToolByName(WeaponName)
+
+            if tick() - lastAttack > 0.15 then
+                AttackModule:AttackEnemyModel(target)
+                lastAttack = tick()
+            end
+
+            RunService.Heartbeat:Wait()
         end
 
-        task.wait(0.5)
-    end
-
-    AddLog("Auto Tushita: маршрут Holy Torch завершён.")
-    HolyTorchDone = true
-end
-
------------------------------
--- БОЙ С LONGMA
------------------------------
-local LongmaSpawnCFrame  = CFrame.new(-10238.875976563, 389.7912902832, -9549.7939453125)
-local TushitaDoorCFrame  = CFrame.new(-10171.7051, 406.981995, -9552.31738) -- позиция у двери/меча
-
-local function FightBossOnce(target)
-    if not target then return end
-
-    local hum  = target:FindFirstChild("Humanoid")
-    local tHRP = target:FindFirstChild("HumanoidRootPart")
-    if not hum or not tHRP or hum.Health <= 0 then
-        return
-    end
-
-    AddLog("Auto Tushita: начинаю бой с Longma.")
-    local deadline      = tick() + 180
-    local lastPosAdjust = 0
-    local lastAttack    = 0
-
-    while AutoTushita
-        and target.Parent
-        and hum.Health > 0
-        and tick() < deadline do
-
-        local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        tHRP       = target:FindFirstChild("HumanoidRootPart")
-        hum        = target:FindFirstChild("Humanoid")
-
-        if not (char and hrp and tHRP and hum) then
-            break
-        end
-
-        local dist = (tHRP.Position - hrp.Position).Magnitude
-        if dist > 2000 then
-            SimpleTeleport(tHRP.CFrame * FarmOffset, "Longma (далеко)")
-        else
-            if tick() - lastPosAdjust > 0.05 then
-                hrp.CFrame                  = tHRP.CFrame * FarmOffset
-                hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
-                hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-                hrp.CanCollide              = false
-                lastPosAdjust               = tick()
+        if engaged then
+            hum = target:FindFirstChild("Humanoid")
+            local dead = hum and hum.Health <= 0
+            if dead or not target.Parent then
+                AddLog("✅ Моб убит: "..tostring(target.Name))
+            else
+                AddLog("⚠️ Бой прерван: "..tostring(target.Name))
             end
         end
+    end)
 
-        pcall(function()
-            tHRP.CanCollide = false
-            hum.WalkSpeed   = 0
-            hum.JumpPower   = 0
-        end)
-
-        AutoHaki()
-        EquipToolByName(TushitaWeaponName)
-
-        if tick() - lastAttack > 0.15 then
-            AttackModule:AttackEnemyModel(target)
-            lastAttack = tick()
-        end
-
-        RunService.Heartbeat:Wait()
+    if not ok then
+        AddLog("Ошибка в FightMob: "..tostring(err))
     end
 
-    hum = target:FindFirstChild("Humanoid")
-    if hum and hum.Health <= 0 then
-        AddLog("✅ Auto Tushita: Longma убит. Пытаюсь взять Tushita.")
-        task.wait(2)
-        AddLog("Auto Tushita: телепорт к двери/мечу и автоклик.")
-        SimpleTeleport(TushitaDoorCFrame, "Tushita дверь/меч")
-        task.wait(1.0)
-        ClickNearbyClickDetectors(50)
-    else
-        AddLog("⚠️ Auto Tushita: бой с Longma завершён/прерван.")
-    end
+    IsFighting = false
 end
 
------------------------------
--- ЛОГИКА КВЕСТА TUSHITA
------------------------------
-local function FindLongma()
-    local enemies = Workspace:FindFirstChild("Enemies")
-    if not enemies then return nil end
-    for _, mob in ipairs(enemies:GetChildren()) do
-        if mob.Name == "Longma" then
-            local hum  = mob:FindFirstChild("Humanoid")
-            local tHRP = mob:FindFirstChild("HumanoidRootPart")
-            if hum and hum.Health > 0 and tHRP then
-                return mob
+------------------------------------------------
+-- Yama / Elite Hunter ЛОГИКА
+------------------------------------------------
+local lastQuestRequestTime   = 0
+local questRequestCooldown   = 60 -- раз в минуту просим квест
+local lastStatusProgressTime = 0
+local statusCooldown         = 60 -- раз в минуту лог про прогресс
+
+local function FindEliteHunterModel()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "Elite Hunter" then
+            if obj:FindFirstChild("HumanoidRootPart") then
+                return obj
             end
         end
     end
     return nil
 end
 
-local function RunTushitaQuest(ripIndraModel, ripLocation)
-    -- 1) Уже есть Tushita?
-    if HasSword("Tushita") then
-        UpdateStatus("Tushita уже есть, авто-квест выключен.")
-        AutoTushita = false
-        if TushitaButton then
-            TushitaButton.Text = "Auto Tushita: OFF"
-            TushitaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+local function GetEliteHunterPos()
+    local elite = FindEliteHunterModel()
+    if elite and elite:FindFirstChild("HumanoidRootPart") then
+        return elite.HumanoidRootPart.CFrame
+    end
+    return EliteNPCFallback
+end
+
+local function EnsureAtEliteHunter()
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if not (char and hrp) then return false end
+
+    local target = GetEliteHunterPos()
+    local dist   = (hrp.Position - target.Position).Magnitude
+    if dist > 70 then
+        UpdateStatus("Лечу к Elite Hunter...")
+        SimpleTeleport(target * CFrame.new(0, 5, 3), "Elite Hunter")
+        task.wait(1.0)
+        return false
+    end
+    return true
+end
+
+local function ClickSealedKatana()
+    -- Тп к водопаду и кликаем по мечу (Sealed Katana)
+    UpdateStatus("Yama: кликаю Sealed Katana...")
+    SimpleTeleport(YamaKatanaPos * CFrame.new(0, 3, 0), "Sealed Katana")
+    task.wait(0.5)
+
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return end
+    local waterfall = map:FindFirstChild("Waterfall")
+    if not waterfall then return end
+    local sealed = waterfall:FindFirstChild("SealedKatana") or waterfall:FindFirstChild("Sealed Katana")
+    if not sealed then return end
+
+    local handle = sealed:FindFirstChild("Handle")
+    if not handle then return end
+
+    for _, cd in ipairs(handle:GetDescendants()) do
+        if cd:IsA("ClickDetector") then
+            AddLog("Yama: кликаю по ClickDetector меча.")
+            fireclickdetector(cd)
+            break
         end
+    end
+end
+
+local function RunYamaLogic()
+    if HasTool("Yama") then
+        UpdateStatus("Yama уже есть.")
         return
     end
 
-    -- 2) Пытаемся найти Longma
+    -- сначала всегда телепорт к Elite Hunter
+    if not EnsureAtEliteHunter() then
+        return
+    end
+
+    -- прогресс Elite Hunter
+    local progress = 0
+    local ok, res = pcall(function()
+        return remote:InvokeServer("EliteHunter", "Progress")
+    end)
+    if ok and type(res) == "number" then
+        progress = res
+    end
+
+    local now = tick()
+    if now - lastStatusProgressTime > statusCooldown then
+        AddLog("Yama: прогресс Elite Hunter = "..tostring(progress).."/30")
+        lastStatusProgressTime = now
+    end
+
+    -- если уже >=30, пытаемся получить Yama
+    if progress >= 30 then
+        UpdateStatus("Yama: прогресс >=30, лечу к мечу.")
+        ClickSealedKatana()
+        return
+    end
+
+    -- если есть активный элитный моб — бьём его
+    local elite = FindEliteTarget()
+    if elite then
+        UpdateStatus("Yama: фарм Elite "..tostring(elite.Name))
+        FightMob(elite, "Elite Hunter", 90)
+        -- после убийства вернёмся к NPC
+        EnsureAtEliteHunter()
+        return
+    end
+
+    -- иначе просим новый квест раз в минуту
+    if now - lastQuestRequestTime >= questRequestCooldown then
+        lastQuestRequestTime = now
+        UpdateStatus("Yama: запрашиваю новый квест у NPC.")
+        pcall(function()
+            remote:InvokeServer("EliteHunter")
+        end)
+    else
+        UpdateStatus("Yama: жду кулдаун запроса квеста.")
+    end
+end
+
+------------------------------------------------
+-- Tushita ЛОГИКА (Holy Torch + Longma)
+------------------------------------------------
+local function DoHolyTorchRoute()
+    UpdateStatus("Tushita: маршрут Holy Torch...")
+    for idx, cf in ipairs(HolyTorchRoute) do
+        if not AutoTushita then return end
+        AddLog("Tushita: точка Holy Torch "..idx)
+        SimpleTeleport(cf * CFrame.new(0, 3, 0), "Holy Torch "..idx)
+        task.wait(0.5)
+        -- при желании можно зажимать E:
+        HoldEFor(2, "Torch "..idx)
+        task.wait(0.5)
+    end
+end
+
+local function ClickTushitaBladeOrDoor()
+    -- сюда можно вставить конкретный ClickDetector меча/двери после Longma
+    AddLog("Tushita: пытаюсь кликнуть по мечу/двери после Longma (допиши конкретный ClickDetector под свою карту).")
+    -- пример:
+    -- local map = Workspace:FindFirstChild("Map")
+    -- local door = map and map:FindFirstChild("TushitaDoor")
+    -- и т.д.
+end
+
+local function RunTushitaLogic()
+    if HasTool("Tushita") then
+        UpdateStatus("Tushita уже есть.")
+        return
+    end
+
+    -- сначала Holy Torch маршрут (по желанию можешь сделать одноразовым флагом)
+    DoHolyTorchRoute()
+
+    -- затем Longma
     local longma = FindLongma()
     if longma then
-        UpdateStatus("Auto Tushita: бой с Longma.")
-        FightBossOnce(longma)
-        return
+        UpdateStatus("Tushita: найден Longma, начинаю бой.")
+        FightMob(longma, "Longma", 120)
+        -- после убийства пробуем кликнуть меч/дверь
+        ClickTushitaBladeOrDoor()
+    else
+        UpdateStatus("Tushita: Longma не найден, лечу на остров.")
+        SimpleTeleport(LongmaIslandPos, "Longma Island")
     end
-
-    -- 3) Если Longma ещё нет — сначала делаем маршрут Holy Torch (один раз)
-    if not HolyTorchDone then
-        DoHolyTorchRoute()
-        return
-    end
-
-    -- 4) После маршрута Holy Torch просто держимся на его спавне и ждём
-    UpdateStatus("Auto Tushita: Longma не найден, лечу к его спавну.")
-    AddLog("Auto Tushita: телепорт к LongmaSpawnCFrame и ожидание спавна Longma.")
-    SimpleTeleport(LongmaSpawnCFrame, "Longma spawn")
 end
 
------------------------------
--- ЛОГИКА AUTO YAMA (крючок)
------------------------------
-local function RunYamaLogic()
-    -- Сюда потом вставишь свою Yama-квест логику (YamaQuest2 / YamaQuest3 / Elite Hunter).
-    AddLog("Auto Yama: крючок RunYamaLogic, вставь сюда свою логику квестов Yama.")
-end
-
------------------------------
--- ОБЩИЙ ВХОД ДЛЯ Auto TUSHITA
------------------------------
-local function RunTushitaLogic()
-    local ripIndraModel, ripLocation = FindRipIndra()
-
-    if not ripIndraModel then
-        UpdateStatus("Auto Tushita: Rip Indra не найден, делаю server hop...")
-        AddLog("Auto Tushita: Rip Indra отсутствует в Workspace/ReplicatedStorage. Переходим на другой сервер.")
-        Hop()
-        return
-    end
-
-    UpdateStatus("Auto Tushita: Rip Indra найден (" .. tostring(ripLocation) .. "), запускаю квест.")
-    AddLog("Auto Tushita: найден Rip Indra, выполняю RunTushitaQuest.")
-    RunTushitaQuest(ripIndraModel, ripLocation)
-end
-
------------------------------
--- GUI
------------------------------
+------------------------------------------------
+-- GUI Auto Tushita / Auto Yama
+------------------------------------------------
 local function CreateGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -593,8 +622,8 @@ local function CreateGui()
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 600, 0, 260)  -- ширина 600
-    MainFrame.Position = UDim2.new(0, 40, 0, 200)
+    MainFrame.Size = UDim2.new(0, 600, 0, 280)
+    MainFrame.Position = UDim2.new(0, 40, 0, 180)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
@@ -604,7 +633,7 @@ local function CreateGui()
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 24)
     Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    Title.Text = "Auto Yama / Auto Tushita + Server Hop + Holy Torch + Longma"
+    Title.Text = "Auto Yama / Auto Tushita"
     Title.TextColor3 = Color3.new(1,1,1)
     Title.Font = Enum.Font.SourceSansBold
     Title.TextSize = 18
@@ -612,7 +641,7 @@ local function CreateGui()
 
     StatusLabel = Instance.new("TextLabel")
     StatusLabel.Size = UDim2.new(1, -20, 0, 22)
-    StatusLabel.Position = UDim2.new(0, 10, 0, 32)
+    StatusLabel.Position = UDim2.new(0, 10, 0, 30)
     StatusLabel.BackgroundTransparency = 1
     StatusLabel.TextColor3 = Color3.new(1,1,1)
     StatusLabel.Font = Enum.Font.SourceSans
@@ -623,7 +652,7 @@ local function CreateGui()
 
     TushitaButton = Instance.new("TextButton")
     TushitaButton.Size = UDim2.new(0, 180, 0, 32)
-    TushitaButton.Position = UDim2.new(0, 10, 0, 65)
+    TushitaButton.Position = UDim2.new(0, 10, 0, 60)
     TushitaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
     TushitaButton.TextColor3 = Color3.new(1,1,1)
     TushitaButton.Font = Enum.Font.SourceSansBold
@@ -633,7 +662,7 @@ local function CreateGui()
 
     YamaButton = Instance.new("TextButton")
     YamaButton.Size = UDim2.new(0, 180, 0, 32)
-    YamaButton.Position = UDim2.new(0, 210, 0, 65)
+    YamaButton.Position = UDim2.new(0, 210, 0, 60)
     YamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
     YamaButton.TextColor3 = Color3.new(1,1,1)
     YamaButton.Font = Enum.Font.SourceSansBold
@@ -641,48 +670,9 @@ local function CreateGui()
     YamaButton.Text = "Auto Yama: OFF"
     YamaButton.Parent = MainFrame
 
-    TushitaButton.MouseButton1Click:Connect(function()
-        AutoTushita  = not AutoTushita
-        HolyTorchDone = false  -- при включении AutoTushita маршрут Holy Torch заново
-
-        if AutoTushita then
-            AutoYama = false
-            YamaButton.Text = "Auto Yama: OFF"
-            YamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-
-            TushitaButton.Text = "Auto Tushita: ON"
-            TushitaButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
-
-            UpdateStatus("Фарм / квест Tushita...")
-        else
-            TushitaButton.Text = "Auto Tushita: OFF"
-            TushitaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-            UpdateStatus("Остановлен")
-        end
-    end)
-
-    YamaButton.MouseButton1Click:Connect(function()
-        AutoYama = not AutoYama
-        if AutoYama then
-            AutoTushita = false
-            TushitaButton.Text = "Auto Tushita: OFF"
-            TushitaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-
-            YamaButton.Text = "Auto Yama: ON"
-            YamaButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
-
-            UpdateStatus("Фарм / квест Yama...")
-        else
-            YamaButton.Text = "Auto Yama: OFF"
-            YamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-            UpdateStatus("Остановлен")
-        end
-    end)
-
-    -- Логи
     local LogsFrame = Instance.new("Frame")
-    LogsFrame.Size = UDim2.new(1, -20, 0, 140)
-    LogsFrame.Position = UDim2.new(0, 10, 0, 110)
+    LogsFrame.Size = UDim2.new(1, -20, 0, 170)
+    LogsFrame.Position = UDim2.new(0, 10, 0, 100)
     LogsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
     LogsFrame.BorderSizePixel = 0
     LogsFrame.Parent = MainFrame
@@ -692,7 +682,7 @@ local function CreateGui()
     scroll.Position = UDim2.new(0, 2, 0, 2)
     scroll.BackgroundTransparency = 1
     scroll.BorderSizePixel = 0
-    scroll.CanvasSize = UDim2.new(0, 0, 5, 0)
+    scroll.CanvasSize = UDim2.new(0,0,5,0)
     scroll.ScrollBarThickness = 4
     scroll.Parent = LogsFrame
 
@@ -708,24 +698,72 @@ local function CreateGui()
     LogsText.TextWrapped = false
     LogsText.Text = ""
     LogsText.Parent = scroll
+
+    -- Переключатели
+    TushitaButton.MouseButton1Click:Connect(function()
+        AutoTushita = not AutoTushita
+        if AutoTushita then
+            AutoYama = false
+            YamaButton.Text = "Auto Yama: OFF"
+            YamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+
+            TushitaButton.Text = "Auto Tushita: ON"
+            TushitaButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+
+            StopTween = false
+            UpdateStatus("Фарм Tushita...")
+        else
+            TushitaButton.Text = "Auto Tushita: OFF"
+            TushitaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            StopTween = true
+            UpdateStatus("Остановлен")
+        end
+    end)
+
+    YamaButton.MouseButton1Click:Connect(function()
+        AutoYama = not AutoYama
+        if AutoYama then
+            AutoTushita = false
+            TushitaButton.Text = "Auto Tushita: OFF"
+            TushitaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+
+            YamaButton.Text = "Auto Yama: ON"
+            YamaButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+
+            StopTween = false
+            UpdateStatus("Фарм Yama...")
+        else
+            YamaButton.Text = "Auto Yama: OFF"
+            YamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            StopTween = true
+            UpdateStatus("Остановлен")
+        end
+    end)
+
+    AddLog("GUI Auto Yama/Tushita загружен.")
 end
 
------------------------------
--- ЗАПУСК
------------------------------
-CreateGui()
-AddLog("Auto Yama / Auto Tushita (Rip Indra + Holy Torch + Longma) загружен.")
-
+------------------------------------------------
+-- ОСНОВНОЙ ЦИКЛ
+------------------------------------------------
 task.spawn(function()
     while task.wait(0.5) do
         if AutoTushita then
-            pcall(function()
-                RunTushitaLogic()
-            end)
+            local ok, err = pcall(RunTushitaLogic)
+            if not ok then
+                AddLog("Ошибка в RunTushitaLogic: "..tostring(err))
+            end
         elseif AutoYama then
-            pcall(function()
-                RunYamaLogic()
-            end)
+            local ok, err = pcall(RunYamaLogic)
+            if not ok then
+                AddLog("Ошибка в RunYamaLogic: "..tostring(err))
+            end
         end
     end
 end)
+
+------------------------------------------------
+-- СТАРТ GUI
+------------------------------------------------
+CreateGui()
+UpdateStatus("Ожидание...")
