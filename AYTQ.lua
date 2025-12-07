@@ -1,5 +1,5 @@
 --========================================================
--- Auto Yama (на основе логики из 12к)
+-- Auto Yama (логика EliteHunter из 12к, фикс поиска элиток)
 -- GUI + лог-панель, телепорт 300 speed, Anti-AFK
 --========================================================
 
@@ -26,11 +26,10 @@ local LocalPlayer = Players.LocalPlayer
 local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 ------------------------------------------------
--- NET-модуль (аналог 12к, но аккуратный)
+-- NET-модуль
 ------------------------------------------------
 local modules        = ReplicatedStorage:WaitForChild("Modules")
 local net            = modules:WaitForChild("Net")
--- в 12к эти объекты называются так:
 local RegisterAttack = net:WaitForChild("RE/RegisterAttack")
 local RegisterHit    = net:WaitForChild("RE/RegisterHit")
 
@@ -290,7 +289,6 @@ local function GetEliteProgress()
     return 0
 end
 
--- точный путь как в 12к: Main.Quest.Container.QuestTitle.Title.Text
 local function GetQuestTitle()
     local ok, txt = pcall(function()
         return LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text
@@ -319,7 +317,7 @@ local function FindEliteHunterNPC()
 end
 
 local lastEliteQuestRequest = 0
-local EliteQuestCooldown    = 60  -- раз в минуту, как ты просил
+local EliteQuestCooldown    = 60  -- раз в минуту
 
 local function RequestEliteQuest()
     local now = tick()
@@ -344,7 +342,7 @@ local function RequestEliteQuest()
 end
 
 ------------------------------------------------
--- ЭЛИТКИ: поиск и бой (логика 12к, но на наших функциях)
+-- ЭЛИТКИ: поиск и бой
 ------------------------------------------------
 local EliteNames = { "Diablo", "Deandre", "Urban" }
 
@@ -359,13 +357,13 @@ local function IsEliteName(name)
 end
 
 local function FindEliteInWorkspace()
-    local enemies = Workspace:FindChildWhichIsA("Folder", false) and Workspace:FindFirstChild("Enemies")
+    local enemies = Workspace:FindFirstChild("Enemies")
     if not enemies then return nil end
 
     for _, v in ipairs(enemies:GetChildren()) do
         if IsEliteName(v.Name) then
-            local hum  = v:FindFirstChildOfClass("Humanoid")
-            local hrp  = v:FindFirstChild("HumanoidRootPart")
+            local hum = v:FindFirstChildOfClass("Humanoid")
+            local hrp = v:FindFirstChild("HumanoidRootPart")
             if hum and hrp and hum.Health > 0 then
                 return v
             end
@@ -383,11 +381,14 @@ local function FightElite(target)
     local hum  = target:FindFirstChildOfClass("Humanoid")
     if not (char and hrp and tHRP and hum) then return end
 
+    -- Сначала один раз телепортируемся к элитке
+    SimpleTeleport(tHRP.CFrame * FarmOffset, "элитный босс")
+
     local fightDeadline = tick() + 120
     local lastAdjust    = 0
     local lastHit       = 0
 
-    AddLog("Нашёл элитку: "..tostring(target.Name)..", начинаю бой (логика 12к).")
+    AddLog("Нашёл элитку: "..tostring(target.Name)..", начинаю бой.")
 
     while AutoYama
         and target.Parent
@@ -441,7 +442,7 @@ local function FightElite(target)
 end
 
 ------------------------------------------------
--- ЛОГИКА Yama (максимально близко к 12к)
+-- ЛОГИКА Yama
 ------------------------------------------------
 local WaterfallCFrame = CFrame.new(-12361.7060546875, 603.3547973632812, -6550.5341796875)
 
@@ -465,7 +466,6 @@ local function ClickSealedKatana()
 end
 
 local function RunYamaStep()
-    -- меч уже есть
     if HasItemInInventory("Yama") then
         UpdateStatus("Yama уже есть, скрипт остановлен.")
         AutoYama = false
@@ -476,11 +476,9 @@ local function RunYamaStep()
         return
     end
 
-    -- прогресс EliteHunter
     local progress = GetEliteProgress()
     AddLog("Yama: прогресс Elite Hunter = "..tostring(progress).."/30.")
 
-    -- как в 12к: если >=30 — идём открывать меч
     if progress >= 30 then
         UpdateStatus("Yama: прогресс 30/30, иду к водопаду.")
         SimpleTeleport(WaterfallCFrame, "Waterfall / SealedKatana")
@@ -489,7 +487,6 @@ local function RunYamaStep()
         return
     end
 
-    -- логика как в 12к: смотрим текст квеста
     local questTitle = GetQuestTitle()
     if questTitle ~= "" then
         AddLog("Yama: квест = '"..questTitle.."'.")
@@ -503,7 +500,6 @@ local function RunYamaStep()
     end
 
     if hasEliteQuest then
-        -- как в 12к: если квест на элиту, ищем мобов Diablo/Deandre/Urban
         UpdateStatus("Yama: квест на элиту активен, ищу босса.")
         local elite = FindEliteInWorkspace()
         if elite then
@@ -513,7 +509,6 @@ local function RunYamaStep()
             AddLog("Yama: квест на элиту есть, но сам босс не найден (жду спавна).")
         end
     else
-        -- как в 12к: просто вызываем EliteHunter (у нас с кд)
         UpdateStatus("Yama: элитный квест не активен, беру/обновляю Elite Hunter.")
         RequestEliteQuest()
     end
@@ -542,7 +537,7 @@ local function CreateGui()
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 26)
     Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    Title.Text = "Auto Yama (логика EliteHunter из 12к)"
+    Title.Text = "Auto Yama (Elite Hunter из 12к, FIX)"
     Title.TextColor3 = Color3.new(1, 1, 1)
     Title.Font = Enum.Font.SourceSansBold
     Title.TextSize = 20
