@@ -1,16 +1,20 @@
--- Auto Tushita Quest1: 3 Luxury Boat Dealer
--- Для каждого дилера: открыть диалог, 3x Option3 (Next), 1x Option1 (Pardon me)
+-- Auto Tushita Quest1 (3 Luxury Boat Dealer)
+-- Для каждого дилера:
+--   1) Телепорт к точке
+--   2) Поиск ближайшего "Luxury Boat Dealer"
+--   3) Вызов CommF_:InvokeServer("CDKQuest","BoatQuest", npcModel)
+--     (это и есть эффект 3x Next + 1x Pardon me)
 
 ------------------------------------------------
--- НАСТРОЙКИ / ТОЧКИ
+-- НАСТРОЙКИ
 ------------------------------------------------
-local TeleportSpeed = 300 -- скорость полёта (stud/sec)
+local TeleportSpeed = 300 -- скорость полёта (stud/сек)
 
--- Координаты трёх Luxury Boat Dealer / точек квеста
+-- Точки, где стоят Luxury Boat Dealer (твои координаты)
 local QuestPoints = {
-    CFrame.new(-9546.990234375, 21.139892578125, 4686.1142578125),
-    CFrame.new(-6120.0576171875, 16.455780029296875, -2250.697265625),
-    CFrame.new(-9533.2392578125, 7.254445552825928, -8372.69921875),
+    CFrame.new(-9546.990234375, 21.139892578125, 4686.1142578125),          -- точка 1
+    CFrame.new(-6120.0576171875, 16.455780029296875, -2250.697265625),      -- точка 2
+    CFrame.new(-9533.2392578125, 7.254445552825928, -8372.69921875),        -- точка 3
 }
 
 ------------------------------------------------
@@ -20,8 +24,10 @@ local Players          = game:GetService("Players")
 local TweenService     = game:GetService("TweenService")
 local RunService       = game:GetService("RunService")
 local Workspace        = game:GetService("Workspace")
+local ReplicatedStorage= game:GetService("ReplicatedStorage")
 
 local LocalPlayer      = Players.LocalPlayer
+local CommF            = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 local AutoTushitaQ1    = false
 local IsTeleporting    = false
@@ -75,7 +81,7 @@ local function CreateGui()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 24)
     title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    title.Text = "Auto Tushita Quest1 (3xOption3 + 1xOption1)"
+    title.Text = "Auto Tushita Quest1 (BoatQuest)"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
     title.TextSize = 18
@@ -200,7 +206,7 @@ local function TweenTo(targetCF, label)
 end
 
 ------------------------------------------------
--- ПОИСК Luxury Boat Dealer + ОТКРЫТИЕ ДИАЛОГА
+-- ПОИСК Luxury Boat Dealer
 ------------------------------------------------
 local function FindNearestLuxuryBoatDealer(maxDist)
     maxDist = maxDist or 200
@@ -211,7 +217,9 @@ local function FindNearestLuxuryBoatDealer(maxDist)
     local nearest, best = nil, maxDist
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj.Name == "Luxury Boat Dealer" then
-            local head = obj:FindFirstChild("HumanoidRootPart") or obj:FindChild("Head") or obj:FindFirstChildWhichIsA("BasePart")
+            local head = obj:FindFirstChild("HumanoidRootPart") or
+                         obj:FindFirstChild("Head") or
+                         obj:FindFirstChildWhichIsA("BasePart")
             if head then
                 local d = (head.Position - hrp.Position).Magnitude
                 if d < best then
@@ -224,111 +232,49 @@ local function FindNearestLuxuryBoatDealer(maxDist)
     return nearest
 end
 
-local function TryOpenDialogue(npc)
+------------------------------------------------
+-- РАБОТА С ОДНИМ ДИЛЕРОМ
+------------------------------------------------
+local function HandleDealerAtPoint(index)
+    UpdateStatus("Tushita Q1: точка "..index)
+    TweenTo(QuestPoints[index], "точка "..index)
+    if not AutoTushitaQ1 or StopTween then return end
+
+    local npc = FindNearestLuxuryBoatDealer(150)
     if not npc then
-        AddLog("❌ Luxury Boat Dealer не найден рядом.")
+        AddLog("❌ Luxury Boat Dealer не найден в радиусе 150 stud у точки "..index..".")
         return
     end
 
+    AddLog("Нашёл Luxury Boat Dealer у точки "..index..". Пытаюсь отправить BoatQuest.")
+
+    -- чуть подвинемся поближе (не обязательно, но аккуратнее)
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     local hrp  = char:WaitForChild("HumanoidRootPart")
-
-    local head = npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Head") or npc:FindFirstChildWhichIsA("BasePart")
+    local head = npc:FindFirstChild("HumanoidRootPart") or
+                 npc:FindFirstChild("Head") or
+                 npc:FindFirstChildWhichIsA("BasePart")
     if head then
         hrp.CFrame = head.CFrame * CFrame.new(0, 0, -3)
     end
 
-    AddLog("Нашёл Luxury Boat Dealer, пробую открыть диалог.")
-
-    -- ProximityPrompt
-    pcall(function()
-        if head then
-            local prompt = head:FindFirstChildOfClass("ProximityPrompt")
-            if prompt and fireproximityprompt then
-                AddLog(" fireproximityprompt(prompt)")
-                fireproximityprompt(prompt, 2)
-            end
-        end
+    -- Ключевой вызов, который мы увидели в логгере
+    local ok, res = pcall(function()
+        return CommF:InvokeServer("CDKQuest", "BoatQuest", npc)
     end)
 
-    -- ClickDetector
-    pcall(function()
-        if head then
-            local cd = head:FindFirstChildOfClass("ClickDetector")
-            if cd and fireclickdetector then
-                AddLog(" fireclickdetector(ClickDetector)")
-                fireclickdetector(cd)
-            end
-        end
-    end)
-end
-
-------------------------------------------------
--- НАЖАТИЕ Option3 / Option1 В ДИАЛОГЕ
-------------------------------------------------
-local function ClickDialogueOption(optionName, times)
-    times = times or 1
-    local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pg then return end
-
-    local main = pg:FindFirstChild("Main")
-    local dialogue = main and main:FindFirstChild("Dialogue")
-    if not dialogue then
-        AddLog("Диалог не найден (Main.Dialogue отсутствует).")
-        return
+    if ok then
+        AddLog("✅ CommF_:InvokeServer(\"CDKQuest\",\"BoatQuest\", npc) отправлен. Ответ: "..tostring(res))
+    else
+        AddLog("❌ Ошибка при BoatQuest: "..tostring(res))
     end
 
-    local btn = dialogue:FindFirstChild(optionName)
-    if not (btn and btn:IsA("TextButton")) then
-        AddLog("Кнопка "..optionName.." не найдена в диалоге.")
-        return
-    end
-
-    for i = 1, times do
-        AddLog("Нажимаю "..optionName.." (#"..i..")")
-        pcall(function()
-            btn:Activate()
-        end)
-        task.wait(0.25)
-    end
-end
-
-local function HandleDealerAtCurrentPoint(index)
-    AddLog("Tushita Q1: точка "..index.." — ищу Luxury Boat Dealer.")
-    local npc = FindNearestLuxuryBoatDealer(120)
-    if not npc then
-        AddLog("❌ Dealer не найден в радиусе 120 stud.")
-        return
-    end
-
-    TryOpenDialogue(npc)
-
-    -- ждём появления GUI диалога
-    local appeared = false
-    for _ = 1, 20 do -- до ~2 секунд
-        local pg = LocalPlayer:FindFirstChild("PlayerGui")
-        if pg then
-            local main = pg:FindFirstChild("Main")
-            local dialogue = main and main:FindFirstChild("Dialogue")
-            if dialogue then
-                appeared = true
-                break
-            end
-        end
+    -- небольшая пауза перед следующей точкой
+    local tEnd = tick() + 1.0
+    while tick() < tEnd do
+        if not AutoTushitaQ1 or StopTween then break end
         task.wait(0.1)
     end
-
-    if not appeared then
-        AddLog("Диалог так и не появился (Main.Dialogue).")
-        return
-    end
-
-    -- 3 раза Option3 (Next)
-    ClickDialogueOption("Option3", 3)
-    -- 1 раз Option1 (Pardon me)
-    ClickDialogueOption("Option1", 1)
-
-    AddLog("Последовательность 3xOption3 + 1xOption1 выполнена для точки "..index..".")
 end
 
 ------------------------------------------------
@@ -337,30 +283,18 @@ end
 spawn(function()
     while task.wait(0.4) do
         if AutoTushitaQ1 then
-            pcall(function()
-                for idx, cf in ipairs(QuestPoints) do
+            local ok, err = pcall(function()
+                for idx = 1, #QuestPoints do
                     if not AutoTushitaQ1 then break end
-
-                    UpdateStatus("Tushita Q1: точка "..idx)
-                    TweenTo(cf, "точка "..idx)
-                    if not AutoTushitaQ1 or StopTween then break end
-
-                    HandleDealerAtCurrentPoint(idx)
-
-                    -- небольшая пауза после работы с дилером / точкой
-                    local tEnd = tick() + 1.0
-                    while tick() < tEnd do
-                        if not AutoTushitaQ1 or StopTween then break end
-                        task.wait(0.1)
-                    end
+                    HandleDealerAtPoint(idx)
                 end
-
                 if AutoTushitaQ1 then
                     AddLog("Круг по трём дилерам завершён, повторяю...")
-                else
-                    AddLog("Tushita Q1 остановлен пользователем.")
                 end
             end)
+            if not ok then
+                AddLog("⚠️ Ошибка в основном цикле: "..tostring(err))
+            end
         end
     end
 end)
