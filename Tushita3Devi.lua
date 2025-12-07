@@ -1,15 +1,16 @@
 -- Auto Tushita Quest3
 -- Этапы:
 -- 1) Ищем / убиваем Cake Queen.
--- 2) Когда появляется HeavenlyDimension — заходим в измерение:
---    Torch1 -> E (2 сек) -> фарм скелетов
---    Torch2 -> E (2 сек) -> фарм скелетов
---    Torch3 -> E (2 сек) -> фарм скелетов + Heaven's Guardian
---    => после всего тп к Exit.
+-- 2) Как только появляется HeavenlyDimension:
+--    Torch1 -> зажать E 2 сек -> фарм мобов
+--    Torch2 -> зажать E 2 сек -> фарм мобов
+--    Torch3 -> зажать E 2 сек -> фарм мобов + Heaven's Guardian
+--    Затем TP к Exit.
+
 ------------------------------------------------
 -- НАСТРОЙКИ
 ------------------------------------------------
-local WeaponName    = "Godhuman"                -- чем бить
+local WeaponName    = "Godhuman"                -- оружие для боя
 local TeleportSpeed = 300                       -- скорость полёта
 local FarmOffset    = CFrame.new(0, 10, -3)     -- позиция над мобом
 
@@ -37,8 +38,12 @@ local IsFighting        = false
 local CurrentStatus     = "Idle"
 
 -- стадия внутри HeavenlyDimension:
--- 0 - ещё не были, 1 - Torch1, 2 - Torch2, 3 - Torch3, 4 - boss/финал
+-- 0 -Torch1, 1 -Torch2, 2 -Torch3, 3 -добиваем мобов, 4 - Exit
 local HeavenlyStage     = 0
+
+-- антиспам логов
+local lastCakeLogTime       = 0
+local lastHeavenlyFoundTime = 0
 
 ------------------------------------------------
 -- ЛОГИ / GUI
@@ -93,9 +98,7 @@ function AttackModule:AttackEnemyModel(enemyModel)
     local hrp = enemyModel:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    local hitTable = {
-        {enemyModel, hrp}
-    }
+    local hitTable = {{enemyModel, hrp}}
 
     RegisterAttack:FireServer(0)
     RegisterAttack:FireServer(1)
@@ -264,10 +267,11 @@ local function FindCakeQueen()
     local enemies = GetEnemiesFolder()
     if not enemies then return nil end
     for _, v in ipairs(enemies:GetChildren()) do
-        if v.Name == "Cake Queen" and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
-            if v.Humanoid.Health > 0 then
-                return v
-            end
+        if v.Name == "Cake Queen"
+            and v:FindFirstChild("Humanoid")
+            and v:FindFirstChild("HumanoidRootPart")
+            and v.Humanoid.Health > 0 then
+            return v
         end
     end
     return nil
@@ -279,8 +283,8 @@ local function HeavenlyDimensionFolder()
     return map:FindFirstChild("HeavenlyDimension")
 end
 
-local function EnsureInsideHeavenlyDimension()
-    local dim = HeavenlyDimensionFolder()
+local function EnsureInsideHeavenlyDimension(dim)
+    dim = dim or HeavenlyDimensionFolder()
     if not dim then return false end
 
     local torch1 = dim:FindFirstChild("Torch1")
@@ -340,7 +344,7 @@ local function FightMob(target, label, maxTime)
 
         SimpleTeleport(tHRP.CFrame * FarmOffset, label or "цель")
 
-        local deadline     = tick() + maxTime
+        local deadline      = tick() + maxTime
         local lastPosAdjust = 0
         local lastAttack    = 0
         local engaged       = false
@@ -436,7 +440,7 @@ end
 ------------------------------------------------
 
 local function RunCakeQueenPhase()
-    -- если HeavenlyDimension уже открыто, CakeQueen нас больше не интересует
+    -- если уже появилось измерение - Cake Queen не трогаем
     if HeavenlyDimensionFolder() then
         return
     end
@@ -445,33 +449,35 @@ local function RunCakeQueenPhase()
     if boss then
         FightMob(boss, "Tushita3: Cake Queen", 120)
     else
-        UpdateStatus("Tushita3: Cake Queen не найдена, лечу к острову.")
+        -- антиспам логов раз в минуту
+        if tick() - lastCakeLogTime > 60 then
+            lastCakeLogTime = tick()
+            UpdateStatus("Tushita3: Cake Queen не найдена, лечу к острову.")
+        end
         SimpleTeleport(CakeQueenIsland, "остров Cake Queen")
     end
 end
 
-local function RunHeavenlyDimensionPhase()
-    local dim = HeavenlyDimensionFolder()
+local function RunHeavenlyDimensionPhase(dim)
+    dim = dim or HeavenlyDimensionFolder()
     if not dim then return end
 
-    if not EnsureInsideHeavenlyDimension() then
+    if not EnsureInsideHeavenlyDimension(dim) then
         return
     end
 
-    -- всегда сначала проверяем, нет ли живых мобов/босса
+    -- всегда сначала пробуем подраться с мобами
     local currentMob = GetHeavenlyMob()
     if currentMob then
         FightMob(currentMob, "Tushita3: бой в HeavenlyDimension", 60)
         return
     end
 
-    -- если мобов нет, то работаем с факелами / exit по стадиям
     local torch1 = dim:FindFirstChild("Torch1")
     local torch2 = dim:FindFirstChild("Torch2")
     local torch3 = dim:FindFirstChild("Torch3")
     local exit   = dim:FindFirstChild("Exit")
 
-    -- стадия 0 -> Torch1
     if HeavenlyStage == 0 then
         if torch1 then
             UpdateStatus("Tushita3: Torch1.")
@@ -484,7 +490,6 @@ local function RunHeavenlyDimensionPhase()
         return
     end
 
-    -- стадия 1 -> Torch2
     if HeavenlyStage == 1 then
         if torch2 then
             UpdateStatus("Tushita3: Torch2.")
@@ -497,7 +502,6 @@ local function RunHeavenlyDimensionPhase()
         return
     end
 
-    -- стадия 2 -> Torch3
     if HeavenlyStage == 2 then
         if torch3 then
             UpdateStatus("Tushita3: Torch3.")
@@ -505,12 +509,11 @@ local function RunHeavenlyDimensionPhase()
             HoldEFor(2, "Torch3")
             HeavenlyStage = 3
             AddLog("Torch3 активирован, фарм скелетов и Heaven's Guardian.")
-            FarmHeavenlyMobsFor(40) -- здесь обычно появляется Heaven's Guardian
+            FarmHeavenlyMobsFor(40)
         end
         return
     end
 
-    -- стадия 3 -> ждём, пока не останутся мобы, затем Exit
     if HeavenlyStage == 3 then
         local mob = GetHeavenlyMob()
         if mob then
@@ -527,18 +530,23 @@ local function RunHeavenlyDimensionPhase()
         return
     end
 
-    -- HeavenlyStage >= 4 – просто стоим / ждём конца квеста
     if HeavenlyStage >= 4 then
         UpdateStatus("Tushita3: HeavenlyDimension завершён, жду завершения квеста.")
     end
 end
 
 local function RunTushitaQ3Cycle()
-    -- если есть измерение — это приоритетнее, чем Cake Queen
-    if HeavenlyDimensionFolder() then
-        RunHeavenlyDimensionPhase()
+    local dim = HeavenlyDimensionFolder()
+
+    if dim then
+        -- один раз логируем факт появления измерения
+        if tick() - lastHeavenlyFoundTime > 5 then
+            lastHeavenlyFoundTime = tick()
+            AddLog("HeavenlyDimension обнаружен, переключаюсь на фазу измерения.")
+        end
+        RunHeavenlyDimensionPhase(dim)
     else
-        HeavenlyStage = 0 -- сбрасываем, если измерение пропало
+        HeavenlyStage = 0 -- если измерение пропало/ещё не появилось
         RunCakeQueenPhase()
     end
 end
