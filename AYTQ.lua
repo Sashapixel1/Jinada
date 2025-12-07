@@ -1,44 +1,55 @@
---========================================================
--- Auto Yama (Elite Hunter, динамический поиск элитки)
---========================================================
+--[[
+    Auto Yama / Elite Hunter (патруль островов)
+    - Берёт квест у Elite Hunter (с задержкой между запросами)
+    - Если квест на Diablo / Deandre / Urban активен:
+        * ищет элитку по всей карте (Workspace.Enemies)
+        * если нашёл — летит и убивает её (fast-attack + позиция над мобом)
+        * если не нашёл — патрулирует острова Port Town / Hydra / Great Tree / Floating Turtle,
+          чтобы форсировать спавн элитки
+    - При прогрессе >= 30 пытается открыть водопад и взять Yama
+    - Есть GUI: кнопка ON/OFF + лог-панель (скролл)
+]]
 
-task.wait(2)
-
-------------------------------------------------
+--------------------------------
 -- НАСТРОЙКИ
-------------------------------------------------
-local WeaponName    = "Godhuman"
-local TeleportSpeed = 300
-local FarmOffset    = CFrame.new(0, 12, -3)
+--------------------------------
+local WeaponName    = "Godhuman"     -- чем бить элиток (любой твой melee / меч)
+local TeleportSpeed = 300            -- макс скорость полёта (юнитов/сек)
+local HoverOffset   = CFrame.new(0, 10, -3) -- позиция над элиткой во время боя
 
-------------------------------------------------
+--------------------------------
+-- ФЛАГИ / СОСТОЯНИЕ
+--------------------------------
+local AutoYama      = false
+local CurrentStatus = "Idle"
+
+--------------------------------
 -- СЕРВИСЫ
-------------------------------------------------
-local Players           = game:GetService("Players")
-local TweenService      = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace         = game:GetService("Workspace")
-local RunService        = game:GetService("RunService")
-local VirtualUser       = game:GetService("VirtualUser")
+--------------------------------
+local Players            = game:GetService("Players")
+local TweenService       = game:GetService("TweenService")
+local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local Workspace          = game:GetService("Workspace")
+local RunService         = game:GetService("RunService")
+local VirtualInputManager= game:GetService("VirtualInputManager")
 
-local LocalPlayer = Players.LocalPlayer
-local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+local LocalPlayer        = Players.LocalPlayer
+local remote             = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
-------------------------------------------------
--- NET-модуль
-------------------------------------------------
+--------------------------------
+-- NET MODULE (fast attack)
+--------------------------------
 local modules        = ReplicatedStorage:WaitForChild("Modules")
 local net            = modules:WaitForChild("Net")
 local RegisterAttack = net:WaitForChild("RE/RegisterAttack")
 local RegisterHit    = net:WaitForChild("RE/RegisterHit")
 
-local AttackModule = {}
+local AttackModule   = {}
 
 function AttackModule:AttackEnemyModel(enemyModel)
     if not enemyModel then return end
     local hrp = enemyModel:FindFirstChild("HumanoidRootPart")
-    local hum = enemyModel:FindFirstChildOfClass("Humanoid")
-    if not (hrp and hum and hum.Health > 0) then return end
+    if not hrp then return end
 
     local hitTable = {
         {enemyModel, hrp}
@@ -49,59 +60,45 @@ function AttackModule:AttackEnemyModel(enemyModel)
     RegisterHit:FireServer(hrp, hitTable)
 end
 
-------------------------------------------------
--- ГЛОБАЛЬНЫЕ ФЛАГИ / ЛОГИ
-------------------------------------------------
-local AutoYama      = false
-local CurrentStatus = "Idle"
-
+--------------------------------
+-- ЛОГИ / GUI
+--------------------------------
 local StatusLogs = {}
 local MaxLogs    = 120
 
 local ScreenGui, MainFrame
-local StatusLabel, LogsText, ToggleButton
+local ToggleYamaButton
+local StatusLabel, LogsText
 
 local function AddLog(msg)
-    local ts   = os.date("%H:%M:%S")
-    local line = "["..ts.."] "..tostring(msg)
-    table.insert(StatusLogs, 1, line)
+    local timestamp = os.date("%H:%M:%S")
+    local entry = "[" .. timestamp .. "] " .. tostring(msg)
+
+    table.insert(StatusLogs, 1, entry)
     if #StatusLogs > MaxLogs then
         table.remove(StatusLogs, #StatusLogs)
     end
+
     if LogsText then
         LogsText.Text = table.concat(StatusLogs, "\n")
     end
 end
 
-local function UpdateStatus(text)
-    CurrentStatus = text
-    AddLog("Статус: "..text)
+local function UpdateStatus(newStatus)
+    CurrentStatus = newStatus
+    AddLog("Статус: " .. newStatus)
     if StatusLabel then
-        StatusLabel.Text = "Статус: "..text
+        StatusLabel.Text = "Статус: " .. newStatus
     end
 end
 
-------------------------------------------------
--- Anti-AFK
-------------------------------------------------
-task.spawn(function()
-    while task.wait(55) do
-        if AutoYama then
-            pcall(function()
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new(0,0), Workspace.CurrentCamera.CFrame)
-                AddLog("Anti-AFK: фейковый клик, чтобы не кикнуло.")
-            end)
-        end
-    end
-end)
-
-------------------------------------------------
--- Noclip
-------------------------------------------------
+--------------------------------
+-- Noclip (как в костях)
+--------------------------------
 local NoclipEnabled = false
+
 task.spawn(function()
-    while task.wait(0.2) do
+    while task.wait(0.1) do
         if NoclipEnabled then
             local char = LocalPlayer.Character
             if char then
@@ -115,9 +112,9 @@ task.spawn(function()
     end
 end)
 
-------------------------------------------------
+--------------------------------
 -- ХАКИ / ЭКИП
-------------------------------------------------
+--------------------------------
 local function AutoHaki()
     local char = LocalPlayer.Character
     if not char then return end
@@ -133,9 +130,8 @@ local lastEquipFailLog = 0
 local function IsToolEquipped(name)
     local char = LocalPlayer.Character
     if not char then return false end
-    local lower = string.lower(name)
     for _, obj in ipairs(char:GetChildren()) do
-        if obj:IsA("Tool") and string.lower(obj.Name) == lower then
+        if obj:IsA("Tool") and string.lower(obj.Name) == string.lower(name) then
             return true
         end
     end
@@ -150,34 +146,46 @@ local function EquipToolByName(name)
     local hum  = char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
 
-    local lower = string.lower(name)
-
-    local function findTool(container)
+    local nameLower = string.lower(name)
+    local function findToolIn(container)
         if not container then return nil end
+        for _, obj in ipairs(container:GetChildren()) do
+            if obj:IsA("Tool") and string.lower(obj.Name) == nameLower then
+                return obj
+            end
+        end
         for _, obj in ipairs(container:GetDescendants()) do
-            if obj:IsA("Tool") and string.lower(obj.Name) == lower then
+            if obj:IsA("Tool") and string.lower(obj.Name) == nameLower then
                 return obj
             end
         end
         return nil
     end
 
-    local tool = findTool(p:FindFirstChild("Backpack")) or findTool(char)
-    if tool then
+    local toolFound
+    local backpack = p:FindFirstChild("Backpack")
+    if backpack then
+        toolFound = findToolIn(backpack)
+    end
+    if not toolFound and char then
+        toolFound = findToolIn(char)
+    end
+
+    if toolFound then
         hum:UnequipTools()
-        hum:EquipTool(tool)
-        AddLog("Экипирован: "..tool.Name)
+        hum:EquipTool(toolFound)
+        AddLog("⚔️ Экипирован: " .. toolFound.Name)
     else
         if tick() - lastEquipFailLog > 3 then
-            AddLog("Не нашёл оружие: "..name)
+            AddLog("⚠️ Не удалось найти оружие: " .. name)
             lastEquipFailLog = tick()
         end
     end
 end
 
-------------------------------------------------
+--------------------------------
 -- ТЕЛЕПОРТ
-------------------------------------------------
+--------------------------------
 local IsTeleporting = false
 local StopTween     = false
 
@@ -187,16 +195,18 @@ local function SimpleTeleport(targetCFrame, label)
     StopTween     = false
 
     local char = LocalPlayer.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if not (char and hrp) then
+    if not char or not char:FindFirstChild("HumanoidRootPart") then
         IsTeleporting = false
         return
     end
 
-    local distance   = (hrp.Position - targetCFrame.Position).Magnitude
-    local travelTime = math.clamp(distance / TeleportSpeed, 0.5, 60)
+    local hrp      = char.HumanoidRootPart
+    local distance = (hrp.Position - targetCFrame.Position).Magnitude
+    AddLog(string.format("Телепорт к %s (%.0f stud)", label or "цели", distance))
 
-    AddLog(string.format("Телепорт к %s (%.0f stud, t=%.1f)", label or "цели", distance, travelTime))
+    local travelTime = distance / TeleportSpeed
+    if travelTime < 0.5 then travelTime = 0.5 end
+    if travelTime > 60  then travelTime = 60  end
 
     local tween = TweenService:Create(
         hrp,
@@ -213,346 +223,240 @@ local function SimpleTeleport(targetCFrame, label)
             AddLog("Телепорт прерван (StopTween).")
             return
         end
+
         local c = LocalPlayer.Character
         hrp = c and c:FindFirstChild("HumanoidRootPart")
-        if not (c and hrp) then
+        if not c or not hrp then
             tween:Cancel()
             IsTeleporting = false
             return
         end
-        hrp.AssemblyLinearVelocity = Vector3.new()
-        hrp.AssemblyAngularVelocity = Vector3.new()
-        hrp.CanCollide = false
-        task.wait(0.15)
+
+        hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+        hrp.CanCollide             = false
+
+        task.wait(0.2)
     end
 
     tween:Cancel()
     local c = LocalPlayer.Character
     hrp = c and c:FindFirstChild("HumanoidRootPart")
     if hrp then
-        hrp.CFrame = targetCFrame
-        hrp.AssemblyLinearVelocity = Vector3.new()
-        hrp.AssemblyAngularVelocity = Vector3.new()
-        hrp.CanCollide = false
+        hrp.CFrame                = targetCFrame
+        hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+        hrp.CanCollide            = false
     end
+
     IsTeleporting = false
 end
 
-LocalPlayer.CharacterAdded:Connect(function()
+-- Фикс после смерти
+LocalPlayer.CharacterAdded:Connect(function(char)
     IsTeleporting = false
     StopTween     = false
-    AddLog("Персонаж возрождён, телепорт можно продолжать.")
+    AddLog("Персонаж возрождён, жду HRP...")
+    char:WaitForChild("HumanoidRootPart", 10)
+    AddLog("HRP найден, фарм можно продолжать.")
 end)
 
-------------------------------------------------
--- ИНВЕНТАРЬ / КВЕСТ
-------------------------------------------------
-local function HasItemInInventory(itemName)
-    local p = LocalPlayer
-    if not p then return false end
+--------------------------------
+-- ЭЛИТКИ: список имён и острова патруля
+--------------------------------
+local EliteNames = {
+    Diablo  = true,
+    Deandre = true,
+    Urban   = true,
+}
 
-    local backpack = p:FindFirstChild("Backpack")
-    if backpack and backpack:FindFirstChild(itemName) then
-        return true
-    end
+-- Координаты островов, где часто бывают элитки
+local EliteIslands = {
+    {
+        name   = "Port Town",
+        cframe = CFrame.new(-290.73767089844, 6.72995281219, 5343.5537109375),
+    },
+    {
+        name   = "Hydra Island",
+        cframe = CFrame.new(5291.24951171875, 1005.443359375, 393.7624206542969),
+    },
+    {
+        name   = "Great Tree",
+        cframe = CFrame.new(2681.2736816406, 1682.8092041016, -7190.9853515625),
+    },
+    {
+        name   = "Floating Turtle",
+        cframe = CFrame.new(-13274.528320313, 531.82073974609, -7579.22265625),
+    },
+}
 
-    local char = p.Character
-    if char and char:FindFirstChild(itemName) then
-        return true
-    end
+local EliteIslandIndex = 1
+local LastIslandHop    = 0
+local IslandHopDelay   = 12 -- сек между прыжками по островам
 
-    local ok, inv = pcall(function()
-        return remote:InvokeServer("getInventory")
-    end)
-    if ok and type(inv) == "table" then
-        for _, item in ipairs(inv) do
-            local name = item.Name or item.name
-            if name == itemName then
-                return true
+local function FindEliteInWorkspace()
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return nil end
+
+    for _, mob in ipairs(enemies:GetChildren()) do
+        if mob:IsA("Model") and EliteNames[mob.Name] then
+            local hum = mob:FindFirstChild("Humanoid")
+            local hrp = mob:FindFirstChild("HumanoidRootPart")
+            if hum and hrp and hum.Health > 0 then
+                return mob, hum, hrp
             end
         end
     end
-    return false
+    return nil
 end
 
-local function GetEliteProgress()
-    local ok, res = pcall(function()
-        return remote:InvokeServer("EliteHunter", "Progress")
-    end)
-    if ok then
-        return tonumber(res) or 0
+local function PatrolEliteIslands()
+    if tick() - LastIslandHop < IslandHopDelay then
+        return
     end
-    return 0
+    LastIslandHop = tick()
+
+    local isl = EliteIslands[EliteIslandIndex]
+    EliteIslandIndex = EliteIslandIndex + 1
+    if EliteIslandIndex > #EliteIslands then
+        EliteIslandIndex = 1
+    end
+
+    if isl and isl.cframe then
+        AddLog(("Yama: патруль, лечу на %s."):format(isl.name))
+        SimpleTeleport(isl.cframe, "Патруль элитки: "..isl.name)
+    end
 end
+
+--------------------------------
+-- ОСНОВНАЯ ЛОГИКА Yama
+--------------------------------
+_G._LastEliteQuestRequest = _G._LastEliteQuestRequest or 0
 
 local function GetQuestTitle()
-    local ok, txt = pcall(function()
-        return LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return "" end
+
+    local main = pg:FindFirstChild("Main")
+    if not main then return "" end
+
+    local questGui = main:FindFirstChild("Quest")
+    if not questGui then return "" end
+
+    local cont = questGui:FindFirstChild("Container")
+    if not cont then return "" end
+
+    local label = cont:FindFirstChild("QuestTitle")
+    if not label or not label:IsA("TextLabel") then return "" end
+
+    return label.Text or ""
+end
+
+local function RunYamaLogic()
+    if not AutoYama then return end
+
+    local ok, progress = pcall(function()
+        return remote:InvokeServer("EliteHunter", "Progress")
     end)
-    if ok and type(txt) == "string" then
-        return txt
-    end
-    return ""
-end
+    progress = ok and progress or 0
 
--- парсим имя элитки из текста квеста
-local function GetEliteNameFromQuest(questTitle)
-    if type(questTitle) ~= "string" or questTitle == "" then
-        return nil
-    end
-
-    local name = questTitle:match("Defeat%s+([%w%s%p]+)%s*%(")
-    if name and name ~= "" then
-        return name
-    end
-
-    -- запасной вариант, если формат другой
-    local known = { "Diablo", "Deandre", "Urban" }
-    for _, base in ipairs(known) do
-        if questTitle:find(base, 1, true) then
-            return base
-        end
-    end
-
-    return nil
-end
-
-------------------------------------------------
--- Elite Hunter NPC
-------------------------------------------------
-local CastleOnSeaCFrame = CFrame.new(-5500, 313, -2975)
-
-local function FindEliteHunterNPC()
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name == "Elite Hunter" then
-            local hrp = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head")
-            if hrp then
-                return hrp
-            end
-        end
-    end
-    return nil
-end
-
-local lastEliteQuestRequest = 0
-local EliteQuestCooldown    = 60
-
-local function RequestEliteQuest()
-    local now = tick()
-    if now - lastEliteQuestRequest < EliteQuestCooldown then
-        return
-    end
-    lastEliteQuestRequest = now
-
-    local npcHrp = FindEliteHunterNPC()
-    if npcHrp then
-        SimpleTeleport(npcHrp.CFrame * CFrame.new(0, 4, 3), "Elite Hunter NPC")
-    else
-        SimpleTeleport(CastleOnSeaCFrame, "Castle On The Sea")
-    end
-
-    task.wait(1.5)
-    AddLog("Пробую взять квест Elite Hunter.")
-    local ok, res = pcall(function()
-        return remote:InvokeServer("EliteHunter")
-    end)
-    AddLog("Квест EliteHunter запрошен. Ответ: "..tostring(res))
-end
-
-------------------------------------------------
--- ЭЛИТКА: ПОИСК И БОЙ
-------------------------------------------------
-local function FindEliteInWorkspace(targetName)
-    local targetLower = targetName and string.lower(targetName) or nil
-
-    local function isMatch(name)
-        if not name then return false end
-        name = string.lower(name)
-        if targetLower then
-            return name:find(targetLower, 1, true) ~= nil
-        end
-        -- fallback, если почему-то нет имени из квеста
-        return name:find("diablo",1,true) or name:find("deandre",1,true) or name:find("urban",1,true)
-    end
-
-    -- сначала пробуем стандартный Enemies
-    local enemiesFolder = Workspace:FindFirstChild("Enemies")
-    if enemiesFolder then
-        for _, v in ipairs(enemiesFolder:GetChildren()) do
-            local hum = v:FindFirstChildOfClass("Humanoid")
-            local hrp = v:FindFirstChild("HumanoidRootPart")
-            if hum and hrp and hum.Health > 0 and isMatch(v.Name) then
-                AddLog("Нашёл элитку в Enemies: "..v.Name)
-                return v
-            end
-        end
-    end
-
-    -- если нет — сканируем весь Workspace
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        local hum = v:IsA("Model") and v:FindFirstChildOfClass("Humanoid") or nil
-        local hrp = hum and v:FindFirstChild("HumanoidRootPart") or nil
-        if hum and hrp and hum.Health > 0 and isMatch(v.Name) then
-            AddLog("Нашёл элитку в Workspace: "..v.Name.." ("..v:GetFullName()..")")
-            return v
-        end
-    end
-
-    return nil
-end
-
-local function FightElite(target)
-    if not target then return end
-
-    local char = LocalPlayer.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    local tHRP = target:FindFirstChild("HumanoidRootPart")
-    local hum  = target:FindFirstChildOfClass("Humanoid")
-    if not (char and hrp and tHRP and hum) then return end
-
-    SimpleTeleport(tHRP.CFrame * FarmOffset, "элитный босс")
-
-    local fightDeadline = tick() + 120
-    local lastAdjust    = 0
-    local lastHit       = 0
-
-    AddLog("Нашёл элитку: "..tostring(target.Name)..", начинаю бой.")
-
-    while AutoYama
-        and target.Parent
-        and hum.Health > 0
-        and tick() < fightDeadline do
-
-        char = LocalPlayer.Character
-        hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        tHRP = target:FindFirstChild("HumanoidRootPart")
-        hum  = target:FindFirstChildOfClass("Humanoid")
-
-        if not (char and hrp and tHRP and hum) then
-            break
-        end
-
-        local dist = (tHRP.Position - hrp.Position).Magnitude
-        if dist > 2500 then
-            SimpleTeleport(tHRP.CFrame * FarmOffset, "элитный босс (далеко)")
-        else
-            if tick() - lastAdjust > 0.05 then
-                hrp.CFrame = tHRP.CFrame * FarmOffset
-                hrp.AssemblyLinearVelocity = Vector3.new()
-                hrp.AssemblyAngularVelocity = Vector3.new()
-                hrp.CanCollide = false
-                lastAdjust = tick()
-            end
-        end
-
-        AutoHaki()
-        EquipToolByName(WeaponName)
-
-        pcall(function()
-            tHRP.CanCollide   = false
-            hum.WalkSpeed     = 0
-            hum.JumpPower     = 0
-        end)
-
-        if tick() - lastHit > 0.15 then
-            AttackModule:AttackEnemyModel(target)
-            lastHit = tick()
-        end
-
-        RunService.Heartbeat:Wait()
-    end
-
-    if not hum or hum.Health <= 0 or not target.Parent then
-        AddLog("Элитный босс убит.")
-    else
-        AddLog("Бой с элиткой прерван.")
-    end
-end
-
-------------------------------------------------
--- ЛОГИКА Yama
-------------------------------------------------
-local WaterfallCFrame = CFrame.new(-12361.7060546875, 603.3547973632812, -6550.5341796875)
-
-local function ClickSealedKatana()
-    pcall(function()
-        local map    = Workspace:FindFirstChild("Map")
-        local wf     = map and map:FindFirstChild("Waterfall")
-        local sword  = wf and wf:FindFirstChild("SealedKatana")
-        local handle = sword and sword:FindFirstChild("Handle")
-        local cd     = handle and handle:FindFirstChildOfClass("ClickDetector")
-        if cd then
-            for i = 1, 5 do
-                fireclickdetector(cd)
-                task.wait(0.2)
-            end
-            AddLog("Клик по SealedKatana (водопад) отправлен.")
-        else
-            AddLog("Waterfall / SealedKatana не найден.")
-        end
-    end)
-end
-
-local function RunYamaStep()
-    if HasItemInInventory("Yama") then
-        UpdateStatus("Yama уже есть, скрипт остановлен.")
-        AutoYama = false
-        if ToggleButton then
-            ToggleButton.Text = "Auto Yama: OFF"
-            ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-        end
-        return
-    end
-
-    local progress = GetEliteProgress()
-    AddLog("Yama: прогресс Elite Hunter = "..tostring(progress).."/30.")
-
+    -- 1) если 30/30 — открыть водопад и взять Yama
     if progress >= 30 then
-        UpdateStatus("Yama: прогресс 30/30, иду к водопаду.")
-        SimpleTeleport(WaterfallCFrame, "Waterfall / SealedKatana")
-        task.wait(1.5)
-        ClickSealedKatana()
+        UpdateStatus("Yama: прогресс 30/30, пробую открыть водопад.")
+        AddLog("Yama: прогресс Elite Hunter = " .. tostring(progress) .. "/30.")
+
+        local map = Workspace:FindFirstChild("Map")
+        local waterfall = map and map:FindFirstChild("Waterfall")
+        local sealed = waterfall and waterfall:FindFirstChild("SealedKatana")
+        local handle = sealed and sealed:FindFirstChild("Handle")
+        local click  = handle and handle:FindFirstChild("ClickDetector")
+
+        if handle and click then
+            SimpleTeleport(handle.CFrame * CFrame.new(0, 3, 6), "Waterfall / Yama")
+            task.wait(0.5)
+            pcall(function()
+                fireclickdetector(click)
+            end)
+        else
+            AddLog("Yama: не нашёл SealedKatana в Waterfall, проверь карту.")
+        end
         return
     end
 
-    local questTitle = GetQuestTitle()
-    if questTitle ~= "" then
-        AddLog("Yama: квест = '"..questTitle.."'.")
-    end
+    -- 2) читаем активный квест
+    local questTitleText = GetQuestTitle()
+    local eliteQuestActive =
+        questTitleText:find("Diablo") or questTitleText:find("Deandre") or questTitleText:find("Urban")
 
-    local eliteName = GetEliteNameFromQuest(questTitle)
-    local hasEliteQuest = eliteName ~= nil
+    if eliteQuestActive then
+        -- Квест на элитку есть
+        local boss, hum, hrp = FindEliteInWorkspace()
 
-    if hasEliteQuest then
-        AddLog("Yama: квест на элиту активен, ищу босса: "..string.lower(eliteName))
-        UpdateStatus("Yama: квест на элиту активен, ищу босса.")
+        if boss and hum and hrp then
+            UpdateStatus("Yama: нашёл элиту '".. boss.Name .."', атакую.")
+            AddLog("Yama: квест = '".. questTitleText .."'. Босс найден: ".. boss.Name)
 
-        local elite = FindEliteInWorkspace(eliteName)
-        if elite then
-            UpdateStatus("Yama: элитка "..elite.Name..", атакую.")
-            FightElite(elite)
+            local fightDeadline = tick() + 90
+
+            while AutoYama and hum.Health > 0 and boss.Parent and tick() < fightDeadline do
+                local char  = LocalPlayer.Character
+                local chrHrp= char and char:FindFirstChild("HumanoidRootPart")
+                if not char or not chrHrp then break end
+
+                chrHrp.CFrame                = hrp.CFrame * HoverOffset
+                chrHrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                chrHrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                chrHrp.CanCollide            = false
+
+                hrp.CanCollide = false
+
+                AutoHaki()
+                EquipToolByName(WeaponName)
+                AttackModule:AttackEnemyModel(boss)
+
+                RunService.Heartbeat:Wait()
+            end
+
+            if hum.Health <= 0 or (not boss.Parent) then
+                AddLog("Yama: элитка '".. boss.Name .."' убита.")
+            else
+                AddLog("Yama: бой с элиткой прерван или вышел по таймеру.")
+            end
         else
-            AddLog("Yama: квест на элиту есть, но модель босса '"..eliteName.."' не найдена (жду спавна).")
+            -- Квест на элиту есть, но рядом никого — патрулируем острова
+            UpdateStatus("Yama: квест на элиту активен, ищу босса.")
+            AddLog("Yama: квест = '".. questTitleText .."', элитка не найдена рядом, патруль островов.")
+            PatrolEliteIslands()
         end
+
     else
-        UpdateStatus("Yama: элитный квест не активен, беру/обновляю Elite Hunter.")
-        RequestEliteQuest()
+        -- Квеста на элитку нет — берём новый раз в минуту
+        if tick() - _G._LastEliteQuestRequest > 60 then
+            _G._LastEliteQuestRequest = tick()
+            UpdateStatus("Yama: беру квест у Elite Hunter.")
+            AddLog("Yama: пробую взять новый квест Elite Hunter.")
+            pcall(function()
+                remote:InvokeServer("EliteHunter")
+            end)
+        else
+            UpdateStatus("Yama: жду перезарядки квеста Elite Hunter.")
+        end
     end
 end
 
-------------------------------------------------
+--------------------------------
 -- GUI
-------------------------------------------------
+--------------------------------
 local function CreateGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
 
     ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "AutoYamaGui"
+    ScreenGui.Name = "AutoYamaEliteGui"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 600, 0, 260)
+    MainFrame.Size = UDim2.new(0, 600, 0, 280)
     MainFrame.Position = UDim2.new(0, 40, 0, 200)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     MainFrame.BorderSizePixel = 0
@@ -563,37 +467,37 @@ local function CreateGui()
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 26)
     Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    Title.Text = "Auto Yama (Elite Hunter, динамический поиск)"
-    Title.TextColor3 = Color3.new(1, 1, 1)
+    Title.Text = "Auto Yama / Elite Hunter (патруль островов)"
+    Title.TextColor3 = Color3.new(1,1,1)
     Title.Font = Enum.Font.SourceSansBold
     Title.TextSize = 18
     Title.Parent = MainFrame
 
+    ToggleYamaButton = Instance.new("TextButton")
+    ToggleYamaButton.Size = UDim2.new(0, 260, 0, 32)
+    ToggleYamaButton.Position = UDim2.new(0, 10, 0, 34)
+    ToggleYamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    ToggleYamaButton.TextColor3 = Color3.new(1,1,1)
+    ToggleYamaButton.Font = Enum.Font.SourceSansBold
+    ToggleYamaButton.TextSize = 16
+    ToggleYamaButton.Text = "Auto Yama: OFF"
+    ToggleYamaButton.Parent = MainFrame
+
     StatusLabel = Instance.new("TextLabel")
     StatusLabel.Size = UDim2.new(1, -20, 0, 22)
-    StatusLabel.Position = UDim2.new(0, 10, 0, 30)
+    StatusLabel.Position = UDim2.new(0, 10, 0, 70)
     StatusLabel.BackgroundTransparency = 1
     StatusLabel.TextColor3 = Color3.new(1,1,1)
     StatusLabel.Font = Enum.Font.SourceSans
     StatusLabel.TextSize = 14
     StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-    StatusLabel.Text = "Статус: "..CurrentStatus
+    StatusLabel.Text = "Статус: " .. CurrentStatus
     StatusLabel.Parent = MainFrame
 
-    ToggleButton = Instance.new("TextButton")
-    ToggleButton.Size = UDim2.new(0, 250, 0, 32)
-    ToggleButton.Position = UDim2.new(0, 10, 0, 60)
-    ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    ToggleButton.TextColor3 = Color3.new(1,1,1)
-    ToggleButton.Font = Enum.Font.SourceSansBold
-    ToggleButton.TextSize = 16
-    ToggleButton.Text = "Auto Yama: OFF"
-    ToggleButton.Parent = MainFrame
-
     local LogsFrame = Instance.new("Frame")
-    LogsFrame.Size = UDim2.new(1, -20, 0, 150)
-    LogsFrame.Position = UDim2.new(0, 10, 0, 100)
-    LogsFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    LogsFrame.Size = UDim2.new(1, -20, 0, 190)
+    LogsFrame.Position = UDim2.new(0, 10, 0, 90)
+    LogsFrame.BackgroundColor3 = Color3.fromRGB(15,15,15)
     LogsFrame.BorderSizePixel = 0
     LogsFrame.Parent = MainFrame
 
@@ -602,7 +506,7 @@ local function CreateGui()
     scroll.Position = UDim2.new(0, 2, 0, 2)
     scroll.BackgroundTransparency = 1
     scroll.BorderSizePixel = 0
-    scroll.CanvasSize = UDim2.new(0, 0, 5, 0)
+    scroll.CanvasSize = UDim2.new(0,0,5,0)
     scroll.ScrollBarThickness = 4
     scroll.Parent = LogsFrame
 
@@ -619,35 +523,38 @@ local function CreateGui()
     LogsText.Text = ""
     LogsText.Parent = scroll
 
-    ToggleButton.MouseButton1Click:Connect(function()
+    ToggleYamaButton.MouseButton1Click:Connect(function()
         AutoYama = not AutoYama
         if AutoYama then
-            ToggleButton.Text = "Auto Yama: ON"
-            ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+            ToggleYamaButton.Text = "Auto Yama: ON"
+            ToggleYamaButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
             NoclipEnabled = true
-            StopTween     = false
             UpdateStatus("Фарм Yama / Elite Hunter.")
+            AddLog("AutoYama включен.")
         else
-            ToggleButton.Text = "Auto Yama: OFF"
-            ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            ToggleYamaButton.Text = "Auto Yama: OFF"
+            ToggleYamaButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
             NoclipEnabled = false
-            StopTween     = true
+            StopTween = true
             UpdateStatus("Остановлен")
+            AddLog("AutoYama выключен пользователем.")
         end
     end)
-
-    task.spawn(function()
-        while task.wait(0.5) do
-            if AutoYama then
-                local ok, err = pcall(RunYamaStep)
-                if not ok then
-                    AddLog("Ошибка в цикле AutoYama: "..tostring(err))
-                end
-            end
-        end
-    end)
-
-    AddLog("Auto Yama GUI загружен. Нажми кнопку, когда будешь в 3-м море.")
 end
 
+--------------------------------
+-- ЗАПУСК
+--------------------------------
 CreateGui()
+AddLog("Auto Yama / Elite Hunter загружен. Включай кнопку в 3-м море (Castle on the Sea / элитки).")
+
+task.spawn(function()
+    while task.wait(0.7) do
+        if AutoYama then
+            local ok, err = pcall(RunYamaLogic)
+            if not ok then
+                AddLog("Ошибка в цикле AutoYama: ".. tostring(err))
+            end
+        end
+    end
+end)
