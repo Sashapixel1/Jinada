@@ -9,11 +9,6 @@ local WeaponName    = "Godhuman"             -- чем бить боссов
 local TeleportSpeed = 300                    -- скорость полёта
 local BossOffset    = CFrame.new(0, 10, -3)  -- позиция над целью
 
--- КООРДИНАТЫ точки у водопада, где стоит Sealed Katana (ПРОВЕРЬ и при желании поменяй под свой 12к)
-local WaterfallYamaPos = CFrame.new(-9546.990234375, 21.139892578125, 4686.1142578125)
--- Радиус поиска кликателя вокруг этой точки
-local YAMA_CLICK_RADIUS = 120
-
 ---------------------
 -- СЕРВИСЫ
 ---------------------
@@ -246,7 +241,7 @@ local function HasItemSimple(name)
     local p = LocalPlayer
     if not p then return false end
 
-    local backpack = p:FindFirstChild("Backpack")
+    local backpack = p:FindChild("Backpack") or p:FindFirstChild("Backpack")
     if backpack and backpack:FindFirstChild(name) then
         return true
     end
@@ -557,6 +552,53 @@ local function FindEliteBoss()
 end
 
 ---------------------
+-- ВСПОМОГАТЕЛКА: SealedKatana в Waterfall
+---------------------
+local function GetSealedKatanaFromWaterfall()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return nil, nil, nil end
+
+    local waterfall = map:FindFirstChild("Waterfall")
+    if not waterfall then return nil, nil, nil end
+
+    -- точка телепорта как в 12к: Map.Waterfall.SecretRoom.Room
+    local teleportCFrame
+    local secretRoom = waterfall:FindFirstChild("SecretRoom")
+    if secretRoom then
+        local room = secretRoom:FindFirstChild("Room")
+        if room and room:IsA("BasePart") then
+            teleportCFrame = room.CFrame
+        elseif room then
+            local anyPart = room:FindFirstChildWhichIsA("BasePart")
+            if anyPart then
+                teleportCFrame = anyPart.CFrame
+            end
+        end
+    end
+
+    -- SealedKatana
+    local sealed = waterfall:FindFirstChild("SealedKatana")
+    if not sealed then
+        for _, obj in ipairs(waterfall:GetDescendants()) do
+            if obj:IsA("Model") and obj.Name == "SealedKatana" then
+                sealed = obj
+                break
+            end
+        end
+    end
+
+    local handle, cd
+    if sealed then
+        handle = sealed:FindFirstChild("Handle") or sealed:FindFirstChildWhichIsA("BasePart") or sealed
+        if handle then
+            cd = handle:FindFirstChildOfClass("ClickDetector") or handle:FindFirstChild("ClickDetector")
+        end
+    end
+
+    return teleportCFrame, handle, cd
+end
+
+---------------------
 -- ЛОГИКА YAMA
 ---------------------
 local function RunYamaLogic()
@@ -584,54 +626,67 @@ local function RunYamaLogic()
     end
     local progress = cachedEliteProgress
 
-    -- 1) 30/30 — идём к водопаду и жмём по кликабельному объекту
+    -- 1) 30/30 — идём к Waterfall (Hydra) и кликаем SealedKatana.Handle.ClickDetector
     if progress >= 30 then
-        UpdateStatus("Yama: прогресс 30+, лечу к водопаду и кликаю по мечу.")
-        SimpleTeleport(WaterfallYamaPos, "Yama Waterfall")
-        task.wait(0.7)
+        UpdateStatus("Yama: прогресс 30+, лечу к Waterfall (Hydra) и кликаю SealedKatana.")
 
-        -- Ищем любой ClickDetector в радиусе от WaterfallYamaPos
-        local clickPart, clickDet
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj:IsA("ClickDetector") then
-                local part = obj.Parent
-                if part and part:IsA("BasePart") then
-                    local dist = (part.Position - WaterfallYamaPos.Position).Magnitude
-                    if dist <= YAMA_CLICK_RADIUS then
-                        clickPart, clickDet = part, obj
-                        break
-                    end
-                end
-            end
-        end
-
-        if not clickDet then
+        local tpCF, handle, cd = GetSealedKatanaFromWaterfall()
+        if not tpCF then
             if tick() - lastWaterfallLog > 5 then
-                AddLog("❌ Не нашёл кликер у водопада (нет ClickDetector в радиусе "..YAMA_CLICK_RADIUS.."). Проверь координаты WaterfallYamaPos.")
+                AddLog("❌ Не получилось найти Map.Waterfall.SecretRoom.Room (Hydra Island).")
                 lastWaterfallLog = tick()
             end
             return
         end
 
-        AddLog("Нашёл кликер у водопада: " .. (clickPart.Name or "Part") .. ", начинаю спам кликов.")
+        SimpleTeleport(tpCF * CFrame.new(0, 4, 2), "Waterfall SecretRoom")
+        task.wait(1)
 
-        for i = 1, 80 do  -- ~20 секунд кликов
+        -- если при телепорте SealedKatana не нашли (или ClickDetector нет), пробуем ещё раз уже из всего Workspace
+        if (not handle) or (not cd) then
+            local sealedModel
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj.Name == "SealedKatana" then
+                    sealedModel = obj
+                    break
+                end
+            end
+            if sealedModel then
+                handle = sealedModel:FindFirstChild("Handle") or sealedModel:FindFirstChildWhichIsA("BasePart") or sealedModel
+                if handle then
+                    cd = handle:FindFirstChildOfClass("ClickDetector") or handle:FindFirstChild("ClickDetector")
+                end
+            end
+        end
+
+        if not cd then
+            if tick() - lastWaterfallLog > 5 then
+                AddLog("❌ SealedKatana.Handle.ClickDetector не найден. Проверь целостность Waterfall / SealedKatana.")
+                lastWaterfallLog = tick()
+            end
+            return
+        end
+
+        AddLog("Нашёл SealedKatana.ClickDetector, начинаю спам кликов (как в 12к).")
+
+        -- спам кликов до появления Yama или тайм-аут
+        for i = 1, 80 do -- ≈20 сек
             if HasSword("Yama") then
-                AddLog("✅ Yama получена (после кликов).")
+                AddLog("✅ Yama получена!")
                 EquipToolByName("Yama")
                 return
             end
             pcall(function()
-                fireclickdetector(clickDet)
+                fireclickdetector(cd)
             end)
             task.wait(0.25)
         end
 
         if HasSword("Yama") then
-            AddLog("✅ Yama получена (после цикла кликов).")
+            AddLog("✅ Yama получена после цикла кликов.")
             EquipToolByName("Yama")
         else
-            AddLog("⚠️ Не удалось получить Yama у водопада. Возможно, условия квеста не выполнены или координаты неверны.")
+            AddLog("⚠️ Не удалось получить Yama у Waterfall. Возможно, не выполнены условия квеста (урон с проклятого, элитки и т.д.).")
         end
 
         return
@@ -743,7 +798,7 @@ local function RunTushitaLogic()
         return
     end
 
-    -- 2) дверь есть → rip_indra / Holy Torch / факела
+    -- 2) дверь есть → rip_indra / Holy Torch / факелы
     UpdateStatus("Tushita: дверь есть, работаю с rip_indra / Holy Torch / факелами.")
 
     local indra = CheckNameBoss("rip_indra True Form [Lv. 5000] [Raid Boss]")
