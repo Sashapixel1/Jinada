@@ -6,6 +6,9 @@
 --    Torch2 -> зажать E 2 сек -> фарм мобов
 --    Torch3 -> зажать E 2 сек -> фарм мобов + Heaven's Guardian
 --    Затем TP к Exit.
+-- Дополнительно:
+--  - если HP упал до 0 и HeavenlyDimension существует, ждём 5 сек без телепортов.
+--    Если за это время не перенесло автоматически, телепортируемся в HeavenlyDimension сами.
 
 ------------------------------------------------
 -- НАСТРОЙКИ
@@ -47,6 +50,9 @@ local HeavenlyStage     = 0
 -- антиспам логов
 local lastCakeLogTime       = 0
 local lastHeavenlyFoundTime = 0
+
+-- время, до которого запрещены любые телепорты после смерти (ожидание 5 сек)
+local DeathWaitUntil   = 0
 
 ------------------------------------------------
 -- ЛОГИ / GUI
@@ -194,10 +200,39 @@ local function EquipToolByName(name)
 end
 
 ------------------------------------------------
+-- HEAVENLY DIMENSION HELPERS
+------------------------------------------------
+local function HeavenlyDimensionFolder()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return nil end
+    return map:FindFirstChild("HeavenlyDimension")
+end
+
+local function IsPlayerInHeavenlyDimension()
+    local dim = HeavenlyDimensionFolder()
+    if not dim then return false end
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local torch1 = dim:FindFirstChild("Torch1") or dim:FindFirstChild("Exit")
+    if not torch1 then return false end
+
+    local dist = (hrp.Position - torch1.Position).Magnitude
+    return dist < 800
+end
+
+------------------------------------------------
 -- ТЕЛЕПОРТ
 ------------------------------------------------
 local function SimpleTeleport(targetCFrame, label)
     if IsTeleporting or not AutoTushitaQ3 then return end
+
+    -- если мы в режиме ожидания после смерти (до DeathWaitUntil) — не телепортируемся
+    if DeathWaitUntil > 0 and tick() < DeathWaitUntil then
+        return
+    end
+
     IsTeleporting = true
     StopTween     = false
 
@@ -262,15 +297,50 @@ local function SimpleTeleport(targetCFrame, label)
     IsTeleporting = false
 end
 
--- сброс после смерти
+-- сброс после смерти + логика "ждать 5 сек, если HeavenlyDimension заспавнился"
 LocalPlayer.CharacterAdded:Connect(function(char)
     IsTeleporting = false
     StopTween     = false
     IsFighting    = false
+    DeathWaitUntil = 0
     AddLog("Персонаж возрождён, жду HRP для Tushita Q3...")
     char:WaitForChild("HumanoidRootPart", 10)
     AddLog("HRP найден, фарм Tushita Q3 можно продолжать.")
     UpdateStatus("Ожидание / Tushita Q3")
+
+    -- привязываем обработчик к новому Humanoid
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.HealthChanged:Connect(function(hp)
+            if not AutoTushitaQ3 then return end
+            if hp <= 0 then
+                local dim = HeavenlyDimensionFolder()
+                if dim then
+                    -- HeavenlyDimension уже существует -> ждём 5 сек без телепортов
+                    AddLog("HP = 0 и HeavenlyDimension существует, жду 5 сек автотелепорта...")
+                    DeathWaitUntil = tick() + 5
+
+                    task.spawn(function()
+                        task.wait(5)
+                        if not AutoTushitaQ3 then return end
+                        -- если за 5 сек нас уже перенесло в HeavenlyDimension, ничего не делаем
+                        if IsPlayerInHeavenlyDimension() then
+                            AddLog("Перенесло в HeavenlyDimension автоматически, телепорт не нужен.")
+                            return
+                        end
+                        local dim2 = HeavenlyDimensionFolder()
+                        if dim2 then
+                            local torch1 = dim2:FindFirstChild("Torch1") or dim2:FindFirstChild("Exit")
+                            if torch1 then
+                                AddLog("Автопереноса нет, телепортируюсь в HeavenlyDimension вручную после ожидания.")
+                                SimpleTeleport(torch1.CFrame * CFrame.new(0,5,0), "HeavenlyDimension Torch1")
+                            end
+                        end
+                    end)
+                end
+            end
+        end)
+    end
 end)
 
 ------------------------------------------------
@@ -292,12 +362,6 @@ local function FindCakeQueen()
         end
     end
     return nil
-end
-
-local function HeavenlyDimensionFolder()
-    local map = Workspace:FindFirstChild("Map")
-    if not map then return nil end
-    return map:FindFirstChild("HeavenlyDimension")
 end
 
 local function EnsureInsideHeavenlyDimension(dim)
@@ -658,8 +722,9 @@ local function CreateGui()
         if AutoTushitaQ3 then
             ToggleButton.Text = "Tushita Q3: ON"
             ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
-            StopTween     = false
-            HeavenlyStage = 0
+            StopTween       = false
+            HeavenlyStage   = 0
+            DeathWaitUntil  = 0
             UpdateStatus("Фарм Tushita Q3")
         else
             ToggleButton.Text = "Tushita Q3: OFF"
