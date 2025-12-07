@@ -1,16 +1,15 @@
 --========================================================
--- Auto Yama / Tushita (GUI + Elite Hunter fixed)
+-- Auto Yama / Tushita (GUI + Elite Hunter fix)
 --========================================================
 
--- Пара секунд подгрузиться
 task.wait(2)
 
 ------------------------------------------------
 -- НАСТРОЙКИ
 ------------------------------------------------
-local WeaponName     = "Godhuman"      -- чем бить элиту
-local TeleportSpeed  = 300             -- скорость полёта (stud/сек)
-local FarmOffset     = CFrame.new(0, 12, -3) -- позиция над мобом
+local WeaponName     = "Godhuman"              -- чем бить элиту
+local TeleportSpeed  = 300                     -- скорость полёта (stud/сек)
+local FarmOffset     = CFrame.new(0, 12, -3)   -- позиция над мобом
 
 ------------------------------------------------
 -- СЕРВИСЫ
@@ -26,12 +25,14 @@ local LocalPlayer = Players.LocalPlayer
 local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 ------------------------------------------------
--- NET-модуль для фаст-атаки
+-- NET-модуль для фаст-атаки (ИСПРАВЛЕНО)
 ------------------------------------------------
 local modules        = ReplicatedStorage:WaitForChild("Modules")
 local net            = modules:WaitForChild("Net")
-local RegisterAttack = net:WaitForChild("RE"):WaitForChild("RegisterAttack")
-local RegisterHit    = net:WaitForChild("RE"):WaitForChild("RegisterHit")
+
+-- В 12к и в игре используются ИМЕНА с '/', а не папка RE.
+local RegisterAttack = net:WaitForChild("RE/RegisterAttack")
+local RegisterHit    = net:WaitForChild("RE/RegisterHit")
 
 local AttackModule = {}
 
@@ -171,10 +172,10 @@ local function EquipToolByName(name)
     if tool then
         hum:UnequipTools()
         hum:EquipTool(tool)
-        AddLog("⚔️ Экипирован: "..tool.Name)
+        AddLog("Экипирован: "..tool.Name)
     else
         if tick() - lastEquipFailLog > 3 then
-            AddLog("⚠️ Не нашёл оружие: "..name)
+            AddLog("Не нашёл оружие: "..name)
             lastEquipFailLog = tick()
         end
     end
@@ -198,7 +199,7 @@ local function SimpleTeleport(targetCFrame, label)
         return
     end
 
-    local distance = (hrp.Position - targetCFrame.Position).Magnitude
+    local distance   = (hrp.Position - targetCFrame.Position).Magnitude
     local travelTime = math.clamp(distance / TeleportSpeed, 0.5, 60)
 
     AddLog(string.format("Телепорт к %s (%.0f stud, t=%.1f)", label or "цели", distance, travelTime))
@@ -252,7 +253,6 @@ end)
 ------------------------------------------------
 -- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 ------------------------------------------------
-
 local function HasItemInInventory(itemName)
     local p = LocalPlayer
     if not p then return false end
@@ -293,7 +293,7 @@ local function GetEliteProgress()
 end
 
 ------------------------------------------------
--- ЭЛИТКИ: имена и поиск (ФИКС)
+-- ЭЛИТКИ
 ------------------------------------------------
 local EliteNames = { "Diablo", "Deandre", "Urban" }
 
@@ -329,7 +329,6 @@ local function FindEliteTarget()
         end
     end
 
-    -- Сначала — Enemies
     local enemiesFolder = Workspace:FindFirstChild("Enemies")
     if enemiesFolder then
         for _, v in ipairs(enemiesFolder:GetDescendants()) do
@@ -337,7 +336,6 @@ local function FindEliteTarget()
         end
     end
 
-    -- Если вдруг не нашли — просмотрим весь Workspace на всякий случай
     if not nearest then
         for _, v in ipairs(Workspace:GetDescendants()) do
             consider(v)
@@ -348,9 +346,9 @@ local function FindEliteTarget()
 end
 
 ------------------------------------------------
--- ПОИСК Elite Hunter NPC (замок в 3-м море)
+-- Elite Hunter NPC
 ------------------------------------------------
-local CastleOnSeaCFrame = CFrame.new(-5500, 313, -2975) -- условный центр Floating / Castle on the Sea
+local CastleOnSeaCFrame = CFrame.new(-5500, 313, -2975)
 
 local function FindEliteHunterNPC()
     for _, obj in ipairs(Workspace:GetDescendants()) do
@@ -365,7 +363,7 @@ local function FindEliteHunterNPC()
 end
 
 local lastEliteQuestRequest = 0
-local EliteQuestCooldown    = 60 -- раз в минуту просим квест
+local EliteQuestCooldown    = 60
 
 local function RequestEliteQuest()
     local now = tick()
@@ -450,9 +448,9 @@ local function FightElite(target)
     end
 
     if not hum or hum.Health <= 0 or not target.Parent then
-        AddLog("✅ Элитный босс убит.")
+        AddLog("Элитный босс убит.")
     else
-        AddLog("⚠️ Бой с элиткой прерван.")
+        AddLog("Бой с элиткой прерван.")
     end
 end
 
@@ -460,47 +458,40 @@ end
 -- ЛОГИКА Yama
 ------------------------------------------------
 local function RunYamaLogic()
-    -- Уже есть Yama?
     if HasItemInInventory("Yama") then
         UpdateStatus("Yama: меч уже есть, остановлен.")
         AutoYama = false
         return
     end
 
-    -- 1) Проверяем прогресс Elite Hunter
     local progress = GetEliteProgress()
     AddLog("Yama: прогресс Elite Hunter = "..tostring(progress).."/30.")
 
-    -- 2) Если уже 30/30 — идём к водопаду за мечом
     if progress >= 30 then
         UpdateStatus("Yama: открываю водопад / забираю меч.")
-        -- координаты водопада с мечом
         local waterfall = CFrame.new(-12361.7060546875, 603.3547973632812, -6550.5341796875)
         SimpleTeleport(waterfall, "Waterfall / Sealed Katana")
 
         task.wait(1.5)
         AddLog("Пробую кликнуть по SealedKatana (водопад).")
 
-        -- пробуем найти клик-детектор, если в твоём проекте он есть
         pcall(function()
-            local map   = Workspace:FindFirstChild("Map")
-            local wf    = map and map:FindFirstChild("Waterfall")
-            local sword = wf and wf:FindFirstChild("SealedKatana")
+            local map    = Workspace:FindFirstChild("Map")
+            local wf     = map and map:FindFirstChild("Waterfall")
+            local sword  = wf and wf:FindFirstChild("SealedKatana")
             local handle = sword and sword:FindFirstChild("Handle")
-            local cd    = handle and handle:FindFirstChildOfClass("ClickDetector")
+            local cd     = handle and handle:FindFirstChildOfClass("ClickDetector")
             if cd then
                 fireclickdetector(cd)
                 AddLog("Клик по SealedKatana отправлен.")
             else
-                AddLog("⚠️ ClickDetector водопада (SealedKatana) не найден.")
+                AddLog("ClickDetector водопада (SealedKatana) не найден.")
             end
         end)
 
         return
     end
 
-    -- 3) Если прогресс ещё < 30 — фармим элиток
-    -- Сначала проверяем, нет ли уже заспавненной элитки
     local elite = FindEliteTarget()
     if elite then
         UpdateStatus("Yama: элитка найдена, атакую ("..elite.Name..").")
@@ -508,17 +499,14 @@ local function RunYamaLogic()
         return
     end
 
-    -- 4) Элитка не найдена — пробуем взять/обновить квест
     UpdateStatus("Yama: квест активен или нет элитки, беру/обновляю квест.")
     RequestEliteQuest()
 end
 
 ------------------------------------------------
--- ЛОГИКА Tushita (каркас, чтобы не ломать твои отдельные квест-скрипты)
+-- ЛОГИКА Tushita (пока заглушка)
 ------------------------------------------------
 local function RunTushitaLogic()
-    -- Здесь можешь вставить свою готовую логику Longma / Holy Torch / rip_indra,
-    -- сейчас скрипт только пишет в лог, чтобы не мешать.
     UpdateStatus("Tushita: логика пока не реализована в этом файле.")
 end
 
@@ -582,7 +570,6 @@ local function CreateGui()
     YamaButton.Text = "Auto Yama: OFF"
     YamaButton.Parent = MainFrame
 
-    -- Лог-окно
     local LogsFrame = Instance.new("Frame")
     LogsFrame.Size = UDim2.new(1, -20, 0, 150)
     LogsFrame.Position = UDim2.new(0, 10, 0, 100)
@@ -612,9 +599,6 @@ local function CreateGui()
     LogsText.Text = ""
     LogsText.Parent = scroll
 
-    ------------------------------------------------
-    -- КНОПКИ
-    ------------------------------------------------
     TushitaButton.MouseButton1Click:Connect(function()
         AutoTushita = not AutoTushita
         if AutoTushita then
@@ -655,9 +639,6 @@ local function CreateGui()
         end
     end)
 
-    ------------------------------------------------
-    -- ОСНОВНОЙ ЦИКЛ
-    ------------------------------------------------
     task.spawn(function()
         while task.wait(0.5) do
             if AutoTushita then
