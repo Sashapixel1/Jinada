@@ -1,5 +1,6 @@
 --========================================================
 -- Auto Yama / Auto Tushita (получение мечей) + GUI + ЛОГИ
+-- с фиксом Waterfall / SealedKatana (Hydra Island)
 --========================================================
 
 ---------------------
@@ -42,12 +43,12 @@ local lastEliteRequest       = 0            -- кулдаун запроса к�
 local lastEliteProgressCheck = 0            -- когда последний раз брали прогресс
 local cachedEliteProgress    = 0            -- кэш прогресса
 
--- антиспам логов по Waterfall
+-- антиспам логов по Waterfall / SealedKatana
 local lastWaterfallLog = 0
 
 -- координаты Floating Turtle (как в 12к)
-local FloatingTurtlePos   = CFrame.new(-13274.528320313, 531.82073974609, -7579.22265625)
-local lastTurtleTeleport  = 0              -- кулдаун телепорта к острову
+local FloatingTurtlePos  = CFrame.new(-13274.528320313, 531.82073974609, -7579.22265625)
+local lastTurtleTeleport = 0               -- кулдаун телепорта к острову
 
 ---------------------
 -- NET MODULE (как в 12к)
@@ -241,7 +242,7 @@ local function HasItemSimple(name)
     local p = LocalPlayer
     if not p then return false end
 
-    local backpack = p:FindChild("Backpack") or p:FindFirstChild("Backpack")
+    local backpack = p:FindFirstChild("Backpack")
     if backpack and backpack:FindFirstChild(name) then
         return true
     end
@@ -434,7 +435,7 @@ local function IsThirdSea()
 end
 
 ---------------------
--- YAMA: Elite Hunter
+-- Elite Hunter helpers
 ---------------------
 local EliteNPCPos = CFrame.new(-5418.892578125, 313.74130249023, -2826.2260742188)
 
@@ -475,7 +476,7 @@ local function GetQuestTitleText()
 end
 
 ---------------------
--- TUSHITA: CheckNameBoss / факелы
+-- Tushita helpers (из 12к)
 ---------------------
 local function CheckNameBoss(a)
     for _, v in next, game.ReplicatedStorage:GetChildren() do
@@ -552,60 +553,59 @@ local function FindEliteBoss()
 end
 
 ---------------------
--- ВСПОМОГАТЕЛКА: SealedKatana в Waterfall
+-- Waterfall (Hydra) + SealedKatana
 ---------------------
-local function GetSealedKatanaFromWaterfall()
+local function GetWaterfallData()
     local map = Workspace:FindFirstChild("Map")
     if not map then return nil, nil, nil end
 
     local waterfall = map:FindFirstChild("Waterfall")
     if not waterfall then return nil, nil, nil end
 
-    -- точка телепорта как в 12к: Map.Waterfall.SecretRoom.Room
-    local teleportCFrame
-    local secretRoom = waterfall:FindFirstChild("SecretRoom")
-    if secretRoom then
-        local room = secretRoom:FindFirstChild("Room")
-        if room and room:IsA("BasePart") then
-            teleportCFrame = room.CFrame
-        elseif room then
-            local anyPart = room:FindFirstChildWhichIsA("BasePart")
-            if anyPart then
-                teleportCFrame = anyPart.CFrame
-            end
-        end
-    end
-
-    -- SealedKatana
-    local sealed = waterfall:FindFirstChild("SealedKatana")
-    if not sealed then
+    -- точка телепорта: PrimaryPart или первый BasePart
+    local tpCF
+    if waterfall:IsA("Model") and waterfall.PrimaryPart then
+        tpCF = waterfall.PrimaryPart.CFrame
+    else
         for _, obj in ipairs(waterfall:GetDescendants()) do
-            if obj:IsA("Model") and obj.Name == "SealedKatana" then
-                sealed = obj
+            if obj:IsA("BasePart") then
+                tpCF = obj.CFrame
                 break
             end
         end
     end
 
-    local handle, cd
-    if sealed then
-        handle = sealed:FindFirstChild("Handle") or sealed:FindFirstChildWhichIsA("BasePart") or sealed
-        if handle then
-            cd = handle:FindFirstChildOfClass("ClickDetector") or handle:FindFirstChild("ClickDetector")
+    -- ищем SealedKatana внутри Waterfall
+    local sealed
+    for _, obj in ipairs(waterfall:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "SealedKatana" then
+            sealed = obj
+            break
         end
     end
 
-    return teleportCFrame, handle, cd
+    local handle, cd
+    if sealed then
+        handle = sealed:FindFirstChild("Handle")
+              or sealed:FindFirstChildWhichIsA("BasePart")
+              or sealed
+        if handle then
+            cd = handle:FindFirstChildOfClass("ClickDetector")
+              or handle:FindFirstChild("ClickDetector")
+        end
+    end
+
+    return tpCF, handle, cd
 end
 
 ---------------------
--- ЛОГИКА YAMA
+-- ЛОГИКА YAMA (с Waterfall)
 ---------------------
 local function RunYamaLogic()
     if not IsThirdSea() then
         if not WarnNoThirdSeaForYama then
             WarnNoThirdSeaForYama = true
-            UpdateStatus("Yama: нужно быть в 3-м море (Castle On The Sea / Floating Turtle).")
+            UpdateStatus("Yama: нужно быть в 3-м море (Castle On The Sea / Hydra / Turtle).")
         end
         return
     end
@@ -626,23 +626,25 @@ local function RunYamaLogic()
     end
     local progress = cachedEliteProgress
 
-    -- 1) 30/30 — идём к Waterfall (Hydra) и кликаем SealedKatana.Handle.ClickDetector
+    ------------------------------------------------
+    -- 1) 30/30 — Waterfall + SealedKatana
+    ------------------------------------------------
     if progress >= 30 then
         UpdateStatus("Yama: прогресс 30+, лечу к Waterfall (Hydra) и кликаю SealedKatana.")
 
-        local tpCF, handle, cd = GetSealedKatanaFromWaterfall()
+        local tpCF, handle, cd = GetWaterfallData()
         if not tpCF then
             if tick() - lastWaterfallLog > 5 then
-                AddLog("❌ Не получилось найти Map.Waterfall.SecretRoom.Room (Hydra Island).")
+                AddLog("❌ Waterfall не найден в Map. Проверь, что ты на острове Hydra.")
                 lastWaterfallLog = tick()
             end
             return
         end
 
-        SimpleTeleport(tpCF * CFrame.new(0, 4, 2), "Waterfall SecretRoom")
+        SimpleTeleport(tpCF * CFrame.new(0, 4, 2), "Waterfall (Hydra)")
         task.wait(1)
 
-        -- если при телепорте SealedKatana не нашли (или ClickDetector нет), пробуем ещё раз уже из всего Workspace
+        -- если SealedKatana / ClickDetector не нашли в Waterfall, пробуем весь Workspace
         if (not handle) or (not cd) then
             local sealedModel
             for _, obj in ipairs(Workspace:GetDescendants()) do
@@ -652,25 +654,27 @@ local function RunYamaLogic()
                 end
             end
             if sealedModel then
-                handle = sealedModel:FindFirstChild("Handle") or sealedModel:FindFirstChildWhichIsA("BasePart") or sealedModel
+                handle = sealedModel:FindFirstChild("Handle")
+                      or sealedModel:FindFirstChildWhichIsA("BasePart")
+                      or sealedModel
                 if handle then
-                    cd = handle:FindFirstChildOfClass("ClickDetector") or handle:FindFirstChild("ClickDetector")
+                    cd = handle:FindFirstChildOfClass("ClickDetector")
+                      or handle:FindFirstChild("ClickDetector")
                 end
             end
         end
 
         if not cd then
             if tick() - lastWaterfallLog > 5 then
-                AddLog("❌ SealedKatana.Handle.ClickDetector не найден. Проверь целостность Waterfall / SealedKatana.")
+                AddLog("❌ SealedKatana.Handle.ClickDetector не найден рядом с Waterfall.")
                 lastWaterfallLog = tick()
             end
             return
         end
 
-        AddLog("Нашёл SealedKatana.ClickDetector, начинаю спам кликов (как в 12к).")
+        AddLog("Нашёл SealedKatana.ClickDetector у Waterfall, спамлю клики (как в 12к).")
 
-        -- спам кликов до появления Yama или тайм-аут
-        for i = 1, 80 do -- ≈20 сек
+        for i = 1, 80 do
             if HasSword("Yama") then
                 AddLog("✅ Yama получена!")
                 EquipToolByName("Yama")
@@ -686,13 +690,15 @@ local function RunYamaLogic()
             AddLog("✅ Yama получена после цикла кликов.")
             EquipToolByName("Yama")
         else
-            AddLog("⚠️ Не удалось получить Yama у Waterfall. Возможно, не выполнены условия квеста (урон с проклятого, элитки и т.д.).")
+            AddLog("⚠️ Не удалось получить Yama возле Waterfall. Возможно, не выполнены условия квеста.")
         end
 
         return
     end
 
+    ------------------------------------------------
     -- 2) фарм элиток, пока прогресс < 30
+    ------------------------------------------------
     UpdateStatus("Yama: фарм Elite Hunter (" .. tostring(progress) .. "/30).")
 
     local title, visible = GetQuestTitleText()
@@ -702,7 +708,7 @@ local function RunYamaLogic()
         or string.find(title, "Urban")
     )
 
-    -- квеста нет — берём
+    -- квеста нет — берём новый
     if not haveQuest then
         local diff = now - lastEliteRequest
 
@@ -747,7 +753,7 @@ local function RunYamaLogic()
 end
 
 ---------------------
--- ЛОГИКА TUSHITA
+-- ЛОГИКА TUSHITA (как раньше, с Holy Torch / факелами)
 ---------------------
 local function RunTushitaLogic()
     if not IsThirdSea() then
