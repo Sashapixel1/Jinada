@@ -1,16 +1,16 @@
--- Auto Tushita Quest1 (3 Luxury Boat Dealer)
--- Для каждого дилера:
---   1) Телепорт к точке
---   2) Поиск ближайшего "Luxury Boat Dealer"
---   3) Вызов CommF_:InvokeServer("CDKQuest","BoatQuest", npcModel)
---     (это и есть эффект 3x Next + 1x Pardon me)
+-- Auto Tushita Quest1 (BoatQuest через Lux Boat Dealer)
+-- Логика:
+--   Для каждой из 3 точек:
+--     - телепорт к координате
+--     - поиск ближайшего "Luxury Boat Dealer"
+--     - CommF_("GetUnlockables","BoatDealer")
+--     - потом CommF_("CDKQuest","BoatQuest", npcModel)
 
 ------------------------------------------------
 -- НАСТРОЙКИ
 ------------------------------------------------
 local TeleportSpeed = 300 -- скорость полёта (stud/сек)
 
--- Точки, где стоят Luxury Boat Dealer (твои координаты)
 local QuestPoints = {
     CFrame.new(-9546.990234375, 21.139892578125, 4686.1142578125),          -- точка 1
     CFrame.new(-6120.0576171875, 16.455780029296875, -2250.697265625),      -- точка 2
@@ -20,18 +20,18 @@ local QuestPoints = {
 ------------------------------------------------
 -- СЕРВИСЫ / ПЕРЕМЕННЫЕ
 ------------------------------------------------
-local Players          = game:GetService("Players")
-local TweenService     = game:GetService("TweenService")
-local RunService       = game:GetService("RunService")
-local Workspace        = game:GetService("Workspace")
-local ReplicatedStorage= game:GetService("ReplicatedStorage")
+local Players           = game:GetService("Players")
+local TweenService      = game:GetService("TweenService")
+local RunService        = game:GetService("RunService")
+local Workspace         = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local LocalPlayer      = Players.LocalPlayer
-local CommF            = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+local LocalPlayer       = Players.LocalPlayer
+local CommF             = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
-local AutoTushitaQ1    = false
-local IsTeleporting    = false
-local StopTween        = false
+local AutoTushitaQ1     = false
+local IsTeleporting     = false
+local StopTween         = false
 
 ------------------------------------------------
 -- ЛОГИ + GUI
@@ -206,7 +206,7 @@ local function TweenTo(targetCF, label)
 end
 
 ------------------------------------------------
--- ПОИСК Luxury Boat Dealer
+-- ПОИСК LUXURY BOAT DEALER
 ------------------------------------------------
 local function FindNearestLuxuryBoatDealer(maxDist)
     maxDist = maxDist or 200
@@ -246,30 +246,41 @@ local function HandleDealerAtPoint(index)
         return
     end
 
-    AddLog("Нашёл Luxury Boat Dealer у точки "..index..". Пытаюсь отправить BoatQuest.")
+    AddLog("Нашёл Luxury Boat Dealer у точки "..index..". Посылаю GetUnlockables / BoatQuest.")
 
-    -- чуть подвинемся поближе (не обязательно, но аккуратнее)
+    -- подойдём вплотную (как при нормальном диалоге)
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     local hrp  = char:WaitForChild("HumanoidRootPart")
     local head = npc:FindFirstChild("HumanoidRootPart") or
                  npc:FindFirstChild("Head") or
                  npc:FindFirstChildWhichIsA("BasePart")
+
     if head then
         hrp.CFrame = head.CFrame * CFrame.new(0, 0, -3)
     end
 
-    -- Ключевой вызов, который мы увидели в логгере
-    local ok, res = pcall(function()
-        return CommF:InvokeServer("CDKQuest", "BoatQuest", npc)
+    -- шаг 1: GetUnlockables / BoatDealer
+    local ok1, res1 = pcall(function()
+        return CommF:InvokeServer("GetUnlockables", "BoatDealer")
     end)
-
-    if ok then
-        AddLog("✅ CommF_:InvokeServer(\"CDKQuest\",\"BoatQuest\", npc) отправлен. Ответ: "..tostring(res))
+    if ok1 then
+        AddLog("✅ CommF_(\"GetUnlockables\",\"BoatDealer\") => "..tostring(res1))
     else
-        AddLog("❌ Ошибка при BoatQuest: "..tostring(res))
+        AddLog("❌ Ошибка GetUnlockables/BoatDealer: "..tostring(res1))
     end
 
-    -- небольшая пауза перед следующей точкой
+    task.wait(0.3)
+
+    -- шаг 2: CDKQuest / BoatQuest / npc
+    local ok2, res2 = pcall(function()
+        return CommF:InvokeServer("CDKQuest", "BoatQuest", npc)
+    end)
+    if ok2 then
+        AddLog("✅ CommF_(\"CDKQuest\",\"BoatQuest\", npc) => "..tostring(res2))
+    else
+        AddLog("❌ Ошибка CDKQuest/BoatQuest: "..tostring(res2))
+    end
+
     local tEnd = tick() + 1.0
     while tick() < tEnd do
         if not AutoTushitaQ1 or StopTween then break end
