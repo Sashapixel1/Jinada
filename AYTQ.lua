@@ -1,6 +1,5 @@
 --========================================================
--- Auto Yama (Elite Hunter из 12к, расширенный поиск элиток)
--- GUI + лог-панель, телепорт 300 speed, Anti-AFK
+-- Auto Yama (Elite Hunter, динамический поиск элитки)
 --========================================================
 
 task.wait(2)
@@ -8,9 +7,9 @@ task.wait(2)
 ------------------------------------------------
 -- НАСТРОЙКИ
 ------------------------------------------------
-local WeaponName    = "Godhuman"            -- чем бить элиток
-local TeleportSpeed = 300                   -- скорость полёта
-local FarmOffset    = CFrame.new(0, 12, -3) -- позиция над боссом
+local WeaponName    = "Godhuman"
+local TeleportSpeed = 300
+local FarmOffset    = CFrame.new(0, 12, -3)
 
 ------------------------------------------------
 -- СЕРВИСЫ
@@ -51,14 +50,11 @@ function AttackModule:AttackEnemyModel(enemyModel)
 end
 
 ------------------------------------------------
--- ГЛОБАЛЬНЫЕ ФЛАГИ
+-- ГЛОБАЛЬНЫЕ ФЛАГИ / ЛОГИ
 ------------------------------------------------
 local AutoYama      = false
 local CurrentStatus = "Idle"
 
-------------------------------------------------
--- ЛОГИ / GUI
-------------------------------------------------
 local StatusLogs = {}
 local MaxLogs    = 120
 
@@ -249,7 +245,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 ------------------------------------------------
--- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (инвентарь / квест)
+-- ИНВЕНТАРЬ / КВЕСТ
 ------------------------------------------------
 local function HasItemInInventory(itemName)
     local p = LocalPlayer
@@ -299,6 +295,28 @@ local function GetQuestTitle()
     return ""
 end
 
+-- парсим имя элитки из текста квеста
+local function GetEliteNameFromQuest(questTitle)
+    if type(questTitle) ~= "string" or questTitle == "" then
+        return nil
+    end
+
+    local name = questTitle:match("Defeat%s+([%w%s%p]+)%s*%(")
+    if name and name ~= "" then
+        return name
+    end
+
+    -- запасной вариант, если формат другой
+    local known = { "Diablo", "Deandre", "Urban" }
+    for _, base in ipairs(known) do
+        if questTitle:find(base, 1, true) then
+            return base
+        end
+    end
+
+    return nil
+end
+
 ------------------------------------------------
 -- Elite Hunter NPC
 ------------------------------------------------
@@ -317,7 +335,7 @@ local function FindEliteHunterNPC()
 end
 
 local lastEliteQuestRequest = 0
-local EliteQuestCooldown    = 60  -- раз в минуту
+local EliteQuestCooldown    = 60
 
 local function RequestEliteQuest()
     local now = tick()
@@ -342,52 +360,46 @@ local function RequestEliteQuest()
 end
 
 ------------------------------------------------
--- ЭЛИТКИ: поиск и бой
+-- ЭЛИТКА: ПОИСК И БОЙ
 ------------------------------------------------
-local EliteNames = { "Diablo", "Deandre", "Urban" }
+local function FindEliteInWorkspace(targetName)
+    local targetLower = targetName and string.lower(targetName) or nil
 
-local function IsEliteName(name)
-    name = tostring(name)
-    for _, base in ipairs(EliteNames) do
-        if name == base or string.find(name, base, 1, true) then
-            return true
+    local function isMatch(name)
+        if not name then return false end
+        name = string.lower(name)
+        if targetLower then
+            return name:find(targetLower, 1, true) ~= nil
         end
+        -- fallback, если почему-то нет имени из квеста
+        return name:find("diablo",1,true) or name:find("deandre",1,true) or name:find("urban",1,true)
     end
-    return false
-end
 
--- >>> ГЛАВНЫЙ ФИКС: ищем элитку во ВСЁМ Workspace
-local function FindEliteInWorkspace()
-    -- сначала пробуем стандартную папку Enemies (если есть)
+    -- сначала пробуем стандартный Enemies
     local enemiesFolder = Workspace:FindFirstChild("Enemies")
     if enemiesFolder then
         for _, v in ipairs(enemiesFolder:GetChildren()) do
-            if v:IsA("Model") and IsEliteName(v.Name) then
-                local hum = v:FindFirstChildOfClass("Humanoid")
-                local hrp = v:FindFirstChild("HumanoidRootPart")
-                if hum and hrp and hum.Health > 0 then
-                    AddLog("Нашёл элитку в Enemies: "..v.Name)
-                    return v
-                end
-            end
-        end
-    end
-
-    -- если в Enemies нет — сканируем весь Workspace
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        if v:IsA("Model") and IsEliteName(v.Name) then
             local hum = v:FindFirstChildOfClass("Humanoid")
             local hrp = v:FindFirstChild("HumanoidRootPart")
-            if hum and hrp and hum.Health > 0 then
-                AddLog("Нашёл элитку в Workspace: "..v.Name.." ("..v:GetFullName()..")")
+            if hum and hrp and hum.Health > 0 and isMatch(v.Name) then
+                AddLog("Нашёл элитку в Enemies: "..v.Name)
                 return v
             end
         end
     end
 
+    -- если нет — сканируем весь Workspace
+    for _, v in ipairs(Workspace:GetDescendants()) do
+        local hum = v:IsA("Model") and v:FindFirstChildOfClass("Humanoid") or nil
+        local hrp = hum and v:FindFirstChild("HumanoidRootPart") or nil
+        if hum and hrp and hum.Health > 0 and isMatch(v.Name) then
+            AddLog("Нашёл элитку в Workspace: "..v.Name.." ("..v:GetFullName()..")")
+            return v
+        end
+    end
+
     return nil
 end
--- <<< КОНЕЦ ФИКСА
 
 local function FightElite(target)
     if not target then return end
@@ -398,7 +410,6 @@ local function FightElite(target)
     local hum  = target:FindFirstChildOfClass("Humanoid")
     if not (char and hrp and tHRP and hum) then return end
 
-    -- Сначала один раз телепортируемся к элитке
     SimpleTeleport(tHRP.CFrame * FarmOffset, "элитный босс")
 
     local fightDeadline = tick() + 120
@@ -509,21 +520,19 @@ local function RunYamaStep()
         AddLog("Yama: квест = '"..questTitle.."'.")
     end
 
-    local hasEliteQuest = false
-    if questTitle ~= "" then
-        if string.find(questTitle, "Diablo") or string.find(questTitle, "Deandre") or string.find(questTitle, "Urban") then
-            hasEliteQuest = true
-        end
-    end
+    local eliteName = GetEliteNameFromQuest(questTitle)
+    local hasEliteQuest = eliteName ~= nil
 
     if hasEliteQuest then
+        AddLog("Yama: квест на элиту активен, ищу босса: "..string.lower(eliteName))
         UpdateStatus("Yama: квест на элиту активен, ищу босса.")
-        local elite = FindEliteInWorkspace()
+
+        local elite = FindEliteInWorkspace(eliteName)
         if elite then
             UpdateStatus("Yama: элитка "..elite.Name..", атакую.")
             FightElite(elite)
         else
-            AddLog("Yama: квест на элиту есть, но сам босс не найден (жду спавна).")
+            AddLog("Yama: квест на элиту есть, но модель босса '"..eliteName.."' не найдена (жду спавна).")
         end
     else
         UpdateStatus("Yama: элитный квест не активен, беру/обновляю Elite Hunter.")
@@ -554,10 +563,10 @@ local function CreateGui()
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 26)
     Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    Title.Text = "Auto Yama (Elite Hunter, deep scan)"
+    Title.Text = "Auto Yama (Elite Hunter, динамический поиск)"
     Title.TextColor3 = Color3.new(1, 1, 1)
     Title.Font = Enum.Font.SourceSansBold
-    Title.TextSize = 20
+    Title.TextSize = 18
     Title.Parent = MainFrame
 
     StatusLabel = Instance.new("TextLabel")
@@ -638,7 +647,7 @@ local function CreateGui()
         end
     end)
 
-    AddLog("Auto Yama GUI загружен. Нажми кнопку, когда будешь в 3-м море (Castle On The Sea / Floating Turtle).")
+    AddLog("Auto Yama GUI загружен. Нажми кнопку, когда будешь в 3-м море.")
 end
 
 CreateGui()
