@@ -1,12 +1,12 @@
 -- Auto Tushita Quest2
--- Фарм любого моба в зоне Tushita Q2 (координаты из 12к)
+-- Фарм мобов в зоне Tushita Q2 (координаты из 12к) + Anti-AFK
 
 ------------------------------------------------
 -- НАСТРОЙКИ
 ------------------------------------------------
-local WeaponName   = "Godhuman"                 -- чем бить
+local WeaponName    = "Godhuman"                -- чем бить
 local TeleportSpeed = 300                       -- скорость полёта
-local FarmOffset   = CFrame.new(0, 10, -3)      -- позиция над мобом
+local FarmOffset    = CFrame.new(0, 10, -3)     -- позиция над мобом
 
 -- центр зоны квеста (из 12к)
 local TushitaQ2Center = CFrame.new(-5539.3115, 313.8005, -2972.3723)
@@ -21,6 +21,7 @@ local TweenService      = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace         = game:GetService("Workspace")
 local RunService        = game:GetService("RunService")
+local VirtualUser       = game:GetService("VirtualUser") -- для Anti-AFK
 
 local LocalPlayer       = Players.LocalPlayer
 local remote            = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
@@ -32,31 +33,7 @@ local IsFighting        = false
 local CurrentStatus     = "Idle"
 
 ------------------------------------------------
--- NET / ATTACK
-------------------------------------------------
-local modules        = ReplicatedStorage:WaitForChild("Modules")
-local net            = modules:WaitForChild("Net")
-local RegisterAttack = net:WaitForChild("RE/RegisterAttack")
-local RegisterHit    = net:WaitForChild("RE/RegisterHit")
-
-local AttackModule = {}
-
-function AttackModule:AttackEnemyModel(enemyModel)
-    if not enemyModel then return end
-    local hrp = enemyModel:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    local hitTable = {
-        {enemyModel, hrp}
-    }
-
-    RegisterAttack:FireServer(0)
-    RegisterAttack:FireServer(1)
-    RegisterHit:FireServer(hrp, hitTable)
-end
-
-------------------------------------------------
--- ЛОГИ / GUI
+-- ЛОГИ / GUI (создаём сразу, чтобы Anti-AFK мог писать лог)
 ------------------------------------------------
 local StatusLogs = {}
 local MaxLogs    = 200
@@ -82,6 +59,40 @@ local function UpdateStatus(text)
         StatusLabel.Text = "Статус: " .. text
     end
     AddLog("Статус: " .. text)
+end
+
+------------------------------------------------
+-- ANTI-AFK
+------------------------------------------------
+LocalPlayer.Idled:Connect(function()
+    -- этот ивент триггерится, когда игрок долго ничего не делает
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+    AddLog("Anti-AFK: отправлен фейковый клик.")
+end)
+
+------------------------------------------------
+-- NET / ATTACK
+------------------------------------------------
+local modules        = ReplicatedStorage:WaitForChild("Modules")
+local net            = modules:WaitForChild("Net")
+local RegisterAttack = net:WaitForChild("RE/RegisterAttack")
+local RegisterHit    = net:WaitForChild("RE/RegisterHit")
+
+local AttackModule = {}
+
+function AttackModule:AttackEnemyModel(enemyModel)
+    if not enemyModel then return end
+    local hrp = enemyModel:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local hitTable = {
+        {enemyModel, hrp}
+    }
+
+    RegisterAttack:FireServer(0)
+    RegisterAttack:FireServer(1)
+    RegisterHit:FireServer(hrp, hitTable)
 end
 
 ------------------------------------------------
@@ -174,9 +185,9 @@ local function SimpleTeleport(targetCFrame, label)
         return
     end
 
-    local hrp = char.HumanoidRootPart
+    local hrp  = char.HumanoidRootPart
     local dist = (hrp.Position - targetCFrame.Position).Magnitude
-    local t = math.clamp(dist / TeleportSpeed, 0.5, 60)
+    local t    = math.clamp(dist / TeleportSpeed, 0.5, 60)
 
     AddLog(string.format("Телепорт к %s (%.0f stud, t=%.1f)", label or "точке", dist, t))
 
@@ -258,16 +269,15 @@ local function GetNearestMobInZone()
 
     for _, v in ipairs(enemiesFolder:GetChildren()) do
         if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") then
-            local hum = v.Humanoid
+            local hum  = v.Humanoid
             local tHRP = v.HumanoidRootPart
             if hum.Health > 0 then
                 local distToPlayer = (tHRP.Position - hrp.Position).Magnitude
                 if distToPlayer <= MaxMobDistance then
-                    -- дополнительно фильтруем по близости к центру квеста
                     local distToCenter = (tHRP.Position - TushitaQ2Center.Position).Magnitude
                     if distToCenter <= InZoneRadius + 200 then
                         if distToPlayer < best then
-                            best = distToPlayer
+                            best    = distToPlayer
                             nearest = v
                         end
                     end
@@ -348,9 +358,9 @@ local function RunTushitaQ2Once()
             end
 
             pcall(function()
-                tHRP.CanCollide      = false
-                hum.WalkSpeed        = 0
-                hum.JumpPower        = 0
+                tHRP.CanCollide = false
+                hum.WalkSpeed   = 0
+                hum.JumpPower   = 0
 
                 if not tHRP:FindFirstChild("BodyVelocity") then
                     local bv = Instance.new("BodyVelocity", tHRP)
