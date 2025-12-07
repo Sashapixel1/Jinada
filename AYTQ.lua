@@ -1,8 +1,8 @@
 -- Auto Tushita / Auto Yama (GUI + логика)
--- С фиксами Auto Yama: учитывается активный квест по QuestTitle
+-- FIX: Auto Yama теперь находит элиту по частичному имени (Diablo / Deandre / Urban)
 
 ------------------------------------------------
--- СТАРТ: команда Marines
+-- ИНИТ
 ------------------------------------------------
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players           = game:GetService("Players")
@@ -23,13 +23,15 @@ task.wait(5)
 ------------------------------------------------
 -- НАСТРОЙКИ
 ------------------------------------------------
-local WeaponName       = "Godhuman"                    -- чем биться
-local TeleportSpeed    = 300                           -- скорость полёта
-local HoverOffsetY     = 15                            -- высота зависания над мобом
-local EliteNPCFallback = CFrame.new(-5554, 143, -3016) -- Castle on the Sea (Elite Hunter) ПРИМЕР, поправь
-local YamaKatanaPos    = CFrame.new(-9545, 251, 6049)  -- Sealed Katana (водопад) ПРИМЕР, поправь
+local WeaponName       = "Godhuman"
+local TeleportSpeed    = 300
+local HoverOffsetY     = 18
 
--- Holy Torch точки (из 12к-примера)
+-- ПРИМЕРНЫЕ координаты, подгони под свой проект
+local EliteNPCFallback = CFrame.new(-5554, 143, -3016)       -- Elite Hunter на Castle on the Sea
+local YamaKatanaPos    = CFrame.new(-9545, 251, 6049)        -- Sealed Katana
+local LongmaIslandPos  = CFrame.new(-10238.9, 389.8, -9549.8)
+
 local HolyTorchRoute = {
     CFrame.new(-10752, 417, -9366),
     CFrame.new(-11672, 334, -9474),
@@ -37,9 +39,6 @@ local HolyTorchRoute = {
     CFrame.new(-13336, 486, -6985),
     CFrame.new(-13489, 332, -7925),
 }
-
--- Longma остров (Tushita)
-local LongmaIslandPos = CFrame.new(-10238.875976563, 389.7912902832, -9549.7939453125)
 
 ------------------------------------------------
 -- ФЛАГИ
@@ -96,7 +95,7 @@ LocalPlayer.Idled:Connect(function()
 end)
 
 ------------------------------------------------
--- NET / FAST ATTACK (как в Auto Bones)
+-- NET / FAST ATTACK
 ------------------------------------------------
 local modules        = ReplicatedStorage:WaitForChild("Modules")
 local net            = modules:WaitForChild("Net")
@@ -194,7 +193,7 @@ local function EquipToolByName(name)
 end
 
 ------------------------------------------------
--- ТЕЛЕПОРТ (speed=300)
+-- ТЕЛЕПОРТ
 ------------------------------------------------
 local function SimpleTeleport(targetCFrame, label)
     if IsTeleporting then return end
@@ -270,7 +269,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 ------------------------------------------------
--- ВСПОМ. ФУНКЦИИ
+-- ВСПОМОГАТЕЛЬНОЕ
 ------------------------------------------------
 local function HasTool(name)
     local p = LocalPlayer
@@ -293,8 +292,12 @@ local function GetEnemiesFolder()
     return Workspace:FindFirstChild("Enemies")
 end
 
+-- ВАЖНО: теперь частичное сравнение по имени
 local function IsEliteName(name)
-    return name == "Diablo" or name == "Deandre" or name == "Urban"
+    name = tostring(name)
+    return (string.find(name,"Diablo") ~= nil)
+        or (string.find(name,"Deandre") ~= nil)
+        or (string.find(name,"Urban") ~= nil)
 end
 
 local function FindEliteTarget()
@@ -323,10 +326,10 @@ local function FindLongma()
     local enemies = GetEnemiesFolder()
     if not enemies then return nil end
     for _, v in ipairs(enemies:GetChildren()) do
-        if v.Name == "Longma"
-            and v:FindFirstChild("Humanoid")
-            and v:FindFirstChild("HumanoidRootPart")
-            and v.Humanoid.Health > 0 then
+        if tostring(v.Name):find("Longma") and
+           v:FindFirstChild("Humanoid") and
+           v:FindFirstChild("HumanoidRootPart") and
+           v.Humanoid.Health > 0 then
             return v
         end
     end
@@ -342,7 +345,7 @@ local function HoldEFor(seconds, label)
 end
 
 ------------------------------------------------
--- БОЙ С МОДЕЛЬЮ
+-- БОЙ
 ------------------------------------------------
 local function FightMob(target, label, maxTime)
     maxTime = maxTime or 90
@@ -401,7 +404,7 @@ local function FightMob(target, label, maxTime)
                 tHRP.CanCollide       = false
                 hum.WalkSpeed         = 0
                 hum.JumpPower         = 0
-                if not tHRP:FindChild("BodyVelocity") and not tHRP:FindFirstChild("BodyVelocity") then
+                if not tHRP:FindFirstChild("BodyVelocity") then
                     local bv = Instance.new("BodyVelocity", tHRP)
                     bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
                     bv.Velocity = Vector3.new(0,0,0)
@@ -438,12 +441,12 @@ local function FightMob(target, label, maxTime)
 end
 
 ------------------------------------------------
--- Yama / Elite Hunter ЛОГИКА
+-- Yama / Elite Hunter
 ------------------------------------------------
 local lastQuestRequestTime   = 0
-local questRequestCooldown   = 60 -- раз в минуту просим квест
+local questRequestCooldown   = 60
 local lastStatusProgressTime = 0
-local statusCooldown         = 60 -- раз в минуту лог про прогресс
+local statusCooldown         = 60
 
 local function FindEliteHunterModel()
     for _, obj in ipairs(Workspace:GetDescendants()) do
@@ -497,14 +500,13 @@ local function ClickSealedKatana()
 
     for _, cd in ipairs(handle:GetDescendants()) do
         if cd:IsA("ClickDetector") then
-            AddLog("Yama: кликаю по ClickDetector меча.")
+            AddLog("Yama: fireclickdetector по мечу.")
             fireclickdetector(cd)
             break
         end
     end
 end
 
--- ЧТЕНИЕ АКТИВНОГО КВЕСТА (из UI)
 local function GetQuestTitle()
     local ok, title = pcall(function()
         return LocalPlayer.PlayerGui.Main.Quest.Container.QuestTitle.Title.Text
@@ -524,7 +526,6 @@ local function QuestHasEliteTarget()
             return true, name
         end
     end
-
     return false, nil
 end
 
@@ -558,34 +559,38 @@ local function RunYamaLogic()
         return
     end
 
-    -- Проверяем, взят ли уже элит-квест по QuestTitle
     local hasQuest, questTargetName = QuestHasEliteTarget()
 
+    -- 1) Есть активный квест на элиту
     if hasQuest then
         local elite = FindEliteTarget()
         if elite then
             local labelName = questTargetName or elite.Name
-            UpdateStatus("Yama: активен квест на "..labelName..", фарм элитки.")
+            UpdateStatus("Yama: квест '"..GetQuestTitle().."' активен, бью "..labelName..".")
             FightMob(elite, "Elite "..labelName, 120)
             EnsureAtEliteHunter()
         else
+            -- элита ещё не заспавнена или уже убита
             UpdateStatus("Yama: квест '"..GetQuestTitle().."' активен, жду появления элитки.")
         end
         return
     end
 
-    -- сюда попадаем, когда квеста ещё нет
-    local elite = FindEliteTarget()
-    if elite then
-        UpdateStatus("Yama: элитка найдена без квеста, фармлю "..elite.Name)
-        FightMob(elite, "Elite "..elite.Name, 120)
-        EnsureAtEliteHunter()
-        return
+    -- 2) Квеста нет, но элитка уже заспавнена → фармим её и потом вернёмся за квестом
+    do
+        local elite = FindEliteTarget()
+        if elite then
+            UpdateStatus("Yama: элитка найдена без квеста, фармлю "..elite.Name..".")
+            FightMob(elite, "Elite "..elite.Name, 120)
+            EnsureAtEliteHunter()
+            return
+        end
     end
 
+    -- 3) Ни квеста, ни элитки → берём квест по кулдауну
     if now - lastQuestRequestTime >= questRequestCooldown then
         lastQuestRequestTime = now
-        UpdateStatus("Yama: запрашиваю НОВЫЙ квест у NPC.")
+        UpdateStatus("Yama: запрашиваю новый квест у NPC.")
         pcall(function()
             remote:InvokeServer("EliteHunter")
         end)
@@ -595,7 +600,7 @@ local function RunYamaLogic()
 end
 
 ------------------------------------------------
--- Tushita (Holy Torch + Longma)
+-- Tushita (holy torch + Longma)
 ------------------------------------------------
 local function DoHolyTorchRoute()
     UpdateStatus("Tushita: маршрут Holy Torch...")
@@ -610,7 +615,7 @@ local function DoHolyTorchRoute()
 end
 
 local function ClickTushitaBladeOrDoor()
-    AddLog("Tushita: кликаю по мечу/двери (дополни под оффлайн-проект, если нужно конкретно).")
+    AddLog("Tushita: кликаю по мечу/двери (подгони под свой оффлайн-проект).")
 end
 
 local function RunTushitaLogic()
