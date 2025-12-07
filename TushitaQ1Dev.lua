@@ -1,6 +1,5 @@
--- Dialog / Remote Logger
+-- Dialog / Remote Logger (широкий GUI)
 -- Ловит клики по кнопкам диалога и вызовы CommF_:InvokeServer
--- Инжектить отдельно, без авто-квеста
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,10 +13,10 @@ pcall(function()
 end)
 
 ----------------------------------------------------------------
--- GUI логи
+-- GUI логи (увеличенный)
 ----------------------------------------------------------------
 local StatusLogs = {}
-local MaxLogs = 200
+local MaxLogs = 300
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "DialogLoggerGui"
@@ -25,8 +24,8 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = PlayerGui
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 480, 0, 260)
-MainFrame.Position = UDim2.new(0, 20, 0, 200)
+MainFrame.Size = UDim2.new(0, 760, 0, 320)          -- было ~480x260, стало шире и выше
+MainFrame.Position = UDim2.new(0, 20, 0, 150)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -39,11 +38,11 @@ Title.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 Title.Text = "Dialog / CommF_ Logger"
 Title.TextColor3 = Color3.new(1,1,1)
 Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 18
+Title.TextSize = 20
 Title.Parent = MainFrame
 
 local LogsFrame = Instance.new("Frame")
-LogsFrame.Size = UDim2.new(1, -20, 0, 220)
+LogsFrame.Size = UDim2.new(1, -20, 0, 280)
 LogsFrame.Position = UDim2.new(0, 10, 0, 30)
 LogsFrame.BackgroundColor3 = Color3.fromRGB(10,10,10)
 LogsFrame.BorderSizePixel = 0
@@ -55,7 +54,7 @@ Scroll.Position = UDim2.new(0, 2, 0, 2)
 Scroll.BackgroundTransparency = 1
 Scroll.BorderSizePixel = 0
 Scroll.CanvasSize = UDim2.new(0,0,5,0)
-Scroll.ScrollBarThickness = 4
+Scroll.ScrollBarThickness = 6
 Scroll.Parent = LogsFrame
 
 local LogsText = Instance.new("TextLabel")
@@ -64,10 +63,10 @@ LogsText.Position = UDim2.new(0, 0, 0, 0)
 LogsText.BackgroundTransparency = 1
 LogsText.TextColor3 = Color3.new(1,1,1)
 LogsText.Font = Enum.Font.Code
-LogsText.TextSize = 12
+LogsText.TextSize = 14               -- чуть крупнее
 LogsText.TextXAlignment = Enum.TextXAlignment.Left
 LogsText.TextYAlignment = Enum.TextYAlignment.Top
-LogsText.TextWrapped = false
+LogsText.TextWrapped = false         -- без переносов, просто больше ширина
 LogsText.Text = ""
 LogsText.Parent = Scroll
 
@@ -97,19 +96,17 @@ local function HookButton(btn)
     end
 
     btn.Activated:Connect(onClick)
-    if btn:IsA("TextButton") and btn.MouseButton1Click then
+    if btn.MouseButton1Click then
         btn.MouseButton1Click:Connect(onClick)
     end
 end
 
--- уже существующие кнопки
 for _, inst in ipairs(PlayerGui:GetDescendants()) do
     if inst:IsA("TextButton") then
         HookButton(inst)
     end
 end
 
--- новые кнопки (когда появляется диалог)
 PlayerGui.DescendantAdded:Connect(function(inst)
     if inst:IsA("TextButton") then
         HookButton(inst)
@@ -131,7 +128,6 @@ pcall(function()
         local args = {...}
 
         if self == CommF and method == "InvokeServer" then
-            -- собираем аргументы в строку
             local parts = {}
             for i, v in ipairs(args) do
                 local t = typeof(v)
