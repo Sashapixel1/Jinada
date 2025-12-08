@@ -1,27 +1,29 @@
 --========================================================
---  AUTO CDK + TUSHITA (Yama 1/2/3 + Tushita 1/2/3)
---  Один GUI, одна кнопка "Auto CDK"
---  Алгоритм по Alucard Fragment:
---    0 -> Yama1
---    1 -> Yama2
---    2 -> Yama3
---    3 -> Tushita1 (Trial Evil + Trial Good)
---    4 -> Tushita2 (Trial Good)
---    5 -> Tushita3 (Trial Good)
---    >=6 -> Готово, AutoCDK OFF
+--  AutoCDK
+--  1) Сначала: Yama & Tushita Mastery 350 (Reborn Skeleton / Haunted Castle)
+--     После 350/350: открывает дверь триала (CDKQuest, OpenDoor)
+--  2) Потом: AUTO CDK + TUSHITA (Yama 1/2/3 + Tushita 1/2/3)
+--     Алгоритм по Alucard Fragment:
+--       0 -> Yama1
+--       1 -> Yama2
+--       2 -> Yama3
+--       3 -> Tushita1 (Trial Evil + Trial Good)
+--       4 -> Tushita2 (Trial Good)
+--       5 -> Tushita3 (Trial Good)
+--       >=6 -> Готово, AutoCDK OFF
 --========================================================
 
 ---------------------
 -- НАСТРОЙКИ
 ---------------------
-local WeaponName      = "Godhuman"              -- чем бить мобов
+local WeaponName      = "Godhuman"              -- чем бить мобов в квестах CDK
 local TeleportSpeed   = 300
 local FarmOffset      = CFrame.new(0, 10, -3)
 
 -- Castle on the Sea (Yama1)
 local CastleOnSeaCFrame = CFrame.new(-5074.7, 315.6, -3158.58)
 
--- Haunted Castle / Death King (Yama3)
+-- Haunted Castle / Death King (Yama3 и Mastery Farm)
 local HauntedFallback = CFrame.new(-9515.129, 142.233, 6200.441)
 
 -- Патруль Yama2 (HazeESP)
@@ -58,6 +60,11 @@ local TushitaQ2MaxMobDistance = 2000
 local CakeQueenIsland = CFrame.new(-709.3132934570312, 381.6005859375, -11011.396484375)
 local CakeQueenOffset = CFrame.new(0, 20, -3)
 
+-- Mastery Farm (Reborn Skeleton)
+local MasteryTargetName      = "Reborn Skeleton"
+local MasteryTargetMastery   = 350
+local MasteryCheckInterval   = 10      -- раз в N секунд чекаем мастери
+
 ---------------------
 -- СЕРВИСЫ
 ---------------------
@@ -81,6 +88,14 @@ local IsTeleporting = false
 local StopTween     = false
 local NoclipEnabled = false
 
+-- мастерка
+local AutoMasteryFarm     = false
+local MasteryDone         = false
+local MasteryWeaponName   = "Tushita"
+local YamaMastery, TushitaMastery = nil, nil
+local LastLoggedMastery   = {Yama = nil, Tushita = nil}
+local lastMasteryCheck    = 0
+
 -- индивидуальные флаги квестов (ими управляет только AutoCDK)
 local AutoYama1     = false
 local AutoYama2     = false
@@ -97,6 +112,7 @@ local MaxLogs    = 200
 
 local ScreenGui, MainFrame, BtnCDK
 local StatusLabel, AFLabel, LogsText
+local YamaLabelGui, TushitaLabelGui
 
 local function AddLog(msg)
     local ts   = os.date("%H:%M:%S")
@@ -124,9 +140,28 @@ local function UpdateAFLabel(count)
     end
 end
 
+local function UpdateMasteryLabels()
+    if YamaLabelGui then
+        if YamaMastery ~= nil then
+            YamaLabelGui.Text = "Yama Mastery: "..tostring(YamaMastery)
+        else
+            YamaLabelGui.Text = "Yama Mastery: —"
+        end
+    end
+    if TushitaLabelGui then
+        if TushitaMastery ~= nil then
+            TushitaLabelGui.Text = "Tushita Mastery: "..tostring(TushitaMastery)
+        else
+            TushitaLabelGui.Text = "Tushita Mastery: —"
+        end
+    end
+end
+
 ---------------------
 -- GUI
 ---------------------
+local function DisableAllQuests() end -- объявим заранее, реализация ниже
+
 local function CreateMainGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -136,7 +171,7 @@ local function CreateMainGui()
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 520, 0, 320)
+    MainFrame.Size = UDim2.new(0, 520, 0, 340)
     MainFrame.Position = UDim2.new(0, 40, 0, 180)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
     MainFrame.BorderSizePixel = 0
@@ -147,7 +182,7 @@ local function CreateMainGui()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 24)
     title.BackgroundColor3 = Color3.fromRGB(30,30,30)
-    title.Text = "Auto CDK + Tushita (1 кнопка)"
+    title.Text = "Auto CDK (Mastery 350 + Yama/Tushita Quests)"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
     title.TextSize = 18
@@ -185,9 +220,31 @@ local function CreateMainGui()
     AFLabel.Text = "Alucard Fragment: 0"
     AFLabel.Parent = MainFrame
 
+    YamaLabelGui = Instance.new("TextLabel")
+    YamaLabelGui.Size = UDim2.new(1, -20, 0, 20)
+    YamaLabelGui.Position = UDim2.new(0, 10, 0, 114)
+    YamaLabelGui.BackgroundTransparency = 1
+    YamaLabelGui.TextColor3 = Color3.new(1,1,1)
+    YamaLabelGui.Font = Enum.Font.SourceSans
+    YamaLabelGui.TextSize = 14
+    YamaLabelGui.TextXAlignment = Enum.TextXAlignment.Left
+    YamaLabelGui.Text = "Yama Mastery: —"
+    YamaLabelGui.Parent = MainFrame
+
+    TushitaLabelGui = Instance.new("TextLabel")
+    TushitaLabelGui.Size = UDim2.new(1, -20, 0, 20)
+    TushitaLabelGui.Position = UDim2.new(0, 10, 0, 134)
+    TushitaLabelGui.BackgroundTransparency = 1
+    TushitaLabelGui.TextColor3 = Color3.new(1,1,1)
+    TushitaLabelGui.Font = Enum.Font.SourceSans
+    TushitaLabelGui.TextSize = 14
+    TushitaLabelGui.TextXAlignment = Enum.TextXAlignment.Left
+    TushitaLabelGui.Text = "Tushita Mastery: —"
+    TushitaLabelGui.Parent = MainFrame
+
     local LogsFrame = Instance.new("Frame")
-    LogsFrame.Size = UDim2.new(1, -20, 0, 190)
-    LogsFrame.Position = UDim2.new(0, 10, 0, 120)
+    LogsFrame.Size = UDim2.new(1, -20, 0, 170)
+    LogsFrame.Position = UDim2.new(0, 10, 0, 160)
     LogsFrame.BackgroundColor3 = Color3.fromRGB(15,15,15)
     LogsFrame.BorderSizePixel = 0
     LogsFrame.Parent = MainFrame
@@ -220,21 +277,27 @@ local function CreateMainGui()
         if AutoCDK then
             BtnCDK.Text = "Auto CDK: ON"
             BtnCDK.BackgroundColor3 = Color3.fromRGB(0,120,0)
-            NoclipEnabled = true
-            StopTween = false
-            UpdateStatus("Auto CDK включен.")
+            NoclipEnabled   = true
+            StopTween       = false
+            MasteryDone     = false
+            AutoMasteryFarm = true
+            DisableAllQuests()
+            UpdateStatus("Auto CDK включен. Сначала фарм мастери Yama/Tushita до 350.")
+            lastMasteryCheck = 0
         else
             BtnCDK.Text = "Auto CDK: OFF"
             BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
-            NoclipEnabled = false
-            StopTween = true
+            NoclipEnabled   = false
+            StopTween       = true
+            AutoMasteryFarm = false
+            MasteryDone     = false
+            DisableAllQuests()
             UpdateStatus("Остановлен")
-            AutoYama1,AutoYama2,AutoYama3=false,false,false
-            AutoTushita1,AutoTushita2,AutoTushita3=false,false,false
         end
     end)
 
-    AddLog("GUI Auto CDK загружен.")
+    AddLog("GUI AutoCDK загружен.")
+    UpdateMasteryLabels()
 end
 
 CreateMainGui()
@@ -313,6 +376,63 @@ local function IsToolEquipped(name)
     if not char then return false end
     for _, obj in ipairs(char:GetChildren()) do
         if obj:IsA("Tool") and string.lower(obj.Name) == string.lower(name) then
+            return true
+        end
+    end
+    return false
+end
+
+local function HasToolInCharOrBackpack(name)
+    local p = LocalPlayer
+    if not p then return false end
+    local lower = string.lower(name)
+
+    local backpack = p:FindFirstChild("Backpack")
+    if backpack then
+        for _, v in ipairs(backpack:GetChildren()) do
+            if v:IsA("Tool") and string.lower(v.Name) == lower then
+                return true
+            end
+        end
+    end
+
+    local char = p.Character
+    if char then
+        for _, v in ipairs(char:GetChildren()) do
+            if v:IsA("Tool") and string.lower(v.Name) == lower then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function HasInAccountInventory(name)
+    local ok, invData = pcall(function()
+        return remote:InvokeServer("getInventory")
+    end)
+    if ok and type(invData) == "table" then
+        for _, item in ipairs(invData) do
+            local n = item.Name or item.name or tostring(item)
+            if n == name then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function EnsureItemInBackpack(name)
+    if HasToolInCharOrBackpack(name) then return true end
+
+    if HasInAccountInventory(name) then
+        pcall(function()
+            remote:InvokeServer("LoadItem", name)
+        end)
+        task.wait(0.5)
+        if HasToolInCharOrBackpack(name) then
+            AddLog("Загрузил из инвентаря предмет: "..name)
             return true
         end
     end
@@ -457,6 +577,271 @@ local function GetCountMaterials(MaterialName)
 end
 
 ---------------------
+-- ОТКРЫТИЕ ДВЕРИ ТРИАЛА (CDKQuest, OpenDoor)
+---------------------
+local function OpenTrialDoor()
+    AddLog("Пробую открыть дверь триала (CDKQuest, OpenDoor).")
+
+    local ok1, res1 = pcall(function()
+        return remote:InvokeServer("CDKQuest", "OpenDoor")
+    end)
+    if ok1 then
+        AddLog("OpenDoor шаг #1 => "..tostring(res1))
+    else
+        AddLog("Ошибка OpenDoor шаг #1: "..tostring(res1))
+    end
+
+    task.wait(0.3)
+
+    local ok2, res2 = pcall(function()
+        return remote:InvokeServer("CDKQuest", "OpenDoor", true)
+    end)
+    if ok2 then
+        AddLog("OpenDoor шаг #2 => "..tostring(res2))
+    else
+        AddLog("Ошибка OpenDoor шаг #2: "..tostring(res2))
+    end
+
+    AddLog("✅ Попытка открыть дверь триала завершена.")
+end
+
+---------------------
+-- HELPER: Haunted Castle центр
+---------------------
+local function FindDeathKingModel()
+    local candidate
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "Death King" then
+            if obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head") then
+                candidate = obj
+                break
+            end
+        end
+    end
+    return candidate
+end
+
+local function GetHauntedCenterCFrame()
+    local dk = FindDeathKingModel()
+    if dk then
+        local hrp = dk:FindFirstChild("HumanoidRootPart") or dk:FindFirstChild("Head")
+        if hrp then
+            return hrp.CFrame
+        end
+    end
+    return HauntedFallback
+end
+
+local function EnsureOnHauntedIsland()
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if not (char and hrp) then return false end
+
+    local center = GetHauntedCenterCFrame()
+    local dist   = (hrp.Position - center.Position).Magnitude
+    if dist > 600 then
+        UpdateStatus("Лечу к Haunted Castle.")
+        SimpleTeleport(center * CFrame.new(0,4,3), "Haunted Castle")
+        task.wait(1)
+        return false
+    end
+    return true
+end
+
+---------------------
+-- MASTERy FARM: Reborn Skeleton
+---------------------
+local function GetNearestRebornSkeleton(maxDistance)
+    maxDistance = maxDistance or 9999
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return nil end
+
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local center = GetHauntedCenterCFrame()
+    local best, nearest = maxDistance, nil
+
+    for _, v in ipairs(enemies:GetChildren()) do
+        if v.Name == MasteryTargetName
+           and v:FindFirstChild("Humanoid")
+           and v:FindFirstChild("HumanoidRootPart")
+           and v.Humanoid.Health > 0 then
+
+            local distFromCenter = (v.HumanoidRootPart.Position - center.Position).Magnitude
+            if distFromCenter < 800 then
+                local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+                if d < best then
+                    best    = d
+                    nearest = v
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+local function RefreshMasteries()
+    local ok, inv = pcall(function()
+        return remote:InvokeServer("getInventory")
+    end)
+
+    if not ok or type(inv) ~= "table" then
+        AddLog("Ошибка getInventory при обновлении мастери: "..tostring(inv))
+        return
+    end
+
+    local newY, newT
+
+    for _, item in ipairs(inv) do
+        if item and item.Type == "Sword" then
+            if item.Name == "Yama" then
+                newY = item.Mastery
+            elseif item.Name == "Tushita" then
+                newT = item.Mastery
+            end
+        end
+    end
+
+    if newY ~= nil then
+        YamaMastery = newY
+        if LastLoggedMastery.Yama ~= newY then
+            AddLog("Yama Mastery: "..tostring(newY))
+            LastLoggedMastery.Yama = newY
+        end
+    end
+
+    if newT ~= nil then
+        TushitaMastery = newT
+        if LastLoggedMastery.Tushita ~= newT then
+            AddLog("Tushita Mastery: "..tostring(newT))
+            LastLoggedMastery.Tushita = newT
+        end
+    end
+
+    UpdateMasteryLabels()
+end
+
+local function ChooseMasteryWeapon()
+    local t = TushitaMastery or 0
+    local y = YamaMastery or 0
+
+    if t < MasteryTargetMastery and (HasToolInCharOrBackpack("Tushita") or HasInAccountInventory("Tushita")) then
+        if MasteryWeaponName ~= "Tushita" then
+            MasteryWeaponName = "Tushita"
+            AddLog("Смена оружия для мастери: Tushita ("..tostring(t)..")")
+        end
+    elseif y < MasteryTargetMastery and (HasToolInCharOrBackpack("Yama") or HasInAccountInventory("Yama")) then
+        if MasteryWeaponName ~= "Yama" then
+            MasteryWeaponName = "Yama"
+            AddLog("Смена оружия для мастери: Yama ("..tostring(y)..")")
+        end
+    end
+end
+
+local function FarmMasteryOnce()
+    local target = GetNearestRebornSkeleton(4000)
+    if not target then
+        UpdateStatus("Mastery: Reborn Skeleton не найден, жду спавна.")
+        return
+    end
+
+    local ok, err = pcall(function()
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local tHRP = target:FindFirstChild("HumanoidRootPart")
+        local hum  = target:FindFirstChild("Humanoid")
+        if not (char and hrp and tHRP and hum) then return end
+
+        UpdateStatus("Mastery: фарм "..MasteryWeaponName.." на "..MasteryTargetName)
+        SimpleTeleport(tHRP.CFrame * FarmOffset, MasteryTargetName)
+
+        local deadline      = tick() + 90
+        local lastPosAdjust = 0
+        local lastAttack    = 0
+
+        while AutoMasteryFarm and AutoCDK and target.Parent and hum.Health > 0 and tick() < deadline do
+            char = LocalPlayer.Character
+            hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            tHRP = target:FindFirstChild("HumanoidRootPart")
+            hum  = target:FindFirstChild("Humanoid")
+            if not (char and hrp and tHRP and hum) then break end
+
+            local dist = (tHRP.Position - hrp.Position).Magnitude
+            if dist > 2500 then
+                SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий "..MasteryTargetName)
+            else
+                if tick() - lastPosAdjust > 0.05 then
+                    hrp.CFrame = tHRP.CFrame * FarmOffset
+                    hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
+                    hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                    hrp.CanCollide = false
+                    lastPosAdjust = tick()
+                end
+            end
+
+            pcall(function()
+                tHRP.CanCollide = false
+                hum.WalkSpeed   = 0
+                hum.JumpPower   = 0
+
+                if not tHRP:FindFirstChild("BodyVelocity") then
+                    local bv = Instance.new("BodyVelocity", tHRP)
+                    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bv.Velocity = Vector3.new(0,0,0)
+                end
+            end)
+
+            AutoHaki()
+            EquipToolByName(MasteryWeaponName)
+
+            if tick() - lastAttack > 0.15 then
+                AttackModule:AttackEnemyModel(target)
+                lastAttack = tick()
+            end
+
+            RunService.Heartbeat:Wait()
+        end
+
+        local dead = not target.Parent or not target:FindFirstChild("Humanoid") or target.Humanoid.Health <= 0
+        if dead then
+            AddLog("✅ "..MasteryTargetName.." убит, мастери "..MasteryWeaponName.." должна была вырасти.")
+        end
+    end)
+
+    if not ok then
+        AddLog("Ошибка FarmMasteryOnce: "..tostring(err))
+    end
+end
+
+local function RunMasteryLoop()
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if not (char and hrp) then
+        UpdateStatus("Mastery: жду персонажа...")
+        return
+    end
+
+    if not (HasToolInCharOrBackpack("Yama") or HasInAccountInventory("Yama")
+        or HasToolInCharOrBackpack("Tushita") or HasInAccountInventory("Tushita")) then
+
+        UpdateStatus("Mastery: Yama/Tushita не найдены в инвентаре.")
+        AddLog("❌ Mastery: нет Yama/Tushita. Получи мечи перед запуском AutoCDK.")
+        return
+    end
+
+    if not EnsureOnHauntedIsland() then
+        return
+    end
+
+    EnsureItemInBackpack(MasteryWeaponName)
+    EquipToolByName(MasteryWeaponName)
+
+    FarmMasteryOnce()
+end
+
+---------------------
 -- CDKTrialModule (StartTrial Evil / Good)
 ---------------------
 local CDKTrialModule = {}
@@ -518,7 +903,7 @@ function CDKTrialModule.StartGoodTrial(logFunc)
 end
 
 ---------------------
--- YAMA QUEST 1 (упрощённо)
+-- YAMA QUEST 1
 ---------------------
 local function YamaQuest1Tick()
     if not AutoYama1 or not AutoCDK then return end
@@ -676,46 +1061,6 @@ end
 ---------------------
 -- YAMA QUEST 3 (упрощённый Bones/HellDimension)
 ---------------------
-local function FindDeathKingModel()
-    local candidate
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name == "Death King" then
-            if obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head") then
-                candidate = obj
-                break
-            end
-        end
-    end
-    return candidate
-end
-
-local function GetHauntedCenterCFrame()
-    local dk = FindDeathKingModel()
-    if dk then
-        local hrp = dk:FindFirstChild("HumanoidRootPart") or dk:FindFirstChild("Head")
-        if hrp then
-            return hrp.CFrame
-        end
-    end
-    return HauntedFallback
-end
-
-local function EnsureOnHauntedIsland()
-    local char = LocalPlayer.Character
-    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-    if not (char and hrp) then return false end
-
-    local center = GetHauntedCenterCFrame()
-    local dist   = (hrp.Position - center.Position).Magnitude
-    if dist > 600 then
-        UpdateStatus("Yama3: лечу к Haunted Castle.")
-        SimpleTeleport(center * CFrame.new(0,4,3), "Haunted Castle")
-        task.wait(1)
-        return false
-    end
-    return true
-end
-
 local function IsBoneMob(mob)
     local n = tostring(mob.Name)
     if string.find(n, "Skeleton") then return true end
@@ -1032,7 +1377,7 @@ local function TushitaQuest2Tick()
 end
 
 ---------------------
--- TUSHITA QUEST 3 (Cake Queen + HeavenlyDimension упрощённо)
+-- TUSHITA QUEST 3 (Cake Queen + HeavenlyDimension)
 ---------------------
 local T3_HeavenlyStage = 0  -- 0 Torch1, 1 Torch2, 2 Torch3, 3 Exit
 
@@ -1124,9 +1469,9 @@ local function TushitaQuest3Tick()
     if af >= 6 then
         AutoTushita3 = false
         UpdateStatus("Tushita3: 6-й фрагмент получен. Готово.")
-        AutoCDK = false
+        AutoCDK       = false
         NoclipEnabled = false
-        StopTween = true
+        StopTween     = true
         if BtnCDK then
             BtnCDK.Text = "Auto CDK: OFF"
             BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
@@ -1219,68 +1564,73 @@ local function GetStageFromAF(count)
     end
 end
 
-local function DisableAllQuests()
+function DisableAllQuests()
     AutoYama1,AutoYama2,AutoYama3 = false,false,false
     AutoTushita1,AutoTushita2,AutoTushita3 = false,false,false
 end
 
 ---------------------
--- ГЛАВНЫЙ ЦИКЛ AutoCDK
+-- ГЛАВНЫЙ ЦИКЛ AutoCDK (после мастери)
 ---------------------
 spawn(function()
     while task.wait(1) do
         if not AutoCDK then
             CurrentStage = -1
         else
-            local af = GetCountMaterials("Alucard Fragment") or 0
-            UpdateAFLabel(af)
+            -- если мастери ещё не сделана 350/350, просто ждём (MasteryLoop сам работает)
+            if not MasteryDone then
+                -- статус обновляет MasteryLoop
+            else
+                local af = GetCountMaterials("Alucard Fragment") or 0
+                UpdateAFLabel(af)
 
-            local stage = GetStageFromAF(af)
-            if stage ~= CurrentStage then
-                CurrentStage = stage
-                AddLog("CDK: AF="..af.." -> стадия "..stage)
-                DisableAllQuests()
-                StopTween = true
-                task.wait(0.2)
-                StopTween = false
-
-                if stage == 0 then
-                    UpdateStatus("Yama Quest 1")
-                    AutoYama1 = true
-                elseif stage == 1 then
-                    UpdateStatus("Yama Quest 2")
-                    AutoYama2 = true
-                elseif stage == 2 then
-                    UpdateStatus("Yama Quest 3")
-                    AutoYama3 = true
-                elseif stage == 3 then
-                    UpdateStatus("Tushita Quest 1 (BoatQuest)")
-                    AutoTushita1 = true
-                    AddLog("Перед Tushita1: запускаю Trial Evil 1 раз.")
-                    CDKTrialModule.StartEvilTrial(AddLog)
-                    task.wait(0.3)
-                    AddLog("Перед Tushita1: запускаю Trial Good.")
-                    CDKTrialModule.StartGoodTrial(AddLog)
-                elseif stage == 4 then
-                    UpdateStatus("Tushita Quest 2")
-                    AutoTushita2 = true
-                    AddLog("Перед Tushita2: запускаю Trial Good.")
-                    CDKTrialModule.StartGoodTrial(AddLog)
-                elseif stage == 5 then
-                    UpdateStatus("Tushita Quest 3")
-                    AutoTushita3 = true
-                    T3_HeavenlyStage = 0
-                    AddLog("Перед Tushita3: запускаю Trial Good.")
-                    CDKTrialModule.StartGoodTrial(AddLog)
-                elseif stage == 6 then
-                    UpdateStatus("Готово (6+ Alucard Fragment)")
-                    AddLog("Все 6 фрагментов уже есть, выключаю AutoCDK.")
-                    AutoCDK = false
-                    NoclipEnabled = false
+                local stage = GetStageFromAF(af)
+                if stage ~= CurrentStage then
+                    CurrentStage = stage
+                    AddLog("CDK: AF="..af.." -> стадия "..stage)
+                    DisableAllQuests()
                     StopTween = true
-                    if BtnCDK then
-                        BtnCDK.Text = "Auto CDK: OFF"
-                        BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                    task.wait(0.2)
+                    StopTween = false
+
+                    if stage == 0 then
+                        UpdateStatus("Yama Quest 1")
+                        AutoYama1 = true
+                    elseif stage == 1 then
+                        UpdateStatus("Yama Quest 2")
+                        AutoYama2 = true
+                    elseif stage == 2 then
+                        UpdateStatus("Yama Quest 3")
+                        AutoYama3 = true
+                    elseif stage == 3 then
+                        UpdateStatus("Tushita Quest 1 (BoatQuest)")
+                        AutoTushita1 = true
+                        AddLog("Перед Tushita1: запускаю Trial Evil 1 раз.")
+                        CDKTrialModule.StartEvilTrial(AddLog)
+                        task.wait(0.3)
+                        AddLog("Перед Tushita1: запускаю Trial Good.")
+                        CDKTrialModule.StartGoodTrial(AddLog)
+                    elseif stage == 4 then
+                        UpdateStatus("Tushita Quest 2")
+                        AutoTushita2 = true
+                        AddLog("Перед Tushita2: запускаю Trial Good.")
+                        CDKTrialModule.StartGoodTrial(AddLog)
+                    elseif stage == 5 then
+                        UpdateStatus("Tushita Quest 3")
+                        AutoTushita3 = true
+                        T3_HeavenlyStage = 0
+                        AddLog("Перед Tushita3: запускаю Trial Good.")
+                        CDKTrialModule.StartGoodTrial(AddLog)
+                    elseif stage == 6 then
+                        UpdateStatus("Готово (6+ Alucard Fragment)")
+                        AddLog("Все 6 фрагментов уже есть, выключаю AutoCDK.")
+                        AutoCDK       = false
+                        NoclipEnabled = false
+                        StopTween     = true
+                        if BtnCDK then
+                            BtnCDK.Text = "Auto CDK: OFF"
+                            BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                        end
                     end
                 end
             end
@@ -1299,5 +1649,43 @@ spawn(function()
         if AutoTushita1 then pcall(TushitaQuest1Tick) end
         if AutoTushita2 then pcall(TushitaQuest2Tick) end
         if AutoTushita3 then pcall(TushitaQuest3Tick) end
+    end
+end)
+
+---------------------
+-- ЦИКЛ MASTERy FARM (идёт первым этапом AutoCDK)
+---------------------
+spawn(function()
+    while task.wait(0.4) do
+        if AutoCDK and AutoMasteryFarm then
+            local ok, err = pcall(function()
+                if tick() - lastMasteryCheck >= MasteryCheckInterval then
+                    lastMasteryCheck = tick()
+                    RefreshMasteries()
+
+                    if YamaMastery and YamaMastery >= MasteryTargetMastery
+                       and TushitaMastery and TushitaMastery >= MasteryTargetMastery then
+
+                        UpdateStatus("Готово: Yama/Tushita мастери >= "..MasteryTargetMastery..". Открываю дверь триала.")
+                        AddLog("✅ Mastery Farm завершён. Yama="..tostring(YamaMastery)
+                            ..", Tushita="..tostring(TushitaMastery))
+
+                        OpenTrialDoor()
+
+                        AutoMasteryFarm = false
+                        MasteryDone     = true
+                        AddLog("Переход к AutoCDK квестам (Yama1-3, Tushita1-3).")
+                        return
+                    end
+
+                    ChooseMasteryWeapon()
+                end
+
+                RunMasteryLoop()
+            end)
+            if not ok then
+                AddLog("Ошибка в цикле MasteryFarm: "..tostring(err))
+            end
+        end
     end
 end)
