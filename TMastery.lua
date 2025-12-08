@@ -1,7 +1,6 @@
 --========================================================
 -- Yama & Tushita Mastery Farm (Reborn Skeleton, Haunted Castle)
--- Мобы: Reborn Skeleton
--- Кемп: Haunted Castle (центр у Death King / fallback)
+-- После обоих 350 мастери: открывает дверь CDK триала (OpenDoor)
 --========================================================
 
 ---------------------
@@ -364,6 +363,34 @@ local function ChooseWeaponForFarm()
     else
         -- мечей нет или уже оба 350 – обработаем это выше
     end
+end
+
+---------------------
+-- ОТКРЫТИЕ ДВЕРИ ТРИАЛА (CDKQuest, OpenDoor)
+---------------------
+local function OpenTrialDoor()
+    AddLog("Пробую открыть дверь триала (CDKQuest, OpenDoor).")
+    local ok1, res1 = pcall(function()
+        return remote:InvokeServer("CDKQuest", "OpenDoor")
+    end)
+    if ok1 then
+        AddLog("OpenDoor шаг #1 ответ: " .. tostring(res1))
+    else
+        AddLog("Ошибка OpenDoor шаг #1: " .. tostring(res1))
+    end
+
+    task.wait(0.3)
+
+    local ok2, res2 = pcall(function()
+        return remote:InvokeServer("CDKQuest", "OpenDoor", true)
+    end)
+    if ok2 then
+        AddLog("OpenDoor шаг #2 ответ: " .. tostring(res2))
+    else
+        AddLog("Ошибка OpenDoor шаг #2: " .. tostring(res2))
+    end
+
+    AddLog("✅ Попытка открыть дверь триала завершена.")
 end
 
 ---------------------
@@ -810,10 +837,18 @@ spawn(function()
                     lastMasteryCheck = tick()
                     RefreshMasteries()
 
-                    -- если обе мастери уже >= TargetMastery — выключаемся
+                    -- если обе мастери уже >= TargetMastery — открываем дверь и выключаемся
                     if YamaMastery and YamaMastery >= TargetMastery
                        and TushitaMastery and TushitaMastery >= TargetMastery then
 
+                        UpdateStatus("Готово: мастери Yama и Tushita >= " .. TargetMastery)
+                        AddLog("✅ Фарм мастери завершён. Yama=" .. tostring(YamaMastery)
+                            .. ", Tushita=" .. tostring(TushitaMastery))
+
+                        -- открываем дверь триала
+                        OpenTrialDoor()
+
+                        -- вырубаем фарм
                         AutoMasteryFarm = false
                         NoclipEnabled   = false
                         StopTween       = true
@@ -823,9 +858,6 @@ spawn(function()
                             ToggleButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
                         end
 
-                        UpdateStatus("Готово: мастери Yama и Tushita >= " .. TargetMastery)
-                        AddLog("✅ Фарм мастери завершён. Yama=" .. tostring(YamaMastery)
-                            .. ", Tushita=" .. tostring(TushitaMastery))
                         return
                     end
 
