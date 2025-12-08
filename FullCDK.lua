@@ -20,8 +20,8 @@ local WeaponName      = "Godhuman"              -- чем бить мобов в
 local TeleportSpeed   = 300
 local FarmOffset      = CFrame.new(0, 10, -3)
 
--- Castle on the Sea (Yama1)
-local CastleOnSeaCFrame = CFrame.new(-5074.7, 315.6, -3158.58)
+-- Castle on the Sea (Yama1) – точка у Elite Hunter
+local CastleOnSeaCFrame = CFrame.new(-5413.14, 313.79, -2827.95)
 
 -- Haunted Castle / Death King (Yama3 и Mastery Farm)
 local HauntedFallback = CFrame.new(-9515.129, 142.233, 6200.441)
@@ -99,7 +99,7 @@ local YamaMastery, TushitaMastery = nil, nil
 local LastLoggedMastery   = {Yama = nil, Tushita = nil}
 local lastMasteryCheck    = 0
 
--- индивидуальные флаги квестов (ими управляет только AutoCDK)
+-- индивидуальные флаги квестов
 local AutoYama1     = false
 local AutoYama2     = false
 local AutoYama3     = false
@@ -845,7 +845,7 @@ local function RunMasteryLoop()
 end
 
 ---------------------
--- FIGHT HELPER (универсальный)
+-- FIGHT HELPER
 ---------------------
 local function HoldEFor(seconds)
     seconds = seconds or 2
@@ -918,7 +918,8 @@ local function FightMobSimple(target, label, offsetCF)
 end
 
 ---------------------
--- CDKTrialModule (StartTrial Evil / Good)
+-- CDKTrialModule
+-- ВАЖНО: Good и Evil делают Progress + StartTrial + Option(...,"Option1")
 ---------------------
 local CDKTrialModule = {}
 
@@ -935,6 +936,30 @@ function CDKTrialModule.StartEvilTrial(logFunc)
         Log("Progress(Evil) = "..tostring(resP))
     else
         Log("Ошибка Progress(Evil): "..tostring(resP))
+    end
+
+    task.wait(0.2)
+
+    Log("StartTrial Evil...")
+    local okS, resS = pcall(function()
+        return remote:InvokeServer("CDKQuest", "StartTrial", "Evil")
+    end)
+    if okS then
+        Log("StartTrial(Evil) => "..tostring(resS))
+    else
+        Log("Ошибка StartTrial(Evil): "..tostring(resS))
+    end
+
+    task.wait(0.2)
+
+    Log("Option1 Evil...")
+    local okO, resO = pcall(function()
+        return remote:InvokeServer("CDKQuest", "Option", "Evil", "Option1")
+    end)
+    if okO then
+        Log("✅ Option(Evil, Option1) => "..tostring(resO))
+    else
+        Log("❌ Ошибка Option(Evil, Option1): "..tostring(resO))
     end
 end
 
@@ -960,9 +985,21 @@ function CDKTrialModule.StartGoodTrial(logFunc)
         return remote:InvokeServer("CDKQuest", "StartTrial", "Good")
     end)
     if okS then
-        Log("✅ StartTrial(Good) => "..tostring(resS))
+        Log("StartTrial(Good) => "..tostring(resS))
     else
-        Log("❌ Ошибка StartTrial(Good): "..tostring(resS))
+        Log("Ошибка StartTrial(Good): "..tostring(resS))
+    end
+
+    task.wait(0.2)
+
+    Log("Option1 Good...")
+    local okO, resO = pcall(function()
+        return remote:InvokeServer("CDKQuest", "Option", "Good", "Option1")
+    end)
+    if okO then
+        Log("✅ Option(Good, Option1) => "..tostring(resO))
+    else
+        Log("❌ Ошибка Option(Good, Option1): "..tostring(resO))
     end
 end
 
@@ -992,10 +1029,10 @@ local function YamaQuest1Tick()
 
     local dist = (hrp.Position - CastleOnSeaCFrame.Position).Magnitude
     if dist > 150 then
-        UpdateStatus("Yama1: лечу к Castle on the Sea, жду смерти.")
-        SimpleTeleport(CastleOnSeaCFrame, "Castle on the Sea")
+        UpdateStatus("Yama1: лечу к Elite Hunter в Castle on the Sea, жду смерти.")
+        SimpleTeleport(CastleOnSeaCFrame, "Elite Hunter (Castle on the Sea)")
     else
-        UpdateStatus("Yama1: стою на Castle on the Sea, жду, пока умру.")
+        UpdateStatus("Yama1: стою у Elite Hunter, жду, пока умру.")
     end
 end
 
@@ -1123,9 +1160,7 @@ local function YamaQuest2Tick()
 end
 
 ---------------------
--- YAMA QUEST 3
--- Soul Reaper -> 20 сек стоим под ударами -> HellDimension:
--- Torch1/2/3: E на 2 сек, после каждого факела убиваем мобов.
+-- YAMA QUEST 3 (Soul Reaper + HellDimension)
 ---------------------
 local function IsBoneMob(mob)
     local n = tostring(mob.Name)
@@ -1250,7 +1285,7 @@ local function HandleHellDimensionYama3()
     if not hd then return end
 
     UpdateStatus("Yama3: HellDimension активен.")
-    AddLog("Yama3: HellDimension обнаружен, выполняю факела и босса.")
+    AddLog("Yama3: HellDimension обнаружен, выполняю факела и мобов.")
 
     local Torch1 = hd:FindFirstChild("Torch1")
     local Torch2 = hd:FindFirstChild("Torch2")
@@ -1316,7 +1351,6 @@ local function HandleSoulReaperPhaseYama3()
     local map = Workspace:FindFirstChild("Map")
     local hd  = map and map:FindFirstChild("HellDimension")
     if hd then
-        -- уже в адском измерении, пусть другой код обработает
         return
     end
 
@@ -1354,7 +1388,6 @@ local function HandleSoulReaperPhaseYama3()
             break
         end
 
-        -- если HellDimension появился, выходим, его обработает другой код
         local m = Workspace:FindFirstChild("Map")
         local hDim = m and m:FindFirstChild("HellDimension")
         if hDim then
@@ -1371,7 +1404,6 @@ local function HandleSoulReaperPhaseYama3()
         RunService.Heartbeat:Wait()
     end
 
-    -- после 20 секунд проверяем HellDimension
     local m2  = Workspace:FindFirstChild("Map")
     local hd2 = m2 and m2:FindFirstChild("HellDimension")
     if hd2 then
@@ -1412,20 +1444,17 @@ local function YamaQuest3Tick()
     local map = Workspace:FindFirstChild("Map")
     local hellDim = map and map:FindFirstChild("HellDimension")
 
-    -- 1) если уже открылась HellDimension — выполняем её
     if hellDim then
         HandleHellDimensionYama3()
         return
     end
 
-    -- 2) если Soul Reaper активен — выполняем фазу ожидания 20 сек
     local soul = FindSoulReaper()
     if soul then
         HandleSoulReaperPhaseYama3()
         return
     end
 
-    -- 3) иначе просто фармим скелетов, пока не появится Soul Reaper / HellDimension
     FarmBonesOnce()
 end
 
@@ -1634,8 +1663,6 @@ end
 
 ---------------------
 -- TUSHITA QUEST 3 (Cake Queen + HeavenlyDimension)
--- После убийства Cake Queen ждём 5 сек -> перенос в HeavenlyDimension.
--- В HeavenlyDimension: Torch1/2/3 — E на 2 сек, после каждого факела убиваем мобов.
 ---------------------
 local T3_HeavenlyStage       = 0  -- 0 Torch1, 1 Torch2, 2 Torch3, 3 Exit
 local LastCakeQueenKillTime  = 0
@@ -1694,7 +1721,6 @@ local function TushitaQuest3Tick()
 
     local dim = HeavenlyDimensionFolder()
 
-    -- если HeavenlyDimension ещё нет — работаем с Cake Queen / ожиданием
     if not dim then
         local boss = FindCakeQueen()
         if boss then
@@ -1714,7 +1740,6 @@ local function TushitaQuest3Tick()
         return
     end
 
-    -- В HeavenlyDimension
     local torch1 = dim:FindFirstChild("Torch1")
     local torch2 = dim:FindFirstChild("Torch2")
     local torch3 = dim:FindFirstChild("Torch3")
@@ -1748,7 +1773,6 @@ local function TushitaQuest3Tick()
     end
 
     if T3_HeavenlyStage == 3 then
-        -- добиваем мобов и выходим
         FarmHeavenMobsOnce()
         if exit then
             UpdateStatus("Tushita3: лечу к Exit.")
@@ -1799,9 +1823,8 @@ spawn(function()
         if not AutoCDK then
             CurrentStage = -1
         else
-            -- если мастери ещё не сделана 350/350, просто ждём (MasteryLoop сам работает)
             if not MasteryDone then
-                -- статус обновляет MasteryLoop
+                -- ждём, мастерка ещё идёт
             else
                 local af = GetCountMaterials("Alucard Fragment") or 0
                 UpdateAFLabel(af)
@@ -1818,24 +1841,21 @@ spawn(function()
                     if stage == 0 then
                         UpdateStatus("Yama Quest 1")
                         AutoYama1 = true
-                        AddLog("Перед Yama1: активирую Trial Evil (Progress).")
-                        pcall(function()
-                            remote:InvokeServer("CDKQuest","Progress","Evil")
-                        end)
+                        AddLog("Перед Yama1: запускаю Trial Evil (Progress + StartTrial + Option1).")
+                        CDKTrialModule.StartEvilTrial(AddLog)
+
                     elseif stage == 1 then
                         UpdateStatus("Yama Quest 2")
                         AutoYama2 = true
-                        AddLog("Перед Yama2: активирую Trial Evil (Progress).")
-                        pcall(function()
-                            remote:InvokeServer("CDKQuest","Progress","Evil")
-                        end)
+                        AddLog("Перед Yama2: запускаю Trial Evil (Progress + StartTrial + Option1).")
+                        CDKTrialModule.StartEvilTrial(AddLog)
+
                     elseif stage == 2 then
                         UpdateStatus("Yama Quest 3")
                         AutoYama3 = true
-                        AddLog("Перед Yama3: активирую Trial Evil (Progress).")
-                        pcall(function()
-                            remote:InvokeServer("CDKQuest","Progress","Evil")
-                        end)
+                        AddLog("Перед Yama3: запускаю Trial Evil (Progress + StartTrial + Option1).")
+                        CDKTrialModule.StartEvilTrial(AddLog)
+
                     elseif stage == 3 then
                         UpdateStatus("Tushita Quest 1 (BoatQuest)")
                         AutoTushita1 = true
@@ -1844,11 +1864,13 @@ spawn(function()
                         task.wait(0.3)
                         AddLog("Перед Tushita1: запускаю Trial Good.")
                         CDKTrialModule.StartGoodTrial(AddLog)
+
                     elseif stage == 4 then
                         UpdateStatus("Tushita Quest 2")
                         AutoTushita2 = true
                         AddLog("Перед Tushita2: запускаю Trial Good.")
                         CDKTrialModule.StartGoodTrial(AddLog)
+
                     elseif stage == 5 then
                         UpdateStatus("Tushita Quest 3")
                         AutoTushita3 = true
@@ -1856,6 +1878,7 @@ spawn(function()
                         LastCakeQueenKillTime = 0
                         AddLog("Перед Tushita3: запускаю Trial Good.")
                         CDKTrialModule.StartGoodTrial(AddLog)
+
                     elseif stage == 6 then
                         UpdateStatus("Готово (6+ Alucard Fragment)")
                         AddLog("Все 6 фрагментов уже есть, выключаю AutoCDK.")
