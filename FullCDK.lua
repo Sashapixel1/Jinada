@@ -1,6 +1,6 @@
 --========================================================
--- Auto Yama Quests 1 / 2 / 3 + Evil Trial (CDK)
--- Для твоего оффлайн BF-проекта
+-- Auto CDK (Yama Quest 1 / 2 / 3 + Evil Trial)
+-- Один скрипт с одной кнопкой "Auto CDK"
 --========================================================
 
 ---------------------
@@ -11,7 +11,7 @@ local TeleportSpeed = 300
 -- Q1: Mythological Pirate (запуск Evil Trial у НПС)
 local MythPirateName          = "Mythological Pirate"
 local MythPirateIslandCFrame  = CFrame.new(-13451.46484375, 543.712890625, -6961.0029296875)
-local MythPirateStandOffset   = CFrame.new(0, 0, -2) -- как в 12к (сзади НПС)
+local MythPirateStandOffset   = CFrame.new(0, 0, -2)
 
 -- Q2: Yama Quest 2 (HazeESP)
 local Yama2SwordName          = "Yama"
@@ -26,39 +26,6 @@ local MinBonesToRoll          = 500
 
 -- Haunted Castle fallback-центр (возле Death King)
 local HauntedFallback         = CFrame.new(-9515.129, 142.233, 6200.441)
-
----------------------
--- ПЕРЕМЕННЫЕ
----------------------
-local AutoYamaQuest1   = false
-local AutoYamaQuest2   = false
-local AutoYamaQuest3   = false
-
-local CurrentStatus    = "Idle"
-local StartTime        = os.time()
-
-local IsTeleporting    = false
-local StopTween        = false
-local NoclipEnabled    = false
-
--- Q1
-local lastTrial1Try      = 0
-local Trial1Cooldown     = 5
-
--- Q2
-local patrolIndex        = 1
-local lastPatrol         = 0
-local PatrolHoldUntil    = 0
-local HazeKillCount      = 0
-local IsFarmingYama2     = false
-
--- Q3
-local AutoYama3Started   = false
-local BonesCount         = 0
-local RollsUsed          = 0
-local HasHallow          = false
-local RollWindowStart    = os.time()
-local IsFightingYama3    = false
 
 ---------------------
 -- ПАТРУЛЬНЫЕ ТОЧКИ (Yama Quest 2)
@@ -97,6 +64,36 @@ local PatrolPoints = {
     CFrame.new(2490.224365234375, 350.77459716796875, -7150.5517578125),
     CFrame.new(-13274.528320313, 531.82073974609, -7579.22265625),
 }
+
+---------------------
+-- ПЕРЕМЕННЫЕ
+---------------------
+local AutoCDK        = false        -- ОДНА глобальная кнопка
+local CurrentStage   = 0            -- 0,1,2,3+ по количеству Alucard Fragment
+local CurrentStatus  = "Idle"
+local StartTime      = os.time()
+
+local IsTeleporting  = false
+local StopTween      = false
+local NoclipEnabled  = false
+
+-- Q1
+local lastTrial1Try  = 0
+local Trial1Cooldown = 5
+
+-- Q2
+local patrolIndex        = 1
+local lastPatrol         = 0
+local PatrolHoldUntil    = 0
+local HazeKillCount      = 0
+local IsFarmingYama2     = false
+
+-- Q3
+local BonesCount         = 0
+local RollsUsed          = 0
+local HasHallow          = false
+local RollWindowStart    = os.time()
+local IsFightingYama3    = false
 
 ---------------------
 -- СЕРВИСЫ
@@ -143,7 +140,7 @@ local StatusLogs  = {}
 local MaxLogs     = 200
 
 local ScreenGui, MainFrame
-local BtnQ1, BtnQ2, BtnQ3
+local BtnCDK
 local StatusLabel, UptimeLabel, HazeLabel, BonesLabel, RollsLabel, HallowLabel, LogsText
 
 local function AddLog(msg)
@@ -210,7 +207,7 @@ end
 ---------------------
 spawn(function()
     while task.wait(60) do
-        if AutoYamaQuest1 or AutoYamaQuest2 or AutoYamaQuest3 then
+        if AutoCDK then
             pcall(function()
                 VirtualUser:CaptureController()
                 VirtualUser:ClickButton2(Vector2.new())
@@ -425,13 +422,13 @@ local function SimpleTeleport(targetCFrame, label)
 end
 
 LocalPlayer.CharacterAdded:Connect(function(char)
-    IsTeleporting = false
-    StopTween     = false
+    IsTeleporting   = false
+    StopTween       = false
     IsFightingYama3 = false
     IsFarmingYama2  = false
     AddLog("Персонаж возрождён, жду HRP...")
     char:WaitForChild("HumanoidRootPart", 10)
-    AddLog("HRP найден, продолжаю (если квест включен).")
+    AddLog("HRP найден, продолжаю Auto CDK (если включен).")
 end)
 
 ---------------------
@@ -474,7 +471,7 @@ function CDKTrialModule.StartEvilTrial(logFunc)
 end
 
 ---------------------
--- ВСПОМОГАТЕЛЬНОЕ ДЛЯ Q3
+-- ВСПОМОГАТЕЛЬНОЕ ДЛЯ Q3 / СТАДИЙ
 ---------------------
 local function HasItemInInventory(itemName)
     local p = LocalPlayer
@@ -661,7 +658,7 @@ local function GetNearestHazeEnemy(maxDistance)
 end
 
 local function PatrolStepYama2()
-    if not AutoYamaQuest2 then return end
+    if not AutoCDK or CurrentStage ~= 1 then return end
     if #PatrolPoints == 0 then return end
     if IsTeleporting then return end
     if tick() < PatrolHoldUntil then return end
@@ -684,7 +681,7 @@ local function PatrolStepYama2()
 end
 
 local function FarmYamaQuest2Once()
-    if not AutoYamaQuest2 then return end
+    if not AutoCDK or CurrentStage ~= 1 then return end
     if IsFarmingYama2 then return end
     IsFarmingYama2 = true
 
@@ -718,7 +715,8 @@ local function FarmYamaQuest2Once()
         local lastAttack    = 0
         local engaged       = false
 
-        while AutoYamaQuest2
+        while AutoCDK
+            and CurrentStage == 1
             and target.Parent
             and target:FindFirstChild("Humanoid")
             and target.Humanoid.Health > 0
@@ -807,7 +805,7 @@ end
 -- HazeESP твик (рамка)
 spawn(function()
     while task.wait(0.2) do
-        if AutoYamaQuest2 then
+        if AutoCDK and CurrentStage == 1 then
             pcall(function()
                 local enemiesFolder = Workspace:FindFirstChild("Enemies")
                 if enemiesFolder then
@@ -969,7 +967,8 @@ local function FarmBonesOnce()
         local lastAttack    = 0
         local engaged       = false
 
-        while AutoYamaQuest3
+        while AutoCDK
+            and CurrentStage >= 2
             and target.Parent
             and target:FindFirstChild("Humanoid")
             and target.Humanoid.Health > 0
@@ -1073,7 +1072,8 @@ local function FarmHellMobsOnce()
                 local deadline = tick() + 45
                 AddLog("Yama3 HellDimension: атакую моба "..tostring(v.Name))
 
-                while AutoYamaQuest3
+                while AutoCDK
+                    and CurrentStage >= 2
                     and hum.Health > 0
                     and v.Parent
                     and tick() < deadline do
@@ -1224,7 +1224,8 @@ local function HandleSoulReaperPhase()
     end
 
     local waitDeadline = tick() + 120
-    while AutoYamaQuest3
+    while AutoCDK
+        and CurrentStage >= 2
         and soul.Parent
         and sh.Health > 0
         and tick() < waitDeadline
@@ -1251,7 +1252,7 @@ local function HandleSoulReaperPhase()
             UpdateStatus("Yama3: жду авто-переноса в HellDimension (5 сек).")
 
             local t0 = tick()
-            while AutoYamaQuest3 and tick() - t0 < 5 do
+            while AutoCDK and CurrentStage >= 2 and tick() - t0 < 5 do
                 local m = Workspace:FindFirstChild("Map")
                 local hDim = m and m:FindFirstChild("HellDimension")
                 if hDim then
@@ -1297,8 +1298,6 @@ local function HandleSoulReaperPhase()
 end
 
 local function RunYamaQuest3Tick()
-    if not AutoYamaQuest3 then return end
-
     RefreshBonesCount()
     RefreshHallowStatus()
     RefreshRollWindow()
@@ -1317,7 +1316,7 @@ local function RunYamaQuest3Tick()
 
     local alucardCount = GetCountMaterials("Alucard Fragment") or 0
     if alucardCount >= 3 then
-        UpdateStatus("Yama3: 3 Alucard Fragment уже есть, просто фармлю кости.")
+        UpdateStatus("Yama3: 3+ Alucard Fragment, просто фармлю кости.")
         FarmBonesOnce()
         return
     end
@@ -1344,35 +1343,63 @@ local function RunYamaQuest3Tick()
 end
 
 ---------------------
--- ОСНОВНОЙ ЦИКЛ ДЛЯ ВСЕХ КВЕСТОВ
+-- ОСНОВНОЙ ЦИКЛ Auto CDK (стадии по Alucard Fragment)
 ---------------------
 spawn(function()
+    local lastStage = -1
     while task.wait(0.3) do
-        local ok, err = pcall(function()
-            if AutoYamaQuest1 then
-                RunYamaQuest1()
-            elseif AutoYamaQuest2 then
-                -- Yama2: перед началом можно иногда дёргать триал, если надо
-                FarmYamaQuest2Once()
-            elseif AutoYamaQuest3 then
-                RunYamaQuest3Tick()
-            end
-        end)
+        if not AutoCDK then
+            task.wait(0.3)
+        else
+            local ok, err = pcall(function()
+                local alucardCount = GetCountMaterials("Alucard Fragment") or 0
+                local stage
+                if alucardCount <= 0 then
+                    stage = 0
+                elseif alucardCount == 1 then
+                    stage = 1
+                elseif alucardCount == 2 then
+                    stage = 2
+                else
+                    stage = 3
+                end
 
-        if not ok then
-            AddLog("Ошибка в общем цикле: " .. tostring(err))
+                if stage ~= CurrentStage then
+                    CurrentStage = stage
+                    AddLog("CDK: Alucard Fragment = "..tostring(alucardCount).." → стадия "..tostring(stage))
+                    if stage <= 2 then
+                        CDKTrialModule.StartEvilTrial(AddLog)
+                    end
+                end
+
+                if stage == 0 then
+                    UpdateStatus("CDK: стадия 0 → Yama Quest 1")
+                    RunYamaQuest1()
+                elseif stage == 1 then
+                    UpdateStatus("CDK: стадия 1 → Yama Quest 2 (HazeESP)")
+                    EquipYama()
+                    FarmYamaQuest2Once()
+                elseif stage == 2 or stage == 3 then
+                    UpdateStatus("CDK: стадия "..tostring(stage).." → Yama Quest 3 / фарм костей")
+                    RunYamaQuest3Tick()
+                end
+            end)
+
+            if not ok then
+                AddLog("Ошибка в общем цикле Auto CDK: " .. tostring(err))
+            end
         end
     end
 end)
 
 ---------------------
--- GUI
+-- GUI (одна кнопка Auto CDK)
 ---------------------
 local function CreateGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
 
     ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "AutoYamaQuestsGui"
+    ScreenGui.Name = "AutoCDKGui"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.Parent = pg
 
@@ -1388,41 +1415,21 @@ local function CreateGui()
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 24)
     Title.BackgroundColor3 = Color3.fromRGB(30,30,30)
-    Title.Text = "Auto Yama Quest 1 / 2 / 3 + CDK Evil Trial"
+    Title.Text = "Auto CDK (Yama Quest 1 / 2 / 3 + Evil Trial)"
     Title.TextColor3 = Color3.new(1,1,1)
     Title.Font = Enum.Font.SourceSansBold
     Title.TextSize = 16
     Title.Parent = MainFrame
 
-    BtnQ1 = Instance.new("TextButton")
-    BtnQ1.Size = UDim2.new(0, 140, 0, 28)
-    BtnQ1.Position = UDim2.new(0, 10, 0, 30)
-    BtnQ1.BackgroundColor3 = Color3.fromRGB(60,60,60)
-    BtnQ1.TextColor3 = Color3.new(1,1,1)
-    BtnQ1.Font = Enum.Font.SourceSansBold
-    BtnQ1.TextSize = 14
-    BtnQ1.Text = "Yama Quest 1: OFF"
-    BtnQ1.Parent = MainFrame
-
-    BtnQ2 = Instance.new("TextButton")
-    BtnQ2.Size = UDim2.new(0, 140, 0, 28)
-    BtnQ2.Position = UDim2.new(0, 170, 0, 30)
-    BtnQ2.BackgroundColor3 = Color3.fromRGB(60,60,60)
-    BtnQ2.TextColor3 = Color3.new(1,1,1)
-    BtnQ2.Font = Enum.Font.SourceSansBold
-    BtnQ2.TextSize = 14
-    BtnQ2.Text = "Yama Quest 2: OFF"
-    BtnQ2.Parent = MainFrame
-
-    BtnQ3 = Instance.new("TextButton")
-    BtnQ3.Size = UDim2.new(0, 140, 0, 28)
-    BtnQ3.Position = UDim2.new(0, 330, 0, 30)
-    BtnQ3.BackgroundColor3 = Color3.fromRGB(60,60,60)
-    BtnQ3.TextColor3 = Color3.new(1,1,1)
-    BtnQ3.Font = Enum.Font.SourceSansBold
-    BtnQ3.TextSize = 14
-    BtnQ3.Text = "Yama Quest 3: OFF"
-    BtnQ3.Parent = MainFrame
+    BtnCDK = Instance.new("TextButton")
+    BtnCDK.Size = UDim2.new(0, 200, 0, 30)
+    BtnCDK.Position = UDim2.new(0, 10, 0, 30)
+    BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    BtnCDK.TextColor3 = Color3.new(1,1,1)
+    BtnCDK.Font = Enum.Font.SourceSansBold
+    BtnCDK.TextSize = 16
+    BtnCDK.Text = "Auto CDK: OFF"
+    BtnCDK.Parent = MainFrame
 
     StatusLabel = Instance.new("TextLabel")
     StatusLabel.Size = UDim2.new(1, -20, 0, 20)
@@ -1519,102 +1526,31 @@ local function CreateGui()
     LogsText.Text = ""
     LogsText.Parent = scroll
 
-    -- КНОПКА Q1
-    BtnQ1.MouseButton1Click:Connect(function()
-        AutoYamaQuest1 = not AutoYamaQuest1
-        if AutoYamaQuest1 then
-            AutoYamaQuest2 = false
-            AutoYamaQuest3 = false
-            BtnQ1.Text = "Yama Quest 1: ON"
-            BtnQ1.BackgroundColor3 = Color3.fromRGB(0,120,0)
+    BtnCDK.MouseButton1Click:Connect(function()
+        AutoCDK = not AutoCDK
+        if AutoCDK then
+            BtnCDK.Text = "Auto CDK: ON"
+            BtnCDK.BackgroundColor3 = Color3.fromRGB(0,120,0)
 
-            BtnQ2.Text = "Yama Quest 2: OFF"
-            BtnQ2.BackgroundColor3 = Color3.fromRGB(60,60,60)
-            BtnQ3.Text = "Yama Quest 3: OFF"
-            BtnQ3.BackgroundColor3 = Color3.fromRGB(60,60,60)
-
-            StartTime = os.time()
-            NoclipEnabled = true
-            StopTween     = false
-            AddLog("Yama Quest 1 включён. (Mythological Pirate → Evil Trial)")
-            UpdateStatus("Yama Quest 1: ищу Mythological Pirate / триггерю триал.")
-            CDKTrialModule.StartEvilTrial(AddLog)
-        else
-            BtnQ1.Text = "Yama Quest 1: OFF"
-            BtnQ1.BackgroundColor3 = Color3.fromRGB(60,60,60)
-            NoclipEnabled = false
-            StopTween     = true
-            UpdateStatus("Остановлен")
-            AddLog("Yama Quest 1 выключен.")
-        end
-    end)
-
-    -- КНОПКА Q2
-    BtnQ2.MouseButton1Click:Connect(function()
-        AutoYamaQuest2 = not AutoYamaQuest2
-        if AutoYamaQuest2 then
-            AutoYamaQuest1 = false
-            AutoYamaQuest3 = false
-            BtnQ2.Text = "Yama Quest 2: ON"
-            BtnQ2.BackgroundColor3 = Color3.fromRGB(0,120,0)
-
-            BtnQ1.Text = "Yama Quest 1: OFF"
-            BtnQ1.BackgroundColor3 = Color3.fromRGB(60,60,60)
-            BtnQ3.Text = "Yama Quest 3: OFF"
-            BtnQ3.BackgroundColor3 = Color3.fromRGB(60,60,60)
-
-            StartTime = os.time()
-            NoclipEnabled = true
-            StopTween     = false
-            HazeKillCount = 0
-            UpdateHazeLabel()
-            AddLog("Yama Quest 2 включён. (HazeESP патруль)")
-            UpdateStatus("Yama Quest 2: патруль / поиск Haze-мобов.")
-            CDKTrialModule.StartEvilTrial(AddLog) -- активация триала перед 2 квестом
-        else
-            BtnQ2.Text = "Yama Quest 2: OFF"
-            BtnQ2.BackgroundColor3 = Color3.fromRGB(60,60,60)
-            NoclipEnabled = false
-            StopTween     = true
-            UpdateStatus("Остановлен")
-            AddLog("Yama Quest 2 выключен.")
-        end
-    end)
-
-    -- КНОПКА Q3
-    BtnQ3.MouseButton1Click:Connect(function()
-        AutoYamaQuest3 = not AutoYamaQuest3
-        if AutoYamaQuest3 then
-            AutoYamaQuest1 = false
-            AutoYamaQuest2 = false
-            BtnQ3.Text = "Yama Quest 3: ON"
-            BtnQ3.BackgroundColor3 = Color3.fromRGB(0,120,0)
-
-            BtnQ1.Text = "Yama Quest 1: OFF"
-            BtnQ1.BackgroundColor3 = Color3.fromRGB(60,60,60)
-            BtnQ2.Text = "Yama Quest 2: OFF"
-            BtnQ2.BackgroundColor3 = Color3.fromRGB(60,60,60)
-
-            StartTime = os.time()
-            NoclipEnabled = true
-            StopTween     = false
-            HazeKillCount = 0
-            RollsUsed     = 0
+            StartTime      = os.time()
+            NoclipEnabled  = true
+            StopTween      = false
+            HazeKillCount  = 0
+            RollsUsed      = 0
             RollWindowStart = os.time()
             RefreshBonesCount()
             RefreshHallowStatus()
             UpdateHazeLabel()
             UpdateRollsLabel()
-            AddLog("Yama Quest 3 включён. (Bones + Hallow + HellDimension).")
-            UpdateStatus("Yama Quest 3: фарм костей / Hallow / HellDimension.")
-            CDKTrialModule.StartEvilTrial(AddLog) -- активация триала перед 3 квестом
+            AddLog("Auto CDK включён. Скрипт сам выберет стадию по Alucard Fragment.")
+            UpdateStatus("CDK: определяю стадию и запускаю квест.")
         else
-            BtnQ3.Text = "Yama Quest 3: OFF"
-            BtnQ3.BackgroundColor3 = Color3.fromRGB(60,60,60)
-            NoclipEnabled = false
-            StopTween     = true
+            BtnCDK.Text = "Auto CDK: OFF"
+            BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            NoclipEnabled  = false
+            StopTween      = true
             UpdateStatus("Остановлен")
-            AddLog("Yama Quest 3 выключен.")
+            AddLog("Auto CDK выключен.")
         end
     end)
 
@@ -1622,7 +1558,7 @@ local function CreateGui()
     UpdateBonesLabel()
     UpdateRollsLabel()
     UpdateHallowLabel()
-    AddLog("GUI Auto Yama Quest 1/2/3 загружен.")
+    AddLog("Auto CDK GUI загружен.")
 end
 
 CreateGui()
