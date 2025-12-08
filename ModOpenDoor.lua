@@ -42,12 +42,4 @@ function OpenDoorTrial.Run(addLog)
     log("✅ Дверь триала должна быть открыта.")
     return true, res2
 end
--- дальше инструкция по встраиванию
-return OpenDoorTrial
--- если ты вставляешь модуль прямо в файл,
--- просто убери последнюю строку `return OpenDoorTrial`
--- и вместо этого снизу где надо зови:
 
-OpenDoorTrial.Run(AddLog)  -- если есть функция AddLog из твоего GUI
--- или так, без логов:
-OpenDoorTrial.Run()
