@@ -919,9 +919,45 @@ end
 
 ---------------------
 -- CDKTrialModule
--- ВАЖНО: Good и Evil делают Progress + StartTrial + Option(...,"Option1")
+-- Evil теперь: Progress -> StartTrial -> два клика по Main.Dialogue.Option1
 ---------------------
 local CDKTrialModule = {}
+
+local function ClickDialogueOption1Once(logPrefix)
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then
+        AddLog(logPrefix.." Option1: PlayerGui не найден.")
+        return false
+    end
+
+    local mainGui = pg:FindFirstChild("Main")
+    if not mainGui then
+        AddLog(logPrefix.." Option1: Main не найден.")
+        return false
+    end
+
+    local dialogue = mainGui:FindFirstChild("Dialogue")
+    if not dialogue then
+        AddLog(logPrefix.." Option1: Dialogue не найден.")
+        return false
+    end
+
+    local option1 = dialogue:FindFirstChild("Option1")
+    if not option1 or not option1:IsA("TextButton") then
+        AddLog(logPrefix.." Option1: кнопка Option1 не найдена.")
+        return false
+    end
+
+    AddLog(logPrefix.." Нажимаю Main.Dialogue.Option1")
+    local ok, err = pcall(function()
+        option1:Activate()
+    end)
+    if not ok then
+        AddLog(logPrefix.." Ошибка при активации Option1: "..tostring(err))
+        return false
+    end
+    return true
+end
 
 function CDKTrialModule.StartEvilTrial(logFunc)
     local function Log(msg)
@@ -952,15 +988,10 @@ function CDKTrialModule.StartEvilTrial(logFunc)
 
     task.wait(0.2)
 
-    Log("Option1 Evil...")
-    local okO, resO = pcall(function()
-        return remote:InvokeServer("CDKQuest", "Option", "Evil", "Option1")
-    end)
-    if okO then
-        Log("✅ Option(Evil, Option1) => "..tostring(resO))
-    else
-        Log("❌ Ошибка Option(Evil, Option1): "..tostring(resO))
-    end
+    -- имитация двух кликов по Option1 как в логере
+    ClickDialogueOption1Once("[Trial Evil]")
+    task.wait(0.1)
+    ClickDialogueOption1Once("[Trial Evil]")
 end
 
 function CDKTrialModule.StartGoodTrial(logFunc)
@@ -1841,19 +1872,19 @@ spawn(function()
                     if stage == 0 then
                         UpdateStatus("Yama Quest 1")
                         AutoYama1 = true
-                        AddLog("Перед Yama1: запускаю Trial Evil (Progress + StartTrial + Option1).")
+                        AddLog("Перед Yama1: запускаю Trial Evil.")
                         CDKTrialModule.StartEvilTrial(AddLog)
 
                     elseif stage == 1 then
                         UpdateStatus("Yama Quest 2")
                         AutoYama2 = true
-                        AddLog("Перед Yama2: запускаю Trial Evil (Progress + StartTrial + Option1).")
+                        AddLog("Перед Yama2: запускаю Trial Evil.")
                         CDKTrialModule.StartEvilTrial(AddLog)
 
                     elseif stage == 2 then
                         UpdateStatus("Yama Quest 3")
                         AutoYama3 = true
-                        AddLog("Перед Yama3: запускаю Trial Evil (Progress + StartTrial + Option1).")
+                        AddLog("Перед Yama3: запускаю Trial Evil.")
                         CDKTrialModule.StartEvilTrial(AddLog)
 
                     elseif stage == 3 then
