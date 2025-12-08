@@ -1,32 +1,30 @@
 --========================================================
 --  AUTO CDK + TUSHITA (Yama 1/2/3 + Tushita 1/2/3)
 --  Один GUI, одна кнопка "Auto CDK"
+--  Алгоритм по Alucard Fragment:
+--    0 -> Yama1
+--    1 -> Yama2
+--    2 -> Yama3
+--    3 -> Tushita1 (Trial Evil + Trial Good)
+--    4 -> Tushita2 (Trial Good)
+--    5 -> Tushita3 (Trial Good)
+--    >=6 -> Готово, AutoCDK OFF
 --========================================================
 
 ---------------------
--- СЕРВИСЫ
+-- НАСТРОЙКИ
 ---------------------
-local Players           = game:GetService("Players")
-local TweenService      = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace         = game:GetService("Workspace")
-local RunService        = game:GetService("RunService")
-local VirtualUser       = game:GetService("VirtualUser")
-local VirtualInput      = game:GetService("VirtualInputManager")
+local WeaponName      = "Godhuman"              -- чем бить мобов
+local TeleportSpeed   = 300
+local FarmOffset      = CFrame.new(0, 10, -3)
 
-local LocalPlayer = Players.LocalPlayer
-local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
-
----------------------
--- ГЛОБАЛЬНЫЕ НАСТРОЙКИ
----------------------
-local TeleportSpeed = 300
-local FarmOffset    = CFrame.new(0, 10, -3)
-
--- подправь при необходимости на центр Castle on the Sea
+-- Castle on the Sea (Yama1)
 local CastleOnSeaCFrame = CFrame.new(-5074.7, 315.6, -3158.58)
 
--- Yama Quest2 (HazeESP зона, патруль взят из твоего скрипта)
+-- Haunted Castle / Death King (Yama3)
+local HauntedFallback = CFrame.new(-9515.129, 142.233, 6200.441)
+
+-- Патруль Yama2 (HazeESP)
 local Yama2PatrolPoints = {
     CFrame.new(-187.3301544189453, 86.23987579345703, 6013.513671875),
     CFrame.new(2286.0078125, 73.13391876220703, -7159.80908203125),
@@ -44,41 +42,52 @@ local Yama2PatrolPoints = {
     CFrame.new(-16885.203125, 114.12911224365234, 1627.949951171875),
 }
 
--- Haunted Castle / Death King
-local HauntedFallback = CFrame.new(-9515.129, 142.233, 6200.441)
-
--- Tushita 1: точки Lux Boat Dealer
+-- Tushita Q1 (BoatQuest)
 local TushitaQ1Points = {
     CFrame.new(-9546.990234375, 21.139892578125, 4686.1142578125),
     CFrame.new(-6120.0576171875, 16.455780029296875, -2250.697265625),
     CFrame.new(-9533.2392578125, 7.254445552825928, -8372.69921875),
 }
 
--- Tushita 2: центр зоны
-local TushitaQ2Center = CFrame.new(-5539.3115, 313.8005, -2972.3723)
-local TushitaQ2InZoneRadius   = 500
+-- Tushita Q2 (фарм зона)
+local TushitaQ2Center        = CFrame.new(-5539.3115, 313.8005, -2972.3723)
+local TushitaQ2InZoneRadius  = 500
 local TushitaQ2MaxMobDistance = 2000
 
--- Tushita 3: Cake Queen + HeavenlyDimension
-local CakeQueenIsland   = CFrame.new(-709.3132934570312, 381.6005859375, -11011.396484375)
-local CakeQueenOffset   = CFrame.new(0, 20, -3)
+-- Tushita Q3 (Cake Queen + HeavenlyDimension)
+local CakeQueenIsland = CFrame.new(-709.3132934570312, 381.6005859375, -11011.396484375)
+local CakeQueenOffset = CFrame.new(0, 20, -3)
 
 ---------------------
--- ФЛАГИ / СОСТОЯНИЯ
+-- СЕРВИСЫ
 ---------------------
-local AutoCDK        = false
-local CurrentStage   = -1  -- -1 = не определено
-local IsTeleporting  = false
-local StopTween      = false
-local NoclipEnabled  = false
+local Players           = game:GetService("Players")
+local TweenService      = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace         = game:GetService("Workspace")
+local RunService        = game:GetService("RunService")
+local VirtualUser       = game:GetService("VirtualUser")
+local VirtualInput      = game:GetService("VirtualInputManager")
 
--- отдельные квест-флаги (управляет только AutoCDK)
-local AutoYama1   = false
-local AutoYama2   = false
-local AutoYama3   = false
-local AutoTushita1 = false
-local AutoTushita2 = false
-local AutoTushita3 = false
+local LocalPlayer = Players.LocalPlayer
+local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+
+---------------------
+-- СОСТОЯНИЯ
+---------------------
+local AutoCDK       = false
+local CurrentStage  = -1
+local IsTeleporting = false
+local StopTween     = false
+local NoclipEnabled = false
+
+-- индивидуальные флаги квестов (ими управляет только AutoCDK)
+local AutoYama1     = false
+local AutoYama2     = false
+local AutoYama3     = false
+local AutoTushita1  = false
+local AutoTushita2  = false
+local AutoTushita3  = false
 
 ---------------------
 -- ЛОГИ / GUI
@@ -90,33 +99,33 @@ local ScreenGui, MainFrame, BtnCDK
 local StatusLabel, AFLabel, LogsText
 
 local function AddLog(msg)
-    local timestamp = os.date("%H:%M:%S")
-    local entry     = "[" .. timestamp .. "] " .. tostring(msg)
-    table.insert(StatusLogs, 1, entry)
+    local ts   = os.date("%H:%M:%S")
+    local line = "["..ts.."] "..tostring(msg)
+    table.insert(StatusLogs, 1, line)
     if #StatusLogs > MaxLogs then
         table.remove(StatusLogs, #StatusLogs)
     end
     if LogsText then
         LogsText.Text = table.concat(StatusLogs, "\n")
     end
-    print(entry)
+    print(line)
 end
 
 local function UpdateStatus(text)
     if StatusLabel then
-        StatusLabel.Text = "Статус: " .. tostring(text)
+        StatusLabel.Text = "Статус: "..tostring(text)
     end
-    AddLog("Статус: " .. tostring(text))
+    AddLog("Статус: "..tostring(text))
 end
 
 local function UpdateAFLabel(count)
     if AFLabel then
-        AFLabel.Text = "Alucard Fragment: " .. tostring(count or 0)
+        AFLabel.Text = "Alucard Fragment: "..tostring(count or 0)
     end
 end
 
 ---------------------
--- GUI СОЗДАНИЕ
+-- GUI
 ---------------------
 local function CreateMainGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
@@ -135,14 +144,14 @@ local function CreateMainGui()
     MainFrame.Draggable = true
     MainFrame.Parent = ScreenGui
 
-    local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, 0, 0, 24)
-    Title.BackgroundColor3 = Color3.fromRGB(30,30,30)
-    Title.Text = "Auto CDK + Tushita (1 кнопка)"
-    Title.TextColor3 = Color3.new(1,1,1)
-    Title.Font = Enum.Font.SourceSansBold
-    Title.TextSize = 18
-    Title.Parent = MainFrame
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 24)
+    title.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    title.Text = "Auto CDK + Tushita (1 кнопка)"
+    title.TextColor3 = Color3.new(1,1,1)
+    title.Font = Enum.Font.SourceSansBold
+    title.TextSize = 18
+    title.Parent = MainFrame
 
     BtnCDK = Instance.new("TextButton")
     BtnCDK.Size = UDim2.new(0, 220, 0, 32)
@@ -214,16 +223,14 @@ local function CreateMainGui()
             NoclipEnabled = true
             StopTween = false
             UpdateStatus("Auto CDK включен.")
-            AddLog("Алгоритм CDK/Tushita запущен.")
         else
             BtnCDK.Text = "Auto CDK: OFF"
             BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
             NoclipEnabled = false
             StopTween = true
             UpdateStatus("Остановлен")
-            AddLog("Auto CDK выключен. Все авто-квесты остановлены.")
-            AutoYama1, AutoYama2, AutoYama3 = false, false, false
-            AutoTushita1, AutoTushita2, AutoTushita3 = false, false, false
+            AutoYama1,AutoYama2,AutoYama3=false,false,false
+            AutoTushita1,AutoTushita2,AutoTushita3=false,false,false
         end
     end)
 
@@ -233,7 +240,7 @@ end
 CreateMainGui()
 
 ---------------------
--- ANTI AFK
+-- ANTI-AFK
 ---------------------
 spawn(function()
     while task.wait(60) do
@@ -267,12 +274,12 @@ end)
 ---------------------
 local modules        = ReplicatedStorage:WaitForChild("Modules")
 local net            = modules:WaitForChild("Net")
-local RegisterAttack = net:WaitForChild("RE"):WaitForChild("RegisterAttack")
-local RegisterHit    = net:WaitForChild("RE"):WaitForChild("RegisterHit")
+local RegisterAttack = net:WaitForChild("RE/RegisterAttack")
+local RegisterHit    = net:WaitForChild("RE/RegisterHit")
 
 local AttackModule = {}
 
-function AttackModule.AttackEnemyModel(enemyModel)
+function AttackModule:AttackEnemyModel(enemyModel)
     if not enemyModel then return end
     local hrp = enemyModel:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
@@ -315,8 +322,9 @@ end
 local function EquipToolByName(name)
     if IsToolEquipped(name) then return end
 
-    local p = LocalPlayer
+    local p   = LocalPlayer
     if not p then return end
+
     local char = p.Character or p.CharacterAdded:Wait()
     local hum  = char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
@@ -350,63 +358,17 @@ local function EquipToolByName(name)
     if toolFound then
         hum:UnequipTools()
         hum:EquipTool(toolFound)
-        AddLog("⚔️ Экипирован: " .. toolFound.Name)
+        AddLog("⚔️ Экипирован: "..toolFound.Name)
     else
         if tick() - lastEquipFailLog > 3 then
-            AddLog("⚠️ Не найдено оружие: " .. name)
+            AddLog("⚠️ Не удалось найти оружие: "..name)
             lastEquipFailLog = tick()
         end
     end
 end
 
 ---------------------
--- ИНВЕНТАРЬ / МАТЕРИАЛЫ
----------------------
-local function HasItemInInventory(itemName)
-    local p = LocalPlayer
-    if not p then return false end
-
-    local backpack = p:FindFirstChild("Backpack")
-    if backpack and backpack:FindFirstChild(itemName) then
-        return true
-    end
-
-    local char = p.Character
-    if char and char:FindFirstChild(itemName) then
-        return true
-    end
-
-    local ok, invData = pcall(function()
-        return remote:InvokeServer("getInventory")
-    end)
-    if ok and type(invData) == "table" then
-        for _, item in ipairs(invData) do
-            local name = item.Name or item.name or tostring(item)
-            if name == itemName then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-local function GetCountMaterials(MaterialName)
-    local ok, Inventory = pcall(function()
-        return remote:InvokeServer("getInventory")
-    end)
-    if ok and type(Inventory) == "table" then
-        for _, v in pairs(Inventory) do
-            if v.Name == MaterialName then
-                return v.Count or v.count or 0
-            end
-        end
-    end
-    return 0
-end
-
----------------------
--- ТЕЛЕПОРТ
+-- ТП
 ---------------------
 local function SimpleTeleport(targetCFrame, label)
     if IsTeleporting then return end
@@ -422,8 +384,7 @@ local function SimpleTeleport(targetCFrame, label)
     local hrp      = char.HumanoidRootPart
     local distance = (hrp.Position - targetCFrame.Position).Magnitude
     local travelTime = distance / TeleportSpeed
-    if travelTime < 0.5 then travelTime = 0.5 end
-    if travelTime > 60  then travelTime = 60  end
+    travelTime = math.clamp(travelTime, 0.5, 60)
 
     AddLog(string.format("Телепорт к %s (%.0f stud, t=%.1f)", label or "цели", distance, travelTime))
 
@@ -479,29 +440,45 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 ---------------------
--- CDKTrialModule (Evil / Good)
+-- ИНВЕНТАРЬ / МАТЕРИАЛЫ
+---------------------
+local function GetCountMaterials(MaterialName)
+    local ok, Inventory = pcall(function()
+        return remote:InvokeServer("getInventory")
+    end)
+    if ok and type(Inventory) == "table" then
+        for _, v in pairs(Inventory) do
+            if v.Name == MaterialName then
+                return v.Count or v.count or 0
+            end
+        end
+    end
+    return 0
+end
+
+---------------------
+-- CDKTrialModule (StartTrial Evil / Good)
 ---------------------
 local CDKTrialModule = {}
 
 function CDKTrialModule.StartEvilTrial(logFunc)
     local function Log(msg)
-        if logFunc then logFunc("[CDKTrial Evil] "..tostring(msg))
-        else print("[CDKTrial Evil] "..tostring(msg)) end
+        if logFunc then logFunc("[Trial Evil] "..msg) else AddLog("[Trial Evil] "..msg) end
     end
 
-    Log("Проверяю Progress 'Evil'...")
-    local okP, progress = pcall(function()
+    Log("Progress Evil...")
+    local okP, resP = pcall(function()
         return remote:InvokeServer("CDKQuest", "Progress", "Evil")
     end)
     if okP then
-        Log("Progress(Evil) = "..tostring(progress))
+        Log("Progress(Evil) = "..tostring(resP))
     else
-        Log("Ошибка Progress(Evil): "..tostring(progress))
+        Log("Ошибка Progress(Evil): "..tostring(resP))
     end
 
     task.wait(0.2)
 
-    Log("Отправляю StartTrial 'Evil'...")
+    Log("StartTrial Evil...")
     local okS, resS = pcall(function()
         return remote:InvokeServer("CDKQuest", "StartTrial", "Evil")
     end)
@@ -514,23 +491,22 @@ end
 
 function CDKTrialModule.StartGoodTrial(logFunc)
     local function Log(msg)
-        if logFunc then logFunc("[CDKTrial Good] "..tostring(msg))
-        else print("[CDKTrial Good] "..tostring(msg)) end
+        if logFunc then logFunc("[Trial Good] "..msg) else AddLog("[Trial Good] "..msg) end
     end
 
-    Log("Проверяю Progress 'Good'...")
-    local okP, progress = pcall(function()
+    Log("Progress Good...")
+    local okP, resP = pcall(function()
         return remote:InvokeServer("CDKQuest", "Progress", "Good")
     end)
     if okP then
-        Log("Progress(Good) = "..tostring(progress))
+        Log("Progress(Good) = "..tostring(resP))
     else
-        Log("Ошибка Progress(Good): "..tostring(progress))
+        Log("Ошибка Progress(Good): "..tostring(resP))
     end
 
     task.wait(0.2)
 
-    Log("Отправляю StartTrial 'Good'...")
+    Log("StartTrial Good...")
     local okS, resS = pcall(function()
         return remote:InvokeServer("CDKQuest", "StartTrial", "Good")
     end)
@@ -542,10 +518,7 @@ function CDKTrialModule.StartGoodTrial(logFunc)
 end
 
 ---------------------
--- YAMA QUEST 1
--- Стоим на Castle on the Sea с Yama в руках,
--- умираем, ресаемся и снова летим на остров,
--- пока Alucard Fragment < 1
+-- YAMA QUEST 1 (упрощённо)
 ---------------------
 local function YamaQuest1Tick()
     if not AutoYama1 or not AutoCDK then return end
@@ -553,7 +526,7 @@ local function YamaQuest1Tick()
     local af = GetCountMaterials("Alucard Fragment")
     if af >= 1 then
         AutoYama1 = false
-        UpdateStatus("Yama1: Alucard Fragment получен, перехожу к следующей стадии.")
+        UpdateStatus("Yama1: фрагмент получен, перехожу к Yama2.")
         return
     end
 
@@ -565,7 +538,6 @@ local function YamaQuest1Tick()
     if not (char and hrp and hum) then return end
 
     if hum.Health <= 0 then
-        -- просто ждём респаун CharacterAdded
         return
     end
 
@@ -574,7 +546,7 @@ local function YamaQuest1Tick()
         UpdateStatus("Yama1: лечу к Castle on the Sea, жду смерти.")
         SimpleTeleport(CastleOnSeaCFrame, "Castle on the Sea")
     else
-        UpdateStatus("Yama1: жду, пока мобы/игра меня убьют.")
+        UpdateStatus("Yama1: стою на Castle on the Sea, жду, пока умру.")
     end
 end
 
@@ -599,7 +571,7 @@ local function GetNearestHazeEnemy(maxDistance)
             if v:FindFirstChild("HazeESP") then
                 local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
                 if d < best then
-                    best = d
+                    best    = d
                     nearest = v
                 end
             end
@@ -622,8 +594,8 @@ local function Yama2PatrolStep()
 
     Yama2LastPatrolHop = tick()
     local targetCF = Yama2PatrolPoints[idx] * FarmOffset
-    AddLog("Yama2: патруль к точке #" .. tostring(idx))
-    SimpleTeleport(targetCF, "Yama2 патруль #" .. tostring(idx))
+    AddLog("Yama2: патруль к точке "..idx)
+    SimpleTeleport(targetCF, "Yama2 патруль "..idx)
     Yama2PatrolHold = tick() + 5
 end
 
@@ -641,7 +613,7 @@ local function YamaQuest2Tick()
 
     local target = GetNearestHazeEnemy(9999)
     if not target then
-        UpdateStatus("Yama2: Haze-мобы не найдены, патрулирую карту.")
+        UpdateStatus("Yama2: Haze-мобы не найдены, патрулирую.")
         Yama2PatrolStep()
         return
     end
@@ -655,7 +627,7 @@ local function YamaQuest2Tick()
         local hum  = target:FindFirstChild("Humanoid")
         if not (char and hrp and tHRP and hum) then return end
 
-        UpdateStatus("Yama2: фарм Haze-моба " .. target.Name)
+        UpdateStatus("Yama2: фарм "..target.Name)
         SimpleTeleport(tHRP.CFrame * FarmOffset, "Yama2 моб")
 
         local deadline      = tick() + 40
@@ -682,44 +654,28 @@ local function YamaQuest2Tick()
                 end
             end
 
-            pcall(function()
-                tHRP.CanCollide = false
-                hum.WalkSpeed   = 0
-                hum.JumpPower   = 0
-                if not tHRP:FindFirstChild("BodyVelocity") then
-                    local bv = Instance.new("BodyVelocity", tHRP)
-                    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                    bv.Velocity = Vector3.new(0,0,0)
-                end
-            end)
-
             AutoHaki()
             EquipToolByName("Yama")
 
             if tick() - lastAttack > 0.15 then
-                AttackModule.AttackEnemyModel(target)
+                AttackModule:AttackEnemyModel(target)
                 lastAttack = tick()
             end
 
             RunService.Heartbeat:Wait()
         end
-
-        AddLog("Yama2: бой с Haze-мобом завершён (моб мёртв или прерван).")
     end)
 
     if not ok then
-        AddLog("Ошибка YamaQuest2Tick: " .. tostring(err))
+        AddLog("Ошибка YamaQuest2Tick: "..tostring(err))
     end
 
     Yama2IsFighting = false
 end
 
 ---------------------
--- YAMA QUEST 3 (Bones + Hallow + HellDimension)
--- Упрощённая версия на базе твоего большого скрипта.
+-- YAMA QUEST 3 (упрощённый Bones/HellDimension)
 ---------------------
-local AutoYama3_HasHallow = false
-
 local function FindDeathKingModel()
     local candidate
     for _, obj in ipairs(Workspace:GetDescendants()) do
@@ -744,10 +700,6 @@ local function GetHauntedCenterCFrame()
     return HauntedFallback
 end
 
-local function RefreshHallowStatus()
-    AutoYama3_HasHallow = HasItemInInventory("Hallow Essence")
-end
-
 local function EnsureOnHauntedIsland()
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
@@ -756,8 +708,8 @@ local function EnsureOnHauntedIsland()
     local center = GetHauntedCenterCFrame()
     local dist   = (hrp.Position - center.Position).Magnitude
     if dist > 600 then
-        UpdateStatus("Yama3: лечу к Haunted Castle / Death King.")
-        SimpleTeleport(center * CFrame.new(0,4,3), "Death King")
+        UpdateStatus("Yama3: лечу к Haunted Castle.")
+        SimpleTeleport(center * CFrame.new(0,4,3), "Haunted Castle")
         task.wait(1)
         return false
     end
@@ -791,7 +743,7 @@ local function GetNearestBoneMob(maxDistance)
                 if distFromCenter < 800 then
                     local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
                     if d < best then
-                        best = d
+                        best    = d
                         nearest = v
                     end
                 end
@@ -804,7 +756,7 @@ end
 local function FarmBonesOnce()
     local target = GetNearestBoneMob(9999)
     if not target then
-        UpdateStatus("Yama3: скелеты возле Haunted Castle не найдены.")
+        UpdateStatus("Yama3: скелеты не найдены.")
         return
     end
 
@@ -815,7 +767,7 @@ local function FarmBonesOnce()
         local hum  = target:FindFirstChild("Humanoid")
         if not (char and hrp and tHRP and hum) then return end
 
-        UpdateStatus("Yama3: фарм костей (" .. target.Name .. ")")
+        UpdateStatus("Yama3: фарм костей ("..target.Name..")")
         SimpleTeleport(tHRP.CFrame * FarmOffset, "скелет")
 
         local deadline      = tick() + 40
@@ -843,10 +795,10 @@ local function FarmBonesOnce()
             end
 
             AutoHaki()
-            EquipToolByName("Godhuman")
+            EquipToolByName(WeaponName)
 
             if tick() - lastAttack > 0.15 then
-                AttackModule.AttackEnemyModel(target)
+                AttackModule:AttackEnemyModel(target)
                 lastAttack = tick()
             end
 
@@ -855,22 +807,7 @@ local function FarmBonesOnce()
     end)
 
     if not ok then
-        AddLog("Ошибка FarmBonesOnce: " .. tostring(err))
-    end
-end
-
--- HellDimension + Soul Reaper логика сильно упрощена:
--- будем считать, что она уже реализована в твоём оффлайн-коде.
--- Здесь только каркас: если HellDimension существует -> телепорт и фарм мобов.
-local function HandleHellDimensionSimple()
-    local map = Workspace:FindFirstChild("Map")
-    local hd  = map and map:FindFirstChild("HellDimension")
-    if not hd then return end
-
-    UpdateStatus("Yama3: HellDimension активен (упрощённая логика).")
-    local torch1 = hd:FindFirstChild("Torch1") or hd:FindFirstChild("Exit")
-    if torch1 then
-        SimpleTeleport(torch1.CFrame, "HellDimension")
+        AddLog("Ошибка FarmBonesOnce: "..tostring(err))
     end
 end
 
@@ -880,7 +817,7 @@ local function YamaQuest3Tick()
     local af = GetCountMaterials("Alucard Fragment")
     if af >= 3 then
         AutoYama3 = false
-        UpdateStatus("Yama3: третий фрагмент получен, дальше Tushita.")
+        UpdateStatus("Yama3: третий фрагмент получен, перехожу к Tushita.")
         return
     end
 
@@ -888,18 +825,13 @@ local function YamaQuest3Tick()
         return
     end
 
-    HandleHellDimensionSimple()
-
-    RefreshHallowStatus()
-
-    -- если нет HellDimension и нет Hallow Essence -> фарм костей
     FarmBonesOnce()
 end
 
 ---------------------
 -- TUSHITA QUEST 1 (BoatQuest через Lux Boat Dealer)
 ---------------------
-local Tushita1CurrentIndex = 1
+local Tushita1Index = 1
 
 local function FindNearestLuxuryBoatDealer(maxDist)
     maxDist = maxDist or 200
@@ -910,11 +842,13 @@ local function FindNearestLuxuryBoatDealer(maxDist)
     local best, nearest = maxDist, nil
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") and obj.Name == "Luxury Boat Dealer" then
-            local head = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Head") or obj:FindFirstChildWhichIsA("BasePart")
+            local head = obj:FindFirstChild("HumanoidRootPart") or
+                         obj:FindFirstChild("Head") or
+                         obj:FindFirstChildWhichIsA("BasePart")
             if head then
                 local d = (head.Position - hrp.Position).Magnitude
                 if d < best then
-                    best = d
+                    best    = d
                     nearest = obj
                 end
             end
@@ -933,46 +867,49 @@ local function TushitaQuest1Tick()
         return
     end
 
-    local idx = Tushita1CurrentIndex
-    Tushita1CurrentIndex = Tushita1CurrentIndex + 1
-    if Tushita1CurrentIndex > #TushitaQ1Points then
-        Tushita1CurrentIndex = 1
+    local idx = Tushita1Index
+    Tushita1Index = Tushita1Index + 1
+    if Tushita1Index > #TushitaQ1Points then
+        Tushita1Index = 1
     end
 
-    UpdateStatus("Tushita1: точка " .. idx)
-    SimpleTeleport(TushitaQ1Points[idx], "Tushita Q1 точка " .. idx)
+    UpdateStatus("Tushita1: точка "..idx)
+    SimpleTeleport(TushitaQ1Points[idx], "Tushita Q1 точка "..idx)
 
     local npc = FindNearestLuxuryBoatDealer(150)
     if not npc then
-        AddLog("Tushita1: Luxury Boat Dealer не найден около точки " .. idx)
+        AddLog("Tushita1: Luxury Boat Dealer не найден у точки "..idx)
         return
     end
 
     local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     local hrp  = char:WaitForChild("HumanoidRootPart")
-    local head = npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChild("Head") or npc:FindFirstChildWhichIsA("BasePart")
+    local head = npc:FindFirstChild("HumanoidRootPart") or
+                 npc:FindFirstChild("Head") or
+                 npc:FindFirstChildWhichIsA("BasePart")
+
     if head then
-        hrp.CFrame = head.CFrame * CFrame.new(0, 0, -3)
+        hrp.CFrame = head.CFrame * CFrame.new(0,0,-3)
     end
 
     local ok1, res1 = pcall(function()
-        return remote:InvokeServer("GetUnlockables", "BoatDealer")
+        return remote:InvokeServer("GetUnlockables","BoatDealer")
     end)
     if ok1 then
-        AddLog("Tushita1: GetUnlockables/BoatDealer => " .. tostring(res1))
+        AddLog("Tushita1: GetUnlockables/BoatDealer => "..tostring(res1))
     else
-        AddLog("Tushita1: ошибка GetUnlockables/BoatDealer: " .. tostring(res1))
+        AddLog("Tushita1: ошибка GetUnlockables => "..tostring(res1))
     end
 
     task.wait(0.3)
 
     local ok2, res2 = pcall(function()
-        return remote:InvokeServer("CDKQuest", "BoatQuest", npc)
+        return remote:InvokeServer("CDKQuest","BoatQuest", npc)
     end)
     if ok2 then
-        AddLog("Tushita1: BoatQuest для NPC => " .. tostring(res2))
+        AddLog("Tushita1: BoatQuest => "..tostring(res2))
     else
-        AddLog("Tushita1: ошибка BoatQuest => " .. tostring(res2))
+        AddLog("Tushita1: ошибка BoatQuest => "..tostring(res2))
     end
 end
 
@@ -1048,7 +985,7 @@ local function TushitaQuest2Tick()
         local hum  = target:FindFirstChild("Humanoid")
         if not (char and hrp and tHRP and hum) then return end
 
-        UpdateStatus("Tushita2: фарм " .. target.Name)
+        UpdateStatus("Tushita2: фарм "..target.Name)
         SimpleTeleport(tHRP.CFrame * FarmOffset, "моб Tushita Q2")
 
         local deadline      = tick() + 45
@@ -1076,10 +1013,10 @@ local function TushitaQuest2Tick()
             end
 
             AutoHaki()
-            EquipToolByName("Godhuman")
+            EquipToolByName(WeaponName)
 
             if tick() - lastAttack > 0.15 then
-                AttackModule.AttackEnemyModel(target)
+                AttackModule:AttackEnemyModel(target)
                 lastAttack = tick()
             end
 
@@ -1088,16 +1025,16 @@ local function TushitaQuest2Tick()
     end)
 
     if not ok then
-        AddLog("Ошибка TushitaQuest2Tick: " .. tostring(err))
+        AddLog("Ошибка TushitaQuest2Tick: "..tostring(err))
     end
 
     Tushita2IsFighting = false
 end
 
 ---------------------
--- TUSHITA QUEST 3 (Cake Queen + HeavenlyDimension, упрощённо)
+-- TUSHITA QUEST 3 (Cake Queen + HeavenlyDimension упрощённо)
 ---------------------
-local T3_HeavenlyStage = 0  -- 0->Torch1, 1->Torch2, 2->Torch3, 3->Exit
+local T3_HeavenlyStage = 0  -- 0 Torch1, 1 Torch2, 2 Torch3, 3 Exit
 
 local function HeavenlyDimensionFolder()
     local map = Workspace:FindFirstChild("Map")
@@ -1109,7 +1046,10 @@ local function FindCakeQueen()
     local enemies = Workspace:FindFirstChild("Enemies")
     if not enemies then return nil end
     for _, v in ipairs(enemies:GetChildren()) do
-        if v.Name == "Cake Queen" and v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+        if v.Name == "Cake Queen"
+           and v:FindFirstChild("Humanoid")
+           and v:FindFirstChild("HumanoidRootPart")
+           and v.Humanoid.Health > 0 then
             return v
         end
     end
@@ -1127,7 +1067,7 @@ local function FightMobSimple(target, label, offsetCF)
         local tHRP = target:FindFirstChild("HumanoidRootPart")
         if not (char and hrp and hum and tHRP) then return end
 
-        UpdateStatus(label or ("Бой: " .. target.Name))
+        UpdateStatus(label or ("Бой: "..target.Name))
         SimpleTeleport(tHRP.CFrame * offsetCF, label or "цель")
 
         local deadline      = tick() + 90
@@ -1155,9 +1095,9 @@ local function FightMobSimple(target, label, offsetCF)
             end
 
             AutoHaki()
-            EquipToolByName("Godhuman")
+            EquipToolByName(WeaponName)
             if tick() - lastAttack > 0.15 then
-                AttackModule.AttackEnemyModel(target)
+                AttackModule:AttackEnemyModel(target)
                 lastAttack = tick()
             end
 
@@ -1166,12 +1106,12 @@ local function FightMobSimple(target, label, offsetCF)
     end)
 
     if not ok then
-        AddLog("Ошибка FightMobSimple: " .. tostring(err))
+        AddLog("Ошибка FightMobSimple: "..tostring(err))
     end
 end
 
 local function HoldEFor(seconds)
-    AddLog("Зажимаю E на " .. tostring(seconds) .. " сек.")
+    AddLog("Зажимаю E на "..tostring(seconds).." сек.")
     VirtualInput:SendKeyEvent(true, "E", false, game)
     task.wait(seconds)
     VirtualInput:SendKeyEvent(false, "E", false, game)
@@ -1183,7 +1123,7 @@ local function TushitaQuest3Tick()
     local af = GetCountMaterials("Alucard Fragment")
     if af >= 6 then
         AutoTushita3 = false
-        UpdateStatus("Tushita3: получен 6-й фрагмент. Готово.")
+        UpdateStatus("Tushita3: 6-й фрагмент получен. Готово.")
         AutoCDK = false
         NoclipEnabled = false
         StopTween = true
@@ -1191,13 +1131,12 @@ local function TushitaQuest3Tick()
             BtnCDK.Text = "Auto CDK: OFF"
             BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
         end
-        AddLog("Готово: CDK + Tushita полностью завершены (6 Alucard Fragment).")
+        AddLog("Готово: 6 Alucard Fragment. Все квесты завершены.")
         return
     end
 
     local dim = HeavenlyDimensionFolder()
     if not dim then
-        -- фазы Cake Queen до спавна измерения
         local boss = FindCakeQueen()
         if boss then
             FightMobSimple(boss, "Tushita3: Cake Queen", CakeQueenOffset)
@@ -1208,7 +1147,6 @@ local function TushitaQuest3Tick()
         return
     end
 
-    -- Внутри HeavenlyDimension (упрощённый вариант Torch1-3 + Exit)
     local torch1 = dim:FindFirstChild("Torch1")
     local torch2 = dim:FindFirstChild("Torch2")
     local torch3 = dim:FindFirstChild("Torch3")
@@ -1239,7 +1177,6 @@ local function TushitaQuest3Tick()
     end
 
     if T3_HeavenlyStage == 3 then
-        -- добиваем любых мобов (Cursed Skeleton / Heaven's Guardian)
         local enemies = Workspace:FindFirstChild("Enemies")
         if enemies then
             for _, v in ipairs(enemies:GetChildren()) do
@@ -1257,38 +1194,38 @@ local function TushitaQuest3Tick()
     end
 
     if T3_HeavenlyStage >= 4 then
-        UpdateStatus("Tushita3: жду завершения квеста/выхода.")
+        UpdateStatus("Tushita3: жду завершения HeavenlyDimension.")
     end
 end
 
 ---------------------
--- ВСПОМОГАТЕЛЬНОЕ: СТАДИЯ ПО КОЛ-ВУ ФРАГМЕНТОВ
+-- ПОМОЩЬ: стадия по AF
 ---------------------
-local function GetStageFromAlucardCount(count)
+local function GetStageFromAF(count)
     if count <= 0 then
-        return 0 -- Yama1
+        return 0
     elseif count == 1 then
-        return 1 -- Yama2
+        return 1
     elseif count == 2 then
-        return 2 -- Yama3
+        return 2
     elseif count == 3 then
-        return 3 -- Tushita1
+        return 3
     elseif count == 4 then
-        return 4 -- Tushita2
+        return 4
     elseif count == 5 then
-        return 5 -- Tushita3
+        return 5
     else
-        return 6 -- Готово
+        return 6
     end
 end
 
 local function DisableAllQuests()
-    AutoYama1, AutoYama2, AutoYama3 = false, false, false
-    AutoTushita1, AutoTushita2, AutoTushita3 = false, false, false
+    AutoYama1,AutoYama2,AutoYama3 = false,false,false
+    AutoTushita1,AutoTushita2,AutoTushita3 = false,false,false
 end
 
 ---------------------
--- ГЛАВНЫЙ ЦИКЛ AUTO CDK
+-- ГЛАВНЫЙ ЦИКЛ AutoCDK
 ---------------------
 spawn(function()
     while task.wait(1) do
@@ -1298,49 +1235,46 @@ spawn(function()
             local af = GetCountMaterials("Alucard Fragment") or 0
             UpdateAFLabel(af)
 
-            local stage = GetStageFromAlucardCount(af)
+            local stage = GetStageFromAF(af)
             if stage ~= CurrentStage then
                 CurrentStage = stage
-                AddLog("CDK: Alucard Fragment = " .. tostring(af) .. " → стадия " .. tostring(stage))
+                AddLog("CDK: AF="..af.." -> стадия "..stage)
                 DisableAllQuests()
                 StopTween = true
                 task.wait(0.2)
                 StopTween = false
 
                 if stage == 0 then
-                    UpdateStatus("Yama Quest 1 (Castle on the Sea, смерть)")
+                    UpdateStatus("Yama Quest 1")
                     AutoYama1 = true
-                    CDKTrialModule.StartEvilTrial(AddLog)
                 elseif stage == 1 then
-                    UpdateStatus("Yama Quest 2 (HazeESP)")
+                    UpdateStatus("Yama Quest 2")
                     AutoYama2 = true
-                    CDKTrialModule.StartEvilTrial(AddLog)
                 elseif stage == 2 then
-                    UpdateStatus("Yama Quest 3 (Bones / Hallow / HellDimension)")
+                    UpdateStatus("Yama Quest 3")
                     AutoYama3 = true
-                    CDKTrialModule.StartEvilTrial(AddLog)
                 elseif stage == 3 then
                     UpdateStatus("Tushita Quest 1 (BoatQuest)")
                     AutoTushita1 = true
-                    AddLog("Перед Tushita Q1: запускаю Evil trial один раз.")
+                    AddLog("Перед Tushita1: запускаю Trial Evil 1 раз.")
                     CDKTrialModule.StartEvilTrial(AddLog)
                     task.wait(0.3)
-                    AddLog("Перед Tushita Q1: запускаю Good trial.")
+                    AddLog("Перед Tushita1: запускаю Trial Good.")
                     CDKTrialModule.StartGoodTrial(AddLog)
                 elseif stage == 4 then
-                    UpdateStatus("Tushita Quest 2 (зона фарма)")
+                    UpdateStatus("Tushita Quest 2")
                     AutoTushita2 = true
-                    AddLog("Перед Tushita Q2: запускаю Good trial.")
+                    AddLog("Перед Tushita2: запускаю Trial Good.")
                     CDKTrialModule.StartGoodTrial(AddLog)
                 elseif stage == 5 then
-                    UpdateStatus("Tushita Quest 3 (Cake Queen + HeavenlyDimension)")
+                    UpdateStatus("Tushita Quest 3")
                     AutoTushita3 = true
                     T3_HeavenlyStage = 0
-                    AddLog("Перед Tushita Q3: запускаю Good trial.")
+                    AddLog("Перед Tushita3: запускаю Trial Good.")
                     CDKTrialModule.StartGoodTrial(AddLog)
                 elseif stage == 6 then
-                    UpdateStatus("Готово: 6+ Alucard Fragment.")
-                    AddLog("CDK + Tushita: все 6 фрагментов есть, выключаю Auto CDK.")
+                    UpdateStatus("Готово (6+ Alucard Fragment)")
+                    AddLog("Все 6 фрагментов уже есть, выключаю AutoCDK.")
                     AutoCDK = false
                     NoclipEnabled = false
                     StopTween = true
@@ -1355,13 +1289,13 @@ spawn(function()
 end)
 
 ---------------------
--- ЦИКЛИЧЕСКИЕ ВЫЗОВЫ КВЕСТОВ
+-- ТИКИ КВЕСТОВ
 ---------------------
 spawn(function()
     while task.wait(0.4) do
-        if AutoYama1 then pcall(YamaQuest1Tick) end
-        if AutoYama2 then pcall(YamaQuest2Tick) end
-        if AutoYama3 then pcall(YamaQuest3Tick) end
+        if AutoYama1    then pcall(YamaQuest1Tick)    end
+        if AutoYama2    then pcall(YamaQuest2Tick)    end
+        if AutoYama3    then pcall(YamaQuest3Tick)    end
         if AutoTushita1 then pcall(TushitaQuest1Tick) end
         if AutoTushita2 then pcall(TushitaQuest2Tick) end
         if AutoTushita3 then pcall(TushitaQuest3Tick) end
