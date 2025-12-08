@@ -6,10 +6,10 @@
 --     Алгоритм по Alucard Fragment:
 --       0 -> Yama1
 --       1 -> Yama2
---       2 -> Yama3
+--       2 -> Yama3 (через Soul Reaper + HellDimension)
 --       3 -> Tushita1 (Trial Evil + Trial Good)
 --       4 -> Tushita2 (Trial Good)
---       5 -> Tushita3 (Trial Good)
+--       5 -> Tushita3 (Cake Queen + HeavenlyDimension)
 --       >=6 -> Готово, AutoCDK OFF
 --========================================================
 
@@ -64,6 +64,9 @@ local CakeQueenOffset = CFrame.new(0, 20, -3)
 local MasteryTargetName      = "Reborn Skeleton"
 local MasteryTargetMastery   = 350
 local MasteryCheckInterval   = 10      -- раз в N секунд чекаем мастери
+
+-- Soul Reaper spawn (Yama3)
+local SoulReaperSpawnCF = CFrame.new(-9570.033203125, 315.9346923828125, 6726.89306640625)
 
 ---------------------
 -- СЕРВИСЫ
@@ -160,7 +163,7 @@ end
 ---------------------
 -- GUI
 ---------------------
-local function DisableAllQuests() end -- объявим заранее, реализация ниже
+local function DisableAllQuests() end -- объявим заранее, реализуем ниже
 
 local function CreateMainGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
@@ -182,7 +185,7 @@ local function CreateMainGui()
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(1, 0, 0, 24)
     title.BackgroundColor3 = Color3.fromRGB(30,30,30)
-    title.Text = "Auto CDK (Mastery 350 + Yama/Tushita Quests)"
+    title.Text = "AutoCDK (Mastery 350 + Yama/Tushita Quests)"
     title.TextColor3 = Color3.new(1,1,1)
     title.Font = Enum.Font.SourceSansBold
     title.TextSize = 18
@@ -282,7 +285,7 @@ local function CreateMainGui()
             MasteryDone     = false
             AutoMasteryFarm = true
             DisableAllQuests()
-            UpdateStatus("Auto CDK включен. Сначала фарм мастери Yama/Tushita до 350.")
+            UpdateStatus("AutoCDK включен. Сначала фарм мастери Yama/Tushita до 350.")
             lastMasteryCheck = 0
         else
             BtnCDK.Text = "Auto CDK: OFF"
@@ -606,7 +609,7 @@ local function OpenTrialDoor()
 end
 
 ---------------------
--- HELPER: Haunted Castle центр
+-- Haunted Castle центр
 ---------------------
 local function FindDeathKingModel()
     local candidate
@@ -842,6 +845,79 @@ local function RunMasteryLoop()
 end
 
 ---------------------
+-- FIGHT HELPER (универсальный)
+---------------------
+local function HoldEFor(seconds)
+    seconds = seconds or 2
+    AddLog("Зажимаю E на "..tostring(seconds).." сек.")
+    VirtualInput:SendKeyEvent(true, "E", false, game)
+    task.wait(seconds)
+    VirtualInput:SendKeyEvent(false, "E", false, game)
+end
+
+local function FightMobSimple(target, label, offsetCF)
+    offsetCF = offsetCF or FarmOffset
+    if not target then return false end
+
+    local killed = false
+
+    local ok, err = pcall(function()
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = target:FindFirstChild("Humanoid")
+        local tHRP = target:FindFirstChild("HumanoidRootPart")
+        if not (char and hrp and hum and tHRP) then return end
+
+        UpdateStatus(label or ("Бой: "..target.Name))
+        SimpleTeleport(tHRP.CFrame * offsetCF, label or "цель")
+
+        local deadline      = tick() + 90
+        local lastPosAdjust = 0
+        local lastAttack    = 0
+
+        while AutoCDK and target.Parent and hum.Health > 0 and tick() < deadline do
+            char = LocalPlayer.Character
+            hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            tHRP = target:FindFirstChild("HumanoidRootPart")
+            hum  = target:FindFirstChild("Humanoid")
+            if not (char and hrp and hum and tHRP) then break end
+
+            local dist = (tHRP.Position - hrp.Position).Magnitude
+            if dist > 2000 then
+                SimpleTeleport(tHRP.CFrame * offsetCF, "далёкий моб")
+            else
+                if tick() - lastPosAdjust > 0.05 then
+                    hrp.CFrame = tHRP.CFrame * offsetCF
+                    hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
+                    hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                    hrp.CanCollide = false
+                    lastPosAdjust = tick()
+                end
+            end
+
+            AutoHaki()
+            EquipToolByName(WeaponName)
+            if tick() - lastAttack > 0.15 then
+                AttackModule:AttackEnemyModel(target)
+                lastAttack = tick()
+            end
+
+            RunService.Heartbeat:Wait()
+        end
+
+        if hum and (hum.Health <= 0 or not target.Parent) then
+            killed = true
+        end
+    end)
+
+    if not ok then
+        AddLog("Ошибка FightMobSimple: "..tostring(err))
+    end
+
+    return killed
+end
+
+---------------------
 -- CDKTrialModule (StartTrial Evil / Good)
 ---------------------
 local CDKTrialModule = {}
@@ -859,18 +935,6 @@ function CDKTrialModule.StartEvilTrial(logFunc)
         Log("Progress(Evil) = "..tostring(resP))
     else
         Log("Ошибка Progress(Evil): "..tostring(resP))
-    end
-
-    task.wait(0.2)
-
-    Log("StartTrial Evil...")
-    local okS, resS = pcall(function()
-        return remote:InvokeServer("CDKQuest", "StartTrial", "Evil")
-    end)
-    if okS then
-        Log("✅ StartTrial(Evil) => "..tostring(resS))
-    else
-        Log("❌ Ошибка StartTrial(Evil): "..tostring(resS))
     end
 end
 
@@ -1059,7 +1123,9 @@ local function YamaQuest2Tick()
 end
 
 ---------------------
--- YAMA QUEST 3 (упрощённый Bones/HellDimension)
+-- YAMA QUEST 3
+-- Soul Reaper -> 20 сек стоим под ударами -> HellDimension:
+-- Torch1/2/3: E на 2 сек, после каждого факела убиваем мобов.
 ---------------------
 local function IsBoneMob(mob)
     local n = tostring(mob.Name)
@@ -1156,6 +1222,179 @@ local function FarmBonesOnce()
     end
 end
 
+-- HellDimension: мобы
+local function IsHellMob(v)
+    local n = tostring(v.Name)
+    if string.find(n, "Cursed Skeleton") then return true end
+    if string.find(n, "Hell's Messenger") then return true end
+    return false
+end
+
+local function FarmHellMobsOnce()
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return end
+
+    for _, v in ipairs(enemies:GetChildren()) do
+        if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+            if IsHellMob(v) then
+                FightMobSimple(v, "Yama3: моб HellDimension", FarmOffset)
+            end
+        end
+    end
+end
+
+local function HandleHellDimensionYama3()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return end
+    local hd = map:FindFirstChild("HellDimension")
+    if not hd then return end
+
+    UpdateStatus("Yama3: HellDimension активен.")
+    AddLog("Yama3: HellDimension обнаружен, выполняю факела и босса.")
+
+    local Torch1 = hd:FindFirstChild("Torch1")
+    local Torch2 = hd:FindFirstChild("Torch2")
+    local Torch3 = hd:FindFirstChild("Torch3")
+    local Exit   = hd:FindFirstChild("Exit")
+
+    if Torch1 then
+        AddLog("Yama3 Hell: Torch1 -> держу E 2 сек, затем убиваю мобов.")
+        SimpleTeleport(Torch1.CFrame, "Hell Torch1")
+        task.wait(0.3)
+        HoldEFor(2)
+        task.wait(0.3)
+        FarmHellMobsOnce()
+    end
+
+    if Torch2 then
+        AddLog("Yama3 Hell: Torch2 -> держу E 2 сек, затем убиваю мобов.")
+        SimpleTeleport(Torch2.CFrame, "Hell Torch2")
+        task.wait(0.3)
+        HoldEFor(2)
+        task.wait(0.3)
+        FarmHellMobsOnce()
+    end
+
+    if Torch3 then
+        AddLog("Yama3 Hell: Torch3 -> держу E 2 сек, затем убиваю мобов.")
+        SimpleTeleport(Torch3.CFrame, "Hell Torch3")
+        task.wait(0.3)
+        HoldEFor(2)
+        task.wait(0.3)
+        FarmHellMobsOnce()
+    end
+
+    AddLog("Yama3 Hell: добиваю мобов/босса в измерении.")
+    FarmHellMobsOnce()
+
+    if Exit then
+        AddLog("Yama3 Hell: телепорт к Exit.")
+        SimpleTeleport(Exit.CFrame, "Hell Exit")
+    else
+        AddLog("Yama3 Hell: Exit не найден.")
+    end
+end
+
+-- Soul Reaper
+local function FindSoulReaper()
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if enemies then
+        for _, v in ipairs(enemies:GetChildren()) do
+            if tostring(v.Name) == "Soul Reaper" then
+                local hum = v:FindFirstChild("Humanoid")
+                local hrp = v:FindFirstChild("HumanoidRootPart")
+                if hum and hum.Health > 0 and hrp then
+                    return v, hum, hrp
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function HandleSoulReaperPhaseYama3()
+    local map = Workspace:FindFirstChild("Map")
+    local hd  = map and map:FindFirstChild("HellDimension")
+    if hd then
+        -- уже в адском измерении, пусть другой код обработает
+        return
+    end
+
+    local soul, sh, sHRP = FindSoulReaper()
+    if not soul then
+        AddLog("Yama3: Soul Reaper не найден, лечу на его спавн.")
+        SimpleTeleport(SoulReaperSpawnCF, "Soul Reaper spawn")
+        return
+    end
+
+    UpdateStatus("Yama3: Soul Reaper найден, подлетаю и стою 20 сек.")
+    AddLog("Yama3: подлетаю к Soul Reaper, не уклоняюсь и не атакую 20 секунд, жду HellDimension.")
+
+    local prevNoclip = NoclipEnabled
+    NoclipEnabled = false   -- даём ударам попадать по персонажу
+
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    sHRP       = soul:FindFirstChild("HumanoidRootPart")
+    sh         = soul:FindFirstChild("Humanoid")
+
+    if hrp and sHRP then
+        hrp.CFrame = sHRP.CFrame * CFrame.new(0, 0, -6)
+    end
+
+    local waitDeadline = tick() + 20
+
+    while AutoYama3 and AutoCDK and soul.Parent and sh and sh.Health > 0 and tick() < waitDeadline do
+        char = LocalPlayer.Character
+        hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        sHRP = soul:FindFirstChild("HumanoidRootPart")
+        sh   = soul:FindFirstChild("Humanoid")
+
+        if not (char and hrp and sHRP and sh) then
+            break
+        end
+
+        -- если HellDimension появился, выходим, его обработает другой код
+        local m = Workspace:FindFirstChild("Map")
+        local hDim = m and m:FindFirstChild("HellDimension")
+        if hDim then
+            AddLog("Yama3: HellDimension появился во время ожидания у Soul Reaper.")
+            NoclipEnabled = prevNoclip
+            return
+        end
+
+        local dist = (hrp.Position - sHRP.Position).Magnitude
+        if dist > 120 then
+            hrp.CFrame = sHRP.CFrame * CFrame.new(0, 0, -6)
+        end
+
+        RunService.Heartbeat:Wait()
+    end
+
+    -- после 20 секунд проверяем HellDimension
+    local m2  = Workspace:FindFirstChild("Map")
+    local hd2 = m2 and m2:FindFirstChild("HellDimension")
+    if hd2 then
+        local torch1 = hd2:FindFirstChild("Torch1")
+        local exit   = hd2:FindFirstChild("Exit")
+        local fallback
+        if torch1 and torch1.CFrame then
+            fallback = torch1.CFrame
+        elseif exit and exit.CFrame then
+            fallback = exit.CFrame
+        end
+
+        if fallback then
+            AddLog("Yama3: 20 сек прошло, HellDimension есть, тп внутрь.")
+            SimpleTeleport(fallback, "HellDimension")
+        end
+    else
+        AddLog("Yama3: 20 сек прошло, HellDimension не появился, продолжаю фарм костей.")
+    end
+
+    NoclipEnabled = prevNoclip
+end
+
 local function YamaQuest3Tick()
     if not AutoYama3 or not AutoCDK then return end
 
@@ -1170,11 +1409,28 @@ local function YamaQuest3Tick()
         return
     end
 
+    local map = Workspace:FindFirstChild("Map")
+    local hellDim = map and map:FindFirstChild("HellDimension")
+
+    -- 1) если уже открылась HellDimension — выполняем её
+    if hellDim then
+        HandleHellDimensionYama3()
+        return
+    end
+
+    -- 2) если Soul Reaper активен — выполняем фазу ожидания 20 сек
+    local soul = FindSoulReaper()
+    if soul then
+        HandleSoulReaperPhaseYama3()
+        return
+    end
+
+    -- 3) иначе просто фармим скелетов, пока не появится Soul Reaper / HellDimension
     FarmBonesOnce()
 end
 
 ---------------------
--- TUSHITA QUEST 1 (BoatQuest через Lux Boat Dealer)
+-- TUSHITA QUEST 1 (BoatQuest)
 ---------------------
 local Tushita1Index = 1
 
@@ -1378,8 +1634,11 @@ end
 
 ---------------------
 -- TUSHITA QUEST 3 (Cake Queen + HeavenlyDimension)
+-- После убийства Cake Queen ждём 5 сек -> перенос в HeavenlyDimension.
+-- В HeavenlyDimension: Torch1/2/3 — E на 2 сек, после каждого факела убиваем мобов.
 ---------------------
-local T3_HeavenlyStage = 0  -- 0 Torch1, 1 Torch2, 2 Torch3, 3 Exit
+local T3_HeavenlyStage       = 0  -- 0 Torch1, 1 Torch2, 2 Torch3, 3 Exit
+local LastCakeQueenKillTime  = 0
 
 local function HeavenlyDimensionFolder()
     local map = Workspace:FindFirstChild("Map")
@@ -1401,65 +1660,18 @@ local function FindCakeQueen()
     return nil
 end
 
-local function FightMobSimple(target, label, offsetCF)
-    offsetCF = offsetCF or FarmOffset
-    if not target then return end
+local function FarmHeavenMobsOnce()
+    local enemies = Workspace:FindFirstChild("Enemies")
+    local dim     = HeavenlyDimensionFolder()
+    if not enemies or not dim then return end
 
-    local ok, err = pcall(function()
-        local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        local hum  = target:FindFirstChild("Humanoid")
-        local tHRP = target:FindFirstChild("HumanoidRootPart")
-        if not (char and hrp and hum and tHRP) then return end
+    AddLog("Tushita3: убиваю мобов в HeavenlyDimension.")
 
-        UpdateStatus(label or ("Бой: "..target.Name))
-        SimpleTeleport(tHRP.CFrame * offsetCF, label or "цель")
-
-        local deadline      = tick() + 90
-        local lastPosAdjust = 0
-        local lastAttack    = 0
-
-        while AutoTushita3 and AutoCDK and target.Parent and hum.Health > 0 and tick() < deadline do
-            char = LocalPlayer.Character
-            hrp  = char and char:FindFirstChild("HumanoidRootPart")
-            tHRP = target:FindFirstChild("HumanoidRootPart")
-            hum  = target:FindFirstChild("Humanoid")
-            if not (char and hrp and hum and tHRP) then break end
-
-            local dist = (tHRP.Position - hrp.Position).Magnitude
-            if dist > 2000 then
-                SimpleTeleport(tHRP.CFrame * offsetCF, "далёкий моб")
-            else
-                if tick() - lastPosAdjust > 0.05 then
-                    hrp.CFrame = tHRP.CFrame * offsetCF
-                    hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
-                    hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-                    hrp.CanCollide = false
-                    lastPosAdjust = tick()
-                end
-            end
-
-            AutoHaki()
-            EquipToolByName(WeaponName)
-            if tick() - lastAttack > 0.15 then
-                AttackModule:AttackEnemyModel(target)
-                lastAttack = tick()
-            end
-
-            RunService.Heartbeat:Wait()
+    for _, v in ipairs(enemies:GetChildren()) do
+        if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
+            FightMobSimple(v, "Tushita3: моб в HeavenlyDimension", FarmOffset)
         end
-    end)
-
-    if not ok then
-        AddLog("Ошибка FightMobSimple: "..tostring(err))
     end
-end
-
-local function HoldEFor(seconds)
-    AddLog("Зажимаю E на "..tostring(seconds).." сек.")
-    VirtualInput:SendKeyEvent(true, "E", false, game)
-    task.wait(seconds)
-    VirtualInput:SendKeyEvent(false, "E", false, game)
 end
 
 local function TushitaQuest3Tick()
@@ -1481,17 +1693,28 @@ local function TushitaQuest3Tick()
     end
 
     local dim = HeavenlyDimensionFolder()
+
+    -- если HeavenlyDimension ещё нет — работаем с Cake Queen / ожиданием
     if not dim then
         local boss = FindCakeQueen()
         if boss then
-            FightMobSimple(boss, "Tushita3: Cake Queen", CakeQueenOffset)
+            local killed = FightMobSimple(boss, "Tushita3: Cake Queen", CakeQueenOffset)
+            if killed then
+                LastCakeQueenKillTime = tick()
+                AddLog("Tushita3: Cake Queen убита, жду 5 секунд авто-переноса в HeavenlyDimension.")
+            end
         else
+            if LastCakeQueenKillTime > 0 and tick() - LastCakeQueenKillTime < 5 then
+                UpdateStatus("Tushita3: жду переноса в HeavenlyDimension...")
+                return
+            end
             UpdateStatus("Tushita3: Cake Queen не найдена, лечу на остров.")
             SimpleTeleport(CakeQueenIsland, "остров Cake Queen")
         end
         return
     end
 
+    -- В HeavenlyDimension
     local torch1 = dim:FindFirstChild("Torch1")
     local torch2 = dim:FindFirstChild("Torch2")
     local torch3 = dim:FindFirstChild("Torch3")
@@ -1501,6 +1724,7 @@ local function TushitaQuest3Tick()
         UpdateStatus("Tushita3: Torch1.")
         SimpleTeleport(torch1.CFrame * CFrame.new(0,5,0), "Torch1")
         HoldEFor(2)
+        FarmHeavenMobsOnce()
         T3_HeavenlyStage = 1
         return
     end
@@ -1509,6 +1733,7 @@ local function TushitaQuest3Tick()
         UpdateStatus("Tushita3: Torch2.")
         SimpleTeleport(torch2.CFrame * CFrame.new(0,5,0), "Torch2")
         HoldEFor(2)
+        FarmHeavenMobsOnce()
         T3_HeavenlyStage = 2
         return
     end
@@ -1517,23 +1742,20 @@ local function TushitaQuest3Tick()
         UpdateStatus("Tushita3: Torch3.")
         SimpleTeleport(torch3.CFrame * CFrame.new(0,5,0), "Torch3")
         HoldEFor(2)
+        FarmHeavenMobsOnce()
         T3_HeavenlyStage = 3
         return
     end
 
     if T3_HeavenlyStage == 3 then
-        local enemies = Workspace:FindFirstChild("Enemies")
-        if enemies then
-            for _, v in ipairs(enemies:GetChildren()) do
-                if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
-                    FightMobSimple(v, "Tushita3: бой в HeavenlyDimension")
-                end
-            end
-        end
+        -- добиваем мобов и выходим
+        FarmHeavenMobsOnce()
         if exit then
             UpdateStatus("Tushita3: лечу к Exit.")
             SimpleTeleport(exit.CFrame * CFrame.new(0,5,0), "Exit")
             T3_HeavenlyStage = 4
+        else
+            UpdateStatus("Tushita3: Exit не найден.")
         end
         return
     end
@@ -1596,16 +1818,28 @@ spawn(function()
                     if stage == 0 then
                         UpdateStatus("Yama Quest 1")
                         AutoYama1 = true
+                        AddLog("Перед Yama1: активирую Trial Evil (Progress).")
+                        pcall(function()
+                            remote:InvokeServer("CDKQuest","Progress","Evil")
+                        end)
                     elseif stage == 1 then
                         UpdateStatus("Yama Quest 2")
                         AutoYama2 = true
+                        AddLog("Перед Yama2: активирую Trial Evil (Progress).")
+                        pcall(function()
+                            remote:InvokeServer("CDKQuest","Progress","Evil")
+                        end)
                     elseif stage == 2 then
                         UpdateStatus("Yama Quest 3")
                         AutoYama3 = true
+                        AddLog("Перед Yama3: активирую Trial Evil (Progress).")
+                        pcall(function()
+                            remote:InvokeServer("CDKQuest","Progress","Evil")
+                        end)
                     elseif stage == 3 then
                         UpdateStatus("Tushita Quest 1 (BoatQuest)")
                         AutoTushita1 = true
-                        AddLog("Перед Tushita1: запускаю Trial Evil 1 раз.")
+                        AddLog("Перед Tushita1: запускаю Trial Evil.")
                         CDKTrialModule.StartEvilTrial(AddLog)
                         task.wait(0.3)
                         AddLog("Перед Tushita1: запускаю Trial Good.")
@@ -1619,6 +1853,7 @@ spawn(function()
                         UpdateStatus("Tushita Quest 3")
                         AutoTushita3 = true
                         T3_HeavenlyStage = 0
+                        LastCakeQueenKillTime = 0
                         AddLog("Перед Tushita3: запускаю Trial Good.")
                         CDKTrialModule.StartGoodTrial(AddLog)
                     elseif stage == 6 then
