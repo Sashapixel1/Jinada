@@ -1,5 +1,5 @@
 --========================================================
--- Tushita Mastery Farm (Isle Champion Camp)
+-- Yama & Tushita Mastery Farm (Isle Champion Camp)
 -- Кемп: NameMon = "Isle Champion"
 --       CFrameMon = CFrame.new(-16641.6796875, 235.7825469970703, 1031.282958984375)
 --========================================================
@@ -24,21 +24,30 @@ local TeleportSpeed = 300
 local FarmOffset    = CFrame.new(0, 10, -3)        -- зависание над мобом
 local CampCFrame    = CFrame.new(-16641.6796875, 235.7825469970703, 1031.282958984375)
 local TargetName    = "Isle Champion"
-local WeaponName    = "Tushita"                    -- фарм мастери именно на Tushita
+
+-- Меч, которым прямо сейчас фармим (будет переключаться между Tushita и Yama)
+local WeaponName    = "Tushita"
+
+-- Целевая мастери
+local TargetMastery          = 350
+local MasteryCheckInterval   = 10 -- раз в 10 секунд чекаем мастери
+local lastMasteryCheck       = 0
+local YamaMastery, TushitaMastery = nil, nil
+local LastLoggedMastery      = {Yama = nil, Tushita = nil}
 
 ---------------------
 -- ФЛАГИ / СОСТОЯНИЕ
 ---------------------
-local AutoTushitaMastery = false
-local CurrentStatus      = "Idle"
+local AutoMasteryFarm = false      -- общий флаг авто-фарма
+local CurrentStatus   = "Idle"
 
-local IsTeleporting      = false
-local StopTween          = false
-local NoclipEnabled      = false
-local IsFighting         = false
+local IsTeleporting   = false
+local StopTween       = false
+local NoclipEnabled   = false
+local IsFighting      = false
 
-local lastTPLog          = ""
-local lastEquipFail      = 0
+local lastTPLog       = ""
+local lastEquipFail   = 0
 
 ---------------------
 -- NET MODULE (fast attack)
@@ -74,6 +83,8 @@ local ScreenGui, MainFrame
 local StatusLabel
 local ToggleButton
 local LogsText
+local YamaLabelGui
+local TushitaLabelGui
 
 local function AddLog(msg)
     local timestamp = os.date("%H:%M:%S")
@@ -98,6 +109,23 @@ local function UpdateStatus(text)
         CurrentStatus = text
         if StatusLabel then
             StatusLabel.Text = "Статус: " .. tostring(text)
+        end
+    end
+end
+
+local function UpdateMasteryLabels()
+    if YamaLabelGui then
+        if YamaMastery ~= nil then
+            YamaLabelGui.Text = "Yama Mastery: " .. tostring(YamaMastery)
+        else
+            YamaLabelGui.Text = "Yama Mastery: —"
+        end
+    end
+    if TushitaLabelGui then
+        if TushitaMastery ~= nil then
+            TushitaLabelGui.Text = "Tushita Mastery: " .. tostring(TushitaMastery)
+        else
+            TushitaLabelGui.Text = "Tushita Mastery: —"
         end
     end
 end
@@ -146,7 +174,7 @@ local function AutoHaki()
 end
 
 ---------------------
--- ИНВЕНТАРЬ / Tushita
+-- ИНВЕНТАРЬ / МЕЧИ
 ---------------------
 local function IsToolEquipped(name)
     local char = LocalPlayer.Character
@@ -272,6 +300,71 @@ local function EquipToolByName(name)
 end
 
 ---------------------
+-- ЧЕКЕР МАСТЕРИ (getInventory.Mastery)
+---------------------
+local function RefreshMasteries()
+    local ok, inv = pcall(function()
+        return remote:InvokeServer("getInventory")
+    end)
+
+    if not ok or type(inv) ~= "table" then
+        AddLog("Ошибка getInventory при обновлении мастери: " .. tostring(inv))
+        return
+    end
+
+    local newY, newT
+
+    for _, item in ipairs(inv) do
+        if item and item.Type == "Sword" then
+            if item.Name == "Yama" then
+                newY = item.Mastery
+            elseif item.Name == "Tushita" then
+                newT = item.Mastery
+            end
+        end
+    end
+
+    if newY ~= nil then
+        YamaMastery = newY
+        if LastLoggedMastery.Yama ~= newY then
+            AddLog("Yama Mastery: " .. tostring(newY))
+            LastLoggedMastery.Yama = newY
+        end
+    end
+
+    if newT ~= nil then
+        TushitaMastery = newT
+        if LastLoggedMastery.Tushita ~= newT then
+            AddLog("Tushita Mastery: " .. tostring(newT))
+            LastLoggedMastery.Tushita = newT
+        end
+    end
+
+    UpdateMasteryLabels()
+end
+
+-- выбор, какой меч сейчас качать
+local function ChooseWeaponForFarm()
+    local t = TushitaMastery or 0
+    local y = YamaMastery or 0
+
+    -- приоритет: сначала Tushita до 350, потом Yama до 350
+    if t < TargetMastery and (HasToolInCharOrBackpack("Tushita") or HasInAccountInventory("Tushita")) then
+        if WeaponName ~= "Tushita" then
+            WeaponName = "Tushita"
+            AddLog("Смена оружия для фарма: Tushita (Mastery: " .. tostring(t) .. ")")
+        end
+    elseif y < TargetMastery and (HasToolInCharOrBackpack("Yama") or HasInAccountInventory("Yama")) then
+        if WeaponName ~= "Yama" then
+            WeaponName = "Yama"
+            AddLog("Смена оружия для фарма: Yama (Mastery: " .. tostring(y) .. ")")
+        end
+    else
+        -- мечей нет или уже оба 350 – обработаем это выше
+    end
+end
+
+---------------------
 -- ТЕЛЕПОРТ
 ---------------------
 local function SimpleTeleport(targetCFrame, label)
@@ -348,7 +441,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     IsFighting    = false
     AddLog("Персонаж возрождён, жду HRP...")
     char:WaitForChild("HumanoidRootPart", 10)
-    AddLog("HRP найден, продолжаю фарм Tushita мастери (если включен).")
+    AddLog("HRP найден, продолжаю фарм мастери (если включен).")
 end)
 
 ---------------------
@@ -383,9 +476,9 @@ local function GetNearestIsleChampion(maxDistance)
 end
 
 ---------------------
--- БОЙ / ФАРМ МАСТЕРИ Tushita
+-- БОЙ / ФАРМ МАСТЕРИ
 ---------------------
-local function FarmTushitaOnce()
+local function FarmOnce()
     if IsFighting then return end
     IsFighting = true
 
@@ -407,8 +500,8 @@ local function FarmTushitaOnce()
             return
         end
 
-        UpdateStatus("Фарм мастери Tushita: " .. TargetName)
-        AddLog("Нашёл " .. TargetName .. ", начинаю фарм мастери (Tushita).")
+        UpdateStatus("Фарм мастери " .. WeaponName .. ": " .. TargetName)
+        AddLog("Нашёл " .. TargetName .. ", начинаю фарм мастери (" .. WeaponName .. ").")
 
         -- тп над мобом
         SimpleTeleport(tHRP.CFrame * FarmOffset, TargetName)
@@ -418,7 +511,7 @@ local function FarmTushitaOnce()
         local lastAttack    = 0
         local engaged       = false
 
-        while AutoTushitaMastery
+        while AutoMasteryFarm
           and target.Parent
           and hum
           and hum.Health > 0
@@ -469,7 +562,7 @@ local function FarmTushitaOnce()
 
         if engaged then
             if hum and hum.Health <= 0 or not target.Parent then
-                AddLog("✅ " .. TargetName .. " убит, мастери Tushita должна была вырасти.")
+                AddLog("✅ " .. TargetName .. " убит, мастери " .. WeaponName .. " должна была вырасти.")
             else
                 AddLog("⚠️ Бой с " .. TargetName .. " прерван.")
             end
@@ -477,7 +570,7 @@ local function FarmTushitaOnce()
     end)
 
     if not ok then
-        AddLog("Ошибка в FarmTushitaOnce: " .. tostring(err))
+        AddLog("Ошибка в FarmOnce: " .. tostring(err))
     end
 
     IsFighting = false
@@ -486,7 +579,7 @@ end
 ---------------------
 -- ОСНОВНОЙ ЦИКЛ ЛОГИКИ
 ---------------------
-local function RunTushitaMasteryLoop()
+local function RunMasteryLoop()
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     if not (char and hrp) then
@@ -494,14 +587,16 @@ local function RunTushitaMasteryLoop()
         return
     end
 
-    -- проверяем, есть ли вообще Tushita в аккаунте
-    if not (HasToolInCharOrBackpack(WeaponName) or HasInAccountInventory(WeaponName)) then
-        UpdateStatus("Tushita не найдена ни в рюкзаке, ни в инвентаре аккаунта.")
-        AddLog("❌ Tushita отсутствует. Сначала получи меч, потом включай фарм мастери.")
+    -- проверяем наличие мечей вообще
+    if not (HasToolInCharOrBackpack("Tushita") or HasInAccountInventory("Tushita")
+        or HasToolInCharOrBackpack("Yama") or HasInAccountInventory("Yama")) then
+
+        UpdateStatus("Yama/Tushita не найдены ни в рюкзаке, ни в инвентаре аккаунта.")
+        AddLog("❌ Yama и Tushita отсутствуют. Сначала получи мечи, потом включай фарм мастери.")
         return
     end
 
-    -- подгружаем Tushita в Backpack (если лежит в инвентаре)
+    -- загружаем текущий WeaponName в Backpack (если лежит в инвентаре)
     EnsureItemInBackpack(WeaponName)
     EquipToolByName(WeaponName)
 
@@ -514,11 +609,11 @@ local function RunTushitaMasteryLoop()
     end
 
     -- уже на кемпе – фармим
-    FarmTushitaOnce()
+    FarmOnce()
 end
 
 ---------------------
--- GUI
+-- GUI (твой стиль)
 ---------------------
 local function CreateGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
@@ -529,7 +624,7 @@ local function CreateGui()
     ScreenGui.Parent = pg
 
     MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 420, 0, 260)
+    MainFrame.Size = UDim2.new(0, 420, 0, 280)
     MainFrame.Position = UDim2.new(0, 40, 0, 200)
     MainFrame.BackgroundColor3 = Color3.fromRGB(20,20,20)
     MainFrame.BorderSizePixel = 0
@@ -540,7 +635,7 @@ local function CreateGui()
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 24)
     Title.BackgroundColor3 = Color3.fromRGB(30,30,30)
-    Title.Text = "Tushita Mastery Farm (Isle Champion Camp)"
+    Title.Text = "Yama & Tushita Mastery Farm (Isle Champion Camp)"
     Title.TextColor3 = Color3.new(1,1,1)
     Title.Font = Enum.Font.SourceSansBold
     Title.TextSize = 16
@@ -564,12 +659,35 @@ local function CreateGui()
     ToggleButton.TextColor3 = Color3.new(1,1,1)
     ToggleButton.Font = Enum.Font.SourceSansBold
     ToggleButton.TextSize = 16
-    ToggleButton.Text = "Tushita Mastery Farm: OFF"
+    ToggleButton.Text = "Yama & Tushita Mastery Farm: OFF"
     ToggleButton.Parent = MainFrame
 
+    -- строки мастери
+    YamaLabelGui = Instance.new("TextLabel")
+    YamaLabelGui.Size = UDim2.new(1, -20, 0, 20)
+    YamaLabelGui.Position = UDim2.new(0, 10, 0, 96)
+    YamaLabelGui.BackgroundTransparency = 1
+    YamaLabelGui.TextColor3 = Color3.new(1,1,1)
+    YamaLabelGui.Font = Enum.Font.SourceSans
+    YamaLabelGui.TextSize = 14
+    YamaLabelGui.TextXAlignment = Enum.TextXAlignment.Left
+    YamaLabelGui.Text = "Yama Mastery: —"
+    YamaLabelGui.Parent = MainFrame
+
+    TushitaLabelGui = Instance.new("TextLabel")
+    TushitaLabelGui.Size = UDim2.new(1, -20, 0, 20)
+    TushitaLabelGui.Position = UDim2.new(0, 10, 0, 116)
+    TushitaLabelGui.BackgroundTransparency = 1
+    TushitaLabelGui.TextColor3 = Color3.new(1,1,1)
+    TushitaLabelGui.Font = Enum.Font.SourceSans
+    TushitaLabelGui.TextSize = 14
+    TushitaLabelGui.TextXAlignment = Enum.TextXAlignment.Left
+    TushitaLabelGui.Text = "Tushita Mastery: —"
+    TushitaLabelGui.Parent = MainFrame
+
     local LogsFrame = Instance.new("Frame")
-    LogsFrame.Size = UDim2.new(1, -20, 0, 150)
-    LogsFrame.Position = UDim2.new(0, 10, 0, 100)
+    LogsFrame.Size = UDim2.new(1, -20, 0, 130)
+    LogsFrame.Position = UDim2.new(0, 10, 0, 140)
     LogsFrame.BackgroundColor3 = Color3.fromRGB(15,15,15)
     LogsFrame.BorderSizePixel = 0
     LogsFrame.Parent = MainFrame
@@ -597,25 +715,28 @@ local function CreateGui()
     LogsText.Parent = scroll
 
     ToggleButton.MouseButton1Click:Connect(function()
-        AutoTushitaMastery = not AutoTushitaMastery
-        if AutoTushitaMastery then
-            ToggleButton.Text = "Tushita Mastery Farm: ON"
+        AutoMasteryFarm = not AutoMasteryFarm
+        if AutoMasteryFarm then
+            ToggleButton.Text = "Yama & Tushita Mastery Farm: ON"
             ToggleButton.BackgroundColor3 = Color3.fromRGB(0,120,0)
             NoclipEnabled = true
             StopTween     = false
-            UpdateStatus("Фарм мастери Tushita на Isle Champion кемпе.")
-            AddLog("Tushita Mastery Farm включён.")
+            UpdateStatus("Фарм мастери Yama/Tushita на Isle Champion кемпе.")
+            AddLog("Mastery Farm включён.")
+            -- сразу обновим мастери при старте
+            lastMasteryCheck = 0
         else
-            ToggleButton.Text = "Tushita Mastery Farm: OFF"
+            ToggleButton.Text = "Yama & Tushita Mastery Farm: OFF"
             ToggleButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
             NoclipEnabled = false
             StopTween     = true
             UpdateStatus("Остановлен")
-            AddLog("Tushita Mastery Farm выключен.")
+            AddLog("Mastery Farm выключен.")
         end
     end)
 
-    AddLog("GUI Tushita Mastery Farm загружен.")
+    AddLog("GUI Mastery Farm загружен.")
+    UpdateMasteryLabels()
 end
 
 CreateGui()
@@ -626,8 +747,36 @@ CreateGui()
 spawn(function()
     while task.wait(0.4) do
         local ok, err = pcall(function()
-            if AutoTushitaMastery then
-                RunTushitaMasteryLoop()
+            if AutoMasteryFarm then
+                -- периодически обновляем мастери
+                if tick() - lastMasteryCheck >= MasteryCheckInterval then
+                    lastMasteryCheck = tick()
+                    RefreshMasteries()
+
+                    -- если обе мастери уже >= TargetMastery — выключаемся
+                    if YamaMastery and YamaMastery >= TargetMastery
+                       and TushitaMastery and TushitaMastery >= TargetMastery then
+
+                        AutoMasteryFarm = false
+                        NoclipEnabled   = false
+                        StopTween       = true
+
+                        if ToggleButton then
+                            ToggleButton.Text = "Yama & Tushita Mastery Farm: OFF"
+                            ToggleButton.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                        end
+
+                        UpdateStatus("Готово: мастери Yama и Tushita >= " .. TargetMastery)
+                        AddLog("✅ Фарм мастери завершён. Yama=" .. tostring(YamaMastery)
+                            .. ", Tushita=" .. tostring(TushitaMastery))
+                        return
+                    end
+
+                    -- выбираем, какой меч качать дальше
+                    ChooseWeaponForFarm()
+                end
+
+                RunMasteryLoop()
             end
         end)
         if not ok then
