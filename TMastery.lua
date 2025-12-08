@@ -1,7 +1,7 @@
 --========================================================
--- Yama & Tushita Mastery Farm (Isle Champion Camp)
--- Кемп: NameMon = "Isle Champion"
---       CFrameMon = CFrame.new(-16641.6796875, 235.7825469970703, 1031.282958984375)
+-- Yama & Tushita Mastery Farm (Reborn Skeleton, Haunted Castle)
+-- Мобы: Reborn Skeleton
+-- Кемп: Haunted Castle (центр у Death King / fallback)
 --========================================================
 
 ---------------------
@@ -22,10 +22,12 @@ local remote      = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Comm
 ---------------------
 local TeleportSpeed = 300
 local FarmOffset    = CFrame.new(0, 10, -3)        -- зависание над мобом
-local CampCFrame    = CFrame.new(-16641.6796875, 235.7825469970703, 1031.282958984375)
-local TargetName    = "Isle Champion"
 
--- Меч, которым прямо сейчас фармим (будет переключаться между Tushita и Yama)
+-- Haunted Castle центр (из скрипта Auto Bones)
+local HauntedFallback = CFrame.new(-9515.129, 142.233, 6200.441)
+local TargetName      = "Reborn Skeleton"
+
+-- Меч, которым прямо сейчас фармим (переключается между Tushita и Yama)
 local WeaponName    = "Tushita"
 
 -- Целевая мастери
@@ -365,6 +367,33 @@ local function ChooseWeaponForFarm()
 end
 
 ---------------------
+-- Haunted Castle центр (как в AutoBones: GetHauntedCenterCFrame)
+---------------------
+local function FindDeathKingModel()
+    local candidate = nil
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "Death King" then
+            if obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Humanoid") then
+                candidate = obj
+                break
+            end
+        end
+    end
+    return candidate
+end
+
+local function GetHauntedCenterCFrame()
+    local dk = FindDeathKingModel()
+    if dk then
+        local hrp = dk:FindFirstChild("HumanoidRootPart") or dk:FindFirstChild("Head")
+        if hrp then
+            return hrp.CFrame
+        end
+    end
+    return HauntedFallback
+end
+
+---------------------
 -- ТЕЛЕПОРТ
 ---------------------
 local function SimpleTeleport(targetCFrame, label)
@@ -445,9 +474,33 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 ---------------------
--- ПОИСК Isle Champion
+-- ПРОВЕРКА, ЧТО МЫ У HAUNTED CASTLE
 ---------------------
-local function GetNearestIsleChampion(maxDistance)
+local function EnsureOnHaunted()
+    local char = LocalPlayer.Character
+    if not char then return false end
+
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local center = GetHauntedCenterCFrame()
+    local dist   = (hrp.Position - center.Position).Magnitude
+
+    if dist > 600 then
+        UpdateStatus("Лечу к Haunted Castle...")
+        AddLog("Персонаж далеко от Haunted Castle (" .. math.floor(dist) .. " stud), лечу обратно...")
+        SimpleTeleport(center * CFrame.new(0, 4, 3), "Haunted Castle")
+        task.wait(1.2)
+        return false
+    end
+
+    return true
+end
+
+---------------------
+-- ПОИСК Reborn Skeleton
+---------------------
+local function GetNearestRebornSkeleton(maxDistance)
     maxDistance = maxDistance or 9999
     local enemiesFolder = Workspace:FindFirstChild("Enemies")
     if not enemiesFolder then return nil end
@@ -455,6 +508,8 @@ local function GetNearestIsleChampion(maxDistance)
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     if not (char and hrp) then return nil end
+
+    local center = GetHauntedCenterCFrame()
 
     local nearest
     local best = maxDistance
@@ -464,10 +519,15 @@ local function GetNearestIsleChampion(maxDistance)
            and v:FindFirstChild("Humanoid")
            and v:FindFirstChild("HumanoidRootPart")
            and v.Humanoid.Health > 0 then
-            local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
-            if d < best then
-                best    = d
-                nearest = v
+
+            -- мобы, близко к замку
+            local distFromCenter = (v.HumanoidRootPart.Position - center.Position).Magnitude
+            if distFromCenter < 800 then
+                local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+                if d < best then
+                    best    = d
+                    nearest = v
+                end
             end
         end
     end
@@ -488,9 +548,9 @@ local function FarmOnce()
         if not (char and hrp) then return end
 
         -- ищем моба рядом (после тп к кемпу)
-        local target = GetNearestIsleChampion(4000)
+        local target = GetNearestRebornSkeleton(4000)
         if not target then
-            UpdateStatus("Isle Champion не найден рядом, жду спавна.")
+            UpdateStatus("Reborn Skeleton рядом не найден, жду спавна.")
             return
         end
 
@@ -596,24 +656,21 @@ local function RunMasteryLoop()
         return
     end
 
+    -- убеждаемся, что мы у Haunted Castle
+    if not EnsureOnHaunted() then
+        return
+    end
+
     -- загружаем текущий WeaponName в Backpack (если лежит в инвентаре)
     EnsureItemInBackpack(WeaponName)
     EquipToolByName(WeaponName)
 
-    -- если далеко от кемпа – летим туда
-    local distToCamp = (hrp.Position - CampCFrame.Position).Magnitude
-    if distToCamp > 600 then
-        UpdateStatus("Лечу к кемпу Isle Champion.")
-        SimpleTeleport(CampCFrame, "Isle Champion Camp")
-        return
-    end
-
-    -- уже на кемпе – фармим
+    -- уже на духовке – фармим
     FarmOnce()
 end
 
 ---------------------
--- GUI (твой стиль)
+-- GUI (твой стиль, немного переписан заголовок)
 ---------------------
 local function CreateGui()
     local pg = LocalPlayer:WaitForChild("PlayerGui")
@@ -635,7 +692,7 @@ local function CreateGui()
     local Title = Instance.new("TextLabel")
     Title.Size = UDim2.new(1, 0, 0, 24)
     Title.BackgroundColor3 = Color3.fromRGB(30,30,30)
-    Title.Text = "Yama & Tushita Mastery Farm (Isle Champion Camp)"
+    Title.Text = "Yama & Tushita Mastery Farm (Reborn Skeleton / Haunted Castle)"
     Title.TextColor3 = Color3.new(1,1,1)
     Title.Font = Enum.Font.SourceSansBold
     Title.TextSize = 16
@@ -721,7 +778,7 @@ local function CreateGui()
             ToggleButton.BackgroundColor3 = Color3.fromRGB(0,120,0)
             NoclipEnabled = true
             StopTween     = false
-            UpdateStatus("Фарм мастери Yama/Tushita на Isle Champion кемпе.")
+            UpdateStatus("Фарм мастери Yama/Tushita на Reborn Skeleton (Haunted Castle).")
             AddLog("Mastery Farm включён.")
             -- сразу обновим мастери при старте
             lastMasteryCheck = 0
@@ -735,7 +792,7 @@ local function CreateGui()
         end
     end)
 
-    AddLog("GUI Mastery Farm загружен.")
+    AddLog("GUI Mastery Farm (Reborn Skeleton) загружен.")
     UpdateMasteryLabels()
 end
 
