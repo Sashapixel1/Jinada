@@ -1,6 +1,7 @@
 --========================================================
 --  Yama / Tushita Mastery Checker (getInventory.Mastery)
 --  автообновление каждые 10 секунд
+--  VERSION: SIMPLE_CHECKER_V1
 --========================================================
 
 local UPDATE_INTERVAL = 10 -- сек между обновлениями
@@ -12,14 +13,36 @@ local LocalPlayer = Players.LocalPlayer
 local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 ----------------------------------------------------------
--- GUI
+-- Сносим старые наши GUI, если остались
 ----------------------------------------------------------
 do
-    local old = (LocalPlayer.PlayerGui:FindFirstChild("YT_MasteryGui")
-        or (game.CoreGui and game.CoreGui:FindFirstChild("YT_MasteryGui")))
-    if old then old:Destroy() end
+    local names = {
+        "YT_MasteryGui",
+        "YTLevelDebugGui",
+        "YTMasteryDebugGui",
+    }
+
+    local function tryDestroy(root)
+        if not root then return end
+        for _, n in ipairs(names) do
+            local g = root:FindFirstChild(n)
+            if g then g:Destroy() end
+        end
+    end
+
+    pcall(function()
+        tryDestroy(game.CoreGui)
+    end)
+
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if pg then
+        tryDestroy(pg)
+    end
 end
 
+----------------------------------------------------------
+-- GUI
+----------------------------------------------------------
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "YT_MasteryGui"
 
@@ -126,7 +149,6 @@ btnCorner.CornerRadius = UDim.new(0, 6)
 btnCorner.Parent = toggleButton
 
 local enabled = true
-
 local function refreshToggleVisual()
     if enabled then
         toggleButton.Text = "ON"
@@ -148,7 +170,7 @@ toggleButton.MouseButton1Click:Connect(function()
 end)
 
 ----------------------------------------------------------
--- Функция получения мастери из getInventory
+-- Получение мастери из getInventory
 ----------------------------------------------------------
 local function getMasteryFromInventory()
     local yamaM, tushitaM
@@ -199,4 +221,4 @@ task.spawn(function()
     end
 end)
 
-print("[Yama/Tushita Mastery Checker] загружен.")
+print("[Yama/Tushita Mastery Checker v1] загружен.")
