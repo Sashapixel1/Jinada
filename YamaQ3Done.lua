@@ -656,7 +656,7 @@ end
 -- HELL DIMENSION: УДЕРЖАНИЕ E
 ---------------------
 local function HoldE(seconds)
-    seconds = seconds or 5
+    seconds = seconds or 2
     VirtualInputManager:SendKeyEvent(true, "E", false, game)
     task.wait(seconds)
     VirtualInputManager:SendKeyEvent(false, "E", false, game)
@@ -736,7 +736,7 @@ local function HandleHellDimension()
         AddLog("HellDimension: Torch1 -> зажимаю E на 3 секунды, затем убиваю скелетов.")
         SimpleTeleport(Torch1.CFrame, "HellDimension Torch1")
         task.wait(0.5)
-        HoldE(3)
+        HoldE(2)
         task.wait(0.5)
         FarmHellMobsOnce()
     end
@@ -746,7 +746,7 @@ local function HandleHellDimension()
         AddLog("HellDimension: Torch2 -> зажимаю E на 3 секунды, затем убиваю скелетов.")
         SimpleTeleport(Torch2.CFrame, "HellDimension Torch2")
         task.wait(0.5)
-        HoldE(3)
+        HoldE(2)
         task.wait(0.5)
         FarmHellMobsOnce()
     end
@@ -756,7 +756,7 @@ local function HandleHellDimension()
         AddLog("HellDimension: Torch3 -> зажимаю E на 3 секунды, затем убиваю скелетов.")
         SimpleTeleport(Torch3.CFrame, "HellDimension Torch3")
         task.wait(0.5)
-        HoldE(3)
+        HoldE(2)
         task.wait(0.5)
         FarmHellMobsOnce()
     end
