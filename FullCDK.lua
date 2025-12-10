@@ -460,23 +460,33 @@ local function EquipToolByName(name)
 end
 
 ---------------------
--- ТП
+-- ТП (с анти-откидыванием)
 ---------------------
+local TeleportLocked   = false
+local LastGoodPosition = nil
+
 local function SimpleTeleport(targetCFrame, label)
-    if IsTeleporting then return end
+    if TeleportLocked or IsTeleporting then return end
     IsTeleporting = true
     StopTween     = false
 
     local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then
+    if not char then
         IsTeleporting = false
         return
     end
 
-    local hrp      = char.HumanoidRootPart
-    local distance = (hrp.Position - targetCFrame.Position).Magnitude
-    local travelTime = distance / TeleportSpeed
-    travelTime = math.clamp(travelTime, 0.5, 60)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        IsTeleporting = false
+        return
+    end
+
+    -- сохраняем последнюю нормальную позицию
+    LastGoodPosition = hrp.Position
+
+    local distance   = (hrp.Position - targetCFrame.Position).Magnitude
+    local travelTime = math.clamp(distance / TeleportSpeed, 0.5, 60)
 
     AddLog(string.format("Телепорт к %s (%.0f stud, t=%.1f)", label or "цели", distance, travelTime))
 
@@ -487,8 +497,10 @@ local function SimpleTeleport(targetCFrame, label)
     )
     tween:Play()
 
-    local start = tick()
-    while tick() - start < travelTime do
+    local startTick = tick()
+    local lastCheck = tick()
+
+    while tick() - startTick < travelTime do
         if StopTween or not AutoCDK then
             tween:Cancel()
             IsTeleporting = false
@@ -508,12 +520,41 @@ local function SimpleTeleport(targetCFrame, label)
         hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
         hrp.CanCollide = false
 
-        task.wait(0.2)
+        -------------------------------------------------
+        -- АНТИ-ОТКИДЫВАНИЕ: детект резкого смещения > 1000
+        -------------------------------------------------
+        if tick() - lastCheck > 0.15 then
+            lastCheck = tick()
+
+            local currentPos = hrp.Position
+            if LastGoodPosition then
+                local delta = (currentPos - LastGoodPosition).Magnitude
+                if delta > 1000 then
+                    tween:Cancel()
+                    AddLog("⚠️ Обнаружен откид на "..math.floor(delta).." stud, перезапуск ТП через 2 сек.")
+
+                    TeleportLocked = true
+                    IsTeleporting  = false
+
+                    task.delay(2, function()
+                        TeleportLocked = false
+                        SimpleTeleport(targetCFrame, (label or "цель").." (retry)")
+                    end)
+
+                    return
+                end
+            end
+
+            LastGoodPosition = currentPos
+        end
+        -------------------------------------------------
+
+        task.wait(0.05)
     end
 
     tween:Cancel()
-    local c = LocalPlayer.Character
-    hrp = c and c:FindFirstChild("HumanoidRootPart")
+    local c2 = LocalPlayer.Character
+    hrp = c2 and c2:FindFirstChild("HumanoidRootPart")
     if hrp then
         hrp.CFrame = targetCFrame
         hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
@@ -523,6 +564,8 @@ local function SimpleTeleport(targetCFrame, label)
 
     IsTeleporting = false
 end
+
+
 
 LocalPlayer.CharacterAdded:Connect(function(char)
     IsTeleporting = false
