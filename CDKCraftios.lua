@@ -1479,54 +1479,66 @@ end
 local function YamaQuest3Tick()
     if not AutoYama3 or not AutoCDK then return end
 
-    local af = GetCountMaterials("Alucard Fragment")
-    if af >= 3 then
-        AutoYama3 = false
-        UpdateStatus("Yama3: третий фрагмент получен, перехожу к Tushita.")
-        return
-    end
+    local ok, err = pcall(function()
+        -- 0. обновляем статы
+        RefreshBonesCount()
+        UpdateHallowStatus()
+        RefreshRollWindow()
 
-    if not EnsureOnHauntedIsland() then
-        return
-    end
+        -- 1. всегда сначала следим, что мы на Haunted Castle / у Death King
+        if not EnsureOnHauntedIsland() then
+            return
+        end
 
-    RefreshBonesCount()
-    UpdateHallowStatus()
-    RefreshRollWindow()
+        local map     = Workspace:FindFirstChild("Map")
+        local hellDim = map and map:FindFirstChild("HellDimension")
 
-    local map = Workspace:FindFirstChild("Map")
-    local hellDim = map and map:FindFirstChild("HellDimension")
-    if hellDim then
-        HandleHellDimensionYama3()
-        return
-    end
+        -- 2. если уже есть HellDimension – выполняем Yama3 внутри него
+        if hellDim then
+            UpdateStatus("Yama3: HellDimension активен.")
+            HandleHellDimensionYama3()
+            return
+        end
 
-    local alucardCount = GetCountMaterials("Alucard Fragment") or 0
-    if alucardCount >= 3 then
-        UpdateStatus("Yama3: 3 фрагмента уже есть, просто фармлю кости.")
+        -- 3. считаем Alucard Fragment
+        local alucardCount = GetCountMaterials("Alucard Fragment") or 0
+
+        -- 3.1 если уже 3 фрагмента – квест завершён, просто фармим кости дальше
+        if alucardCount >= 3 then
+            UpdateStatus("Yama3: 3 Alucard Fragment уже есть, просто фармлю кости.")
+            FarmBonesOnceYama3()
+            return
+        end
+
+        -- 4. если есть Hallow Essence, но HellDimension ещё нет –
+        --    идём к Summoner и обрабатываем фазу Soul Reaper
+        if HasHallow then
+            HandleSummonerIfHasHallow()
+            HandleSoulReaperPhaseYama3()
+            return
+        end
+
+        -- 5. если Hallow ещё нет, но Soul Reaper уже заспавнен – тоже обрабатываем его фазу
+        local soul = FindSoulReaper()
+        if soul then
+            HandleSoulReaperPhaseYama3()
+            return
+        end
+
+        -- 6. если костей достаточно и лимит роллов не выбит – делаем роллы у Death King
+        if BonesCount >= MinBonesToRoll and RollsUsed < MaxRollsPerWindow then
+            DoDeathKingRolls()
+            return
+        end
+
+        -- 7. иначе – просто фармим скелетов вокруг Haunted Castle
+        UpdateStatus("Yama3: фарм скелетов на Haunted Castle.")
         FarmBonesOnceYama3()
-        return
-    end
+    end)
 
-    if HasHallow then
-        HandleSummonerIfHasHallow()
-        HandleSoulReaperPhaseYama3()
-        return
+    if not ok then
+        AddLog("Ошибка в YamaQuest3Tick: " .. tostring(err))
     end
-
-    local soul = FindSoulReaper()
-    if soul then
-        HandleSoulReaperPhaseYama3()
-        return
-    end
-
-    if BonesCount >= MinBonesToRoll and RollsUsed < MaxRollsPerWindow then
-        DoDeathKingRolls()
-        return
-    end
-
-    UpdateStatus("Yama3: фарм скелетов для костей.")
-    FarmBonesOnceYama3()
 end
 
 ---------------------
@@ -1804,84 +1816,183 @@ end
 local function TushitaQuest3Tick()
     if not AutoTushita3 or not AutoCDK then return end
 
-    local af = GetCountMaterials("Alucard Fragment")
-       local af = GetCountMaterials("Alucard Fragment")
-    if af >= 6 then
-        AutoTushita3 = false
-        UpdateStatus("Tushita3: 6-й фрагмент, запускаю CDK Craft+Boss.")
-        AddLog("Tushita3: Alucard Fragment = 6, переход к CDK Craft+Boss.")
-        AutoCDK_Boss = true
-        return
-    end
-
-
-    local dim = HeavenlyDimensionFolder()
-    if not dim then
-        local boss = FindCakeQueen()
-        if boss then
-            -- после убийства Cake Queen просто ждём 5 сек, игра сама переносит в HeavenlyDimension
-            FightMobSimple(boss, "Tushita3: Cake Queen", CakeQueenOffset)
-            AddLog("Tushita3: жду 5 сек авто-переноса в HeavenlyDimension.")
-            task.wait(5)
-        else
-            UpdateStatus("Tushita3: Cake Queen не найдена, лечу на остров.")
-            SimpleTeleport(CakeQueenIsland, "остров Cake Queen")
+    local ok, err = pcall(function()
+        ----------------------------------------------------------------
+        -- 1) Чекаем Alucard Fragment и запуск CDK Craft+Boss при 6 AF
+        ----------------------------------------------------------------
+        local af = GetCountMaterials("Alucard Fragment") or 0
+        if af >= 6 then
+            AutoTushita3 = false
+            UpdateStatus("Tushita3: 6-й фрагмент, запускаю CDK Craft+Boss.")
+            AddLog("Tushita3: Alucard Fragment = 6, переход к CDK Craft+Boss.")
+            AutoCDK_Boss = true
+            return
         end
-        return
-    end
 
-    local torch1 = dim:FindFirstChild("Torch1")
-    local torch2 = dim:FindFirstChild("Torch2")
-    local torch3 = dim:FindFirstChild("Torch3")
-    local exit   = dim:FindFirstChild("Exit")
+        ----------------------------------------------------------------
+        -- Локальный хелпер: найти моба HeavenlyDimension
+        -- (Cursed Skeleton / Heaven's Guardian)
+        ----------------------------------------------------------------
+        local function GetHeavenlyMob()
+            local enemies = Workspace:FindFirstChild("Enemies")
+            if not enemies then return nil end
 
-    -- Каждый факел: E на 2 сек, потом мобы, потом следующий
-    if T3_HeavenlyStage == 0 and torch1 then
-        UpdateStatus("Tushita3: Torch1.")
-        SimpleTeleport(torch1.CFrame * CFrame.new(0,5,0), "Torch1")
-        HoldEFor(2)
-        FarmHellMobsOnce()
-        T3_HeavenlyStage = 1
-        return
-    end
-
-    if T3_HeavenlyStage == 1 and torch2 then
-        UpdateStatus("Tushita3: Torch2.")
-        SimpleTeleport(torch2.CFrame * CFrame.new(0,5,0), "Torch2")
-        HoldEFor(2)
-        FarmHellMobsOnce()
-        T3_HeavenlyStage = 2
-        return
-    end
-
-    if T3_HeavenlyStage == 2 and torch3 then
-        UpdateStatus("Tushita3: Torch3.")
-        SimpleTeleport(torch3.CFrame * CFrame.new(0,5,0), "Torch3")
-        HoldEFor(2)
-        FarmHellMobsOnce()
-        T3_HeavenlyStage = 3
-        return
-    end
-
-    if T3_HeavenlyStage == 3 then
-        local enemies = Workspace:FindFirstChild("Enemies")
-        if enemies then
             for _, v in ipairs(enemies:GetChildren()) do
-                if v:FindFirstChild("Humanoid") and v:FindFirstChild("HumanoidRootPart") and v.Humanoid.Health > 0 then
-                    FightMobSimple(v, "Tushita3: бой в HeavenlyDimension")
+                local hum  = v:FindFirstChild("Humanoid")
+                local hrp  = v:FindFirstChild("HumanoidRootPart")
+                if hum and hrp and hum.Health > 0 then
+                    local name = tostring(v.Name)
+                    if string.find(name, "Cursed Skeleton") or string.find(name, "Heaven's Guardian") then
+                        return v
+                    end
+                end
+            end
+
+            return nil
+        end
+
+        ----------------------------------------------------------------
+        -- 2) Проверяем, заспавнился ли уже HeavenlyDimension
+        ----------------------------------------------------------------
+        local dim = HeavenlyDimensionFolder()
+
+        ----------------------------------------------------------------
+        -- Ещё нет измерения -> работаем с Cake Queen
+        ----------------------------------------------------------------
+        if not dim then
+            -- как только измерения нет, стадия 0
+            T3_HeavenlyStage = 0
+
+            local boss = FindCakeQueen()
+            if boss then
+                UpdateStatus("Tushita3: Cake Queen.")
+                -- чуть выше оффсет для Куин:
+                FightMobSimple(boss, "Tushita3: Cake Queen", CakeQueenOffset)
+                AddLog("Tushita3: Cake Queen убита, жду появления HeavenlyDimension.")
+            else
+                UpdateStatus("Tushita3: Cake Queen не найдена, лечу на остров.")
+                SimpleTeleport(CakeQueenIsland, "остров Cake Queen")
+            end
+            return
+        end
+
+        ----------------------------------------------------------------
+        -- 3) Мы уже в фазе HeavenlyDimension
+        ----------------------------------------------------------------
+        local torch1 = dim:FindFirstChild("Torch1")
+        local torch2 = dim:FindFirstChild("Torch2")
+        local torch3 = dim:FindFirstChild("Torch3")
+        local exit   = dim:FindFirstChild("Exit")
+
+        -- гарантируем, что мы в радиусе от Torch1 (чтоб не висеть в другом мире)
+        if torch1 then
+            local char = LocalPlayer.Character
+            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            if char and hrp then
+                local dist = (hrp.Position - torch1.Position).Magnitude
+                if dist > 600 then
+                    UpdateStatus("Tushita3: лечу в HeavenlyDimension.")
+                    SimpleTeleport(torch1.CFrame * CFrame.new(0, 5, 0), "HeavenlyDimension Torch1")
+                    return
                 end
             end
         end
-        if exit then
-            UpdateStatus("Tushita3: лечу к Exit.")
-            SimpleTeleport(exit.CFrame * CFrame.new(0,5,0), "Exit")
-            T3_HeavenlyStage = 4
-        end
-        return
-    end
 
-    if T3_HeavenlyStage >= 4 then
-        UpdateStatus("Tushita3: жду завершения HeavenlyDimension.")
+        ----------------------------------------------------------------
+        -- 3.1 если стадия >=3 и есть моб – добиваем мобов / Heaven's Guardian
+        ----------------------------------------------------------------
+        if T3_HeavenlyStage >= 3 then
+            local mob = GetHeavenlyMob()
+            if mob then
+                FightMobSimple(mob, "Tushita3: бой в HeavenlyDimension")
+                return
+            end
+        end
+
+        ----------------------------------------------------------------
+        -- 4) Torch1
+        ----------------------------------------------------------------
+        if T3_HeavenlyStage == 0 and torch1 then
+            UpdateStatus("Tushita3: Torch1.")
+            SimpleTeleport(torch1.CFrame * CFrame.new(0, 5, 0), "Torch1")
+            HoldEFor(2) -- используем уже существующую функцию HoldEFor(seconds)
+            AddLog("Tushita3: Torch1 активирован, фарм мобов.")
+            -- пара заходов по мобам, чтобы не висеть в вечном цикле
+            for i = 1, 3 do
+                local mob = GetHeavenlyMob()
+                if not mob then break end
+                FightMobSimple(mob, "Tushita3: Heavenly mob после Torch1")
+            end
+            T3_HeavenlyStage = 1
+            return
+        end
+
+        ----------------------------------------------------------------
+        -- 5) Torch2
+        ----------------------------------------------------------------
+        if T3_HeavenlyStage == 1 and torch2 then
+            UpdateStatus("Tushita3: Torch2.")
+            SimpleTeleport(torch2.CFrame * CFrame.new(0, 5, 0), "Torch2")
+            HoldEFor(2)
+            AddLog("Tushita3: Torch2 активирован, фарм мобов.")
+            for i = 1, 3 do
+                local mob = GetHeavenlyMob()
+                if not mob then break end
+                FightMobSimple(mob, "Tushita3: Heavenly mob после Torch2")
+            end
+            T3_HeavenlyStage = 2
+            return
+        end
+
+        ----------------------------------------------------------------
+        -- 6) Torch3
+        ----------------------------------------------------------------
+        if T3_HeavenlyStage == 2 and torch3 then
+            UpdateStatus("Tushita3: Torch3.")
+            SimpleTeleport(torch3.CFrame * CFrame.new(0, 5, 0), "Torch3")
+            HoldEFor(2)
+            AddLog("Tushita3: Torch3 активирован, фарм скелетов + Heaven's Guardian.")
+            -- тут подольше пофармим, чтобы успеть убить Guardian
+            for i = 1, 6 do
+                local mob = GetHeavenlyMob()
+                if not mob then break end
+                FightMobSimple(mob, "Tushita3: Heavenly mob / Heaven's Guardian")
+            end
+            T3_HeavenlyStage = 3
+            return
+        end
+
+        ----------------------------------------------------------------
+        -- 7) Стадия 3: если мобов больше нет, летим к Exit
+        ----------------------------------------------------------------
+        if T3_HeavenlyStage == 3 then
+            local mob = GetHeavenlyMob()
+            if mob then
+                FightMobSimple(mob, "Tushita3: добиваю мобов / Heaven's Guardian")
+                return
+            end
+
+            if exit then
+                UpdateStatus("Tushita3: все мобы убиты, лечу к Exit.")
+                SimpleTeleport(exit.CFrame * CFrame.new(0, 5, 0), "Exit")
+                T3_HeavenlyStage = 4
+                AddLog("Tushita3: HeavenlyDimension завершён, Teleport Exit.")
+            else
+                UpdateStatus("Tushita3: Exit не найден, жду.")
+            end
+            return
+        end
+
+        ----------------------------------------------------------------
+        -- 8) Стадия >=4: просто ждём завершения квеста
+        ----------------------------------------------------------------
+        if T3_HeavenlyStage >= 4 then
+            UpdateStatus("Tushita3: HeavenlyDimension завершён, жду завершения квеста.")
+        end
+    end)
+
+    if not ok then
+        AddLog("Ошибка в TushitaQuest3Tick: " .. tostring(err))
     end
 end
 
