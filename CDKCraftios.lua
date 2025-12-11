@@ -185,6 +185,7 @@ local cachedEliteProgress      = 0
 
 local lastWaterfallLog         = 0
 local lastTurtleTeleport       = 0
+local SimpleTeleport   -- объявляем вперёд, чтобы выше по коду можно было вызывать
 
 -- позиция Floating Turtle для RunTushitaLogic (можно взять любую нормальную точку суши на Turtle)
 local FloatingTurtlePos = CFrame.new(-13274.528320313, 531.82073974609, -7579.22265625)
