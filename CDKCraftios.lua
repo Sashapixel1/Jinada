@@ -2864,7 +2864,7 @@ end
               --  if AutoCDK_Boss then pcall(RunCDKBossCycle)   end
           --  end
      --   end
-    end
+    --end
 end)
 
 AddLog("AutoCDK загружен. Включай кнопку в 3-м море (Haunted Castle / Castle on the Sea / Cake Queen).")
