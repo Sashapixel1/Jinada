@@ -544,10 +544,11 @@ end
 ---------------------
 -- ТП (с анти-откидыванием)
 ---------------------
+local SimpleTeleport        -- форвард-декларация
 local TeleportLocked   = false
 local LastGoodPosition = nil
 
-local function SimpleTeleport(targetCFrame, label)
+SimpleTeleport = function(targetCFrame, label)
     if TeleportLocked or IsTeleporting then return end
     IsTeleporting = true
     StopTween     = false
@@ -646,8 +647,6 @@ local function SimpleTeleport(targetCFrame, label)
 
     IsTeleporting = false
 end
-
-
 
 LocalPlayer.CharacterAdded:Connect(function(char)
     IsTeleporting = false
