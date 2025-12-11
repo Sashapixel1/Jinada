@@ -607,6 +607,58 @@ local function GetCountMaterials(MaterialName)
     return 0
 end
 
+------------------------------------------------
+-- ЧЕКЕР МЕЧЕЙ / ПРЕДМЕТОВ (для Yama/Tushita)
+------------------------------------------------
+local function HasSword(name)
+    local p = LocalPlayer
+    if not p then return false end
+
+    -- 1) Проверяем в Backpack
+    local backpack = p:FindFirstChild("Backpack")
+    if backpack and backpack:FindFirstChild(name) then
+        return true
+    end
+
+    -- 2) Проверяем в персонаже (в руке)
+    local char = p.Character
+    if char and char:FindFirstChild(name) then
+        return true
+    end
+
+    -- 3) Проверяем в getInventory (stash / инвентарь)
+    local ok, invData = pcall(function()
+        return remote:InvokeServer("getInventory")
+    end)
+    if ok and type(invData) == "table" then
+        for _, item in ipairs(invData) do
+            local n = item.Name or item.name or tostring(item)
+            if n == name then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function HasItemSimple(name)
+    local p = LocalPlayer
+    if not p then return false end
+
+    local backpack = p:FindFirstChild("Backpack")
+    if backpack and backpack:FindFirstChild(name) then
+        return true
+    end
+
+    local char = p.Character
+    if char and char:FindFirstChild(name) then
+        return true
+    end
+
+    return false
+end
+
 local function GetWeaponMastery(name)
     local inv = GetInventory()
     for _, v in ipairs(inv) do
@@ -2317,14 +2369,474 @@ spawn(function()
 end)
 
 ---------------------
+-- 3 МОРЕ (для оффлайна просто true)
+---------------------
+local function IsThirdSea()
+    return true
+end
+
+---------------------
+-- Elite Hunter helpers
+---------------------
+local EliteNPCPos = CFrame.new(-5418.892578125, 313.74130249023, -2826.2260742188)
+
+local function GetEliteProgress()
+    local ok, res = pcall(function()
+        return remote:InvokeServer("EliteHunter", "Progress")
+    end)
+    if ok and type(res) == "number" then
+        return res
+    end
+    return 0
+end
+
+local function GetQuestTitleText()
+    local gui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not gui then return "", false end
+
+    local main = gui:FindFirstChild("Main")
+    if not main then return "", false end
+
+    local quest = main:FindFirstChild("Quest")
+    if not quest or not quest:FindFirstChild("Container") then
+        return "", quest and quest.Visible or false
+    end
+
+    local container  = quest.Container
+    local questTitle = container:FindFirstChild("QuestTitle")
+    if not questTitle then
+        return "", quest.Visible
+    end
+
+    local titleLabel = questTitle:FindFirstChild("Title")
+    if not titleLabel or not titleLabel:IsA("TextLabel") then
+        return "", quest.Visible
+    end
+
+    return tostring(titleLabel.Text), quest.Visible
+end
+
+---------------------
+-- Tushita helpers (из 12к)
+---------------------
+local function CheckNameBoss(a)
+    for _, v in next, game.ReplicatedStorage:GetChildren() do
+        if v:IsA("Model")
+           and v:FindFirstChild("Humanoid")
+           and v.Humanoid.Health > 0 then
+            if typeof(a) == "table" then
+                if table.find(a, v.Name) then
+                    return v
+                end
+            elseif v.Name == a then
+                return v
+            end
+        end
+    end
+    local enemiesFolder = Workspace:FindFirstChild("Enemies")
+    if enemiesFolder then
+        for _, v in next, enemiesFolder:GetChildren() do
+            if v:IsA("Model")
+               and v:FindFirstChild("Humanoid")
+               and v.Humanoid.Health > 0 then
+                if typeof(a) == "table" then
+                    if table.find(a, v.Name) then
+                        return v
+                    end
+                elseif v.Name == a then
+                    return v
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function CheckTorch()
+    local ws  = Workspace
+    local map = ws:FindFirstChild("Map")
+    if not map then return nil end
+
+    local turtle = map:FindFirstChild("Turtle") or map:FindFirstChild("Floating Turtle")
+    if not turtle then return nil end
+
+    local torches = turtle:FindFirstChild("QuestTorches")
+    if not torches then return nil end
+
+    local a
+    if not torches.Torch1.Particles.Main.Enabled then
+        a = "1"
+    elseif not torches.Torch2.Particles.Main.Enabled then
+        a = "2"
+    elseif not torches.Torch3.Particles.Main.Enabled then
+        a = "3"
+    elseif not torches.Torch4.Particles.Main.Enabled then
+        a = "4"
+    elseif not torches.Torch5.Particles.Main.Enabled then
+        a = "5"
+    end
+
+    if not a then return nil end
+
+    for _, v in next, torches:GetChildren() do
+        if v:IsA("MeshPart")
+           and string.find(v.Name, a)
+           and not v.Particles.Main.Enabled then
+            return v
+        end
+    end
+
+    return nil
+end
+
+local function FindEliteBoss()
+    return CheckNameBoss({"Diablo","Deandre","Urban"})
+end
+
+---------------------
+-- Waterfall (Hydra) + SealedKatana
+---------------------
+local function GetWaterfallData()
+    local map = Workspace:FindFirstChild("Map")
+    if not map then return nil, nil, nil end
+
+    local waterfall = map:FindFirstChild("Waterfall")
+    if not waterfall then return nil, nil, nil end
+
+    -- точка телепорта: PrimaryPart или первый BasePart
+    local tpCF
+    if waterfall:IsA("Model") and waterfall.PrimaryPart then
+        tpCF = waterfall.PrimaryPart.CFrame
+    else
+        for _, obj in ipairs(waterfall:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                tpCF = obj.CFrame
+                break
+            end
+        end
+    end
+
+    -- ищем SealedKatana внутри Waterfall
+    local sealed
+    for _, obj in ipairs(waterfall:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "SealedKatana" then
+            sealed = obj
+            break
+        end
+    end
+
+    local handle, cd
+    if sealed then
+        handle = sealed:FindFirstChild("Handle")
+              or sealed:FindFirstChildWhichIsA("BasePart")
+              or sealed
+        if handle then
+            cd = handle:FindFirstChildOfClass("ClickDetector")
+              or handle:FindFirstChild("ClickDetector")
+        end
+    end
+
+    return tpCF, handle, cd
+end
+
+---------------------
+-- ЛОГИКА YAMA (с Waterfall)
+---------------------
+local function RunYamaLogic()
+    if not IsThirdSea() then
+        if not WarnNoThirdSeaForYama then
+            WarnNoThirdSeaForYama = true
+            UpdateStatus("Yama: нужно быть в 3-м море (Castle On The Sea / Hydra / Turtle).")
+        end
+        return
+    end
+
+    if HasSword("Yama") then
+        UpdateStatus("Yama уже есть (меч в инвентаре).")
+        EquipToolByName("Yama")
+        return
+    end
+
+    local now = tick()
+
+    -- прогресс Elite Hunter — не чаще 1 раза/мин
+    if now - lastEliteProgressCheck >= 60 or cachedEliteProgress == 0 then
+        cachedEliteProgress    = GetEliteProgress()
+        lastEliteProgressCheck = now
+        AddLog("EliteHunter прогресс: " .. tostring(cachedEliteProgress) .. "/30")
+    end
+    local progress = cachedEliteProgress
+
+    ------------------------------------------------
+    -- 1) 30/30 — Waterfall + SealedKatana
+    ------------------------------------------------
+    if progress >= 30 then
+        UpdateStatus("Yama: прогресс 30+, лечу к Waterfall (Hydra) и кликаю SealedKatana.")
+
+        local tpCF, handle, cd = GetWaterfallData()
+        if not tpCF then
+            if tick() - lastWaterfallLog > 5 then
+                AddLog("❌ Waterfall не найден в Map. Проверь, что ты на острове Hydra.")
+                lastWaterfallLog = tick()
+            end
+            return
+        end
+
+        SimpleTeleport(tpCF * CFrame.new(0, 4, 2), "Waterfall (Hydra)")
+        task.wait(1)
+
+        -- если SealedKatana / ClickDetector не нашли в Waterfall, пробуем весь Workspace
+        if (not handle) or (not cd) then
+            local sealedModel
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Model") and obj.Name == "SealedKatana" then
+                    sealedModel = obj
+                    break
+                end
+            end
+            if sealedModel then
+                handle = sealedModel:FindFirstChild("Handle")
+                      or sealedModel:FindFirstChildWhichIsA("BasePart")
+                      or sealedModel
+                if handle then
+                    cd = handle:FindFirstChildOfClass("ClickDetector")
+                      or handle:FindFirstChild("ClickDetector")
+                end
+            end
+        end
+
+        if not cd then
+            if tick() - lastWaterfallLog > 5 then
+                AddLog("❌ SealedKatana.Handle.ClickDetector не найден рядом с Waterfall.")
+                lastWaterfallLog = tick()
+            end
+            return
+        end
+
+        AddLog("Нашёл SealedKatana.ClickDetector у Waterfall, спамлю клики (как в 12к).")
+
+        for i = 1, 80 do
+            if HasSword("Yama") then
+                AddLog("✅ Yama получена!")
+                EquipToolByName("Yama")
+                return
+            end
+            pcall(function()
+                fireclickdetector(cd)
+            end)
+            task.wait(0.25)
+        end
+
+        if HasSword("Yama") then
+            AddLog("✅ Yama получена после цикла кликов.")
+            EquipToolByName("Yama")
+        else
+            AddLog("⚠️ Не удалось получить Yama возле Waterfall. Возможно, не выполнены условия квеста.")
+        end
+
+        return
+    end
+
+    ------------------------------------------------
+    -- 2) фарм элиток, пока прогресс < 30
+    ------------------------------------------------
+    UpdateStatus("Yama: фарм Elite Hunter (" .. tostring(progress) .. "/30).")
+
+    local title, visible = GetQuestTitleText()
+    local haveQuest = visible and (
+        string.find(title, "Diablo")
+        or string.find(title, "Deandre")
+        or string.find(title, "Urban")
+    )
+
+    -- квеста нет — берём новый
+    if not haveQuest then
+        local diff = now - lastEliteRequest
+
+        if diff < 60 then
+            if math.floor(diff) % 10 == 0 then
+                AddLog("Жду кулдаун Elite Hunter: " .. tostring(60 - math.floor(diff)) .. " сек.")
+            end
+            return
+        end
+
+        AddLog("Пробую взять квест Elite Hunter.")
+        SimpleTeleport(EliteNPCPos, "Elite Hunter NPC")
+
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if hrp and (hrp.Position - EliteNPCPos.Position).Magnitude <= 10 then
+            pcall(function()
+                remote:InvokeServer("EliteHunter")
+            end)
+            lastEliteRequest       = now
+            lastEliteProgressCheck = 0
+            AddLog("Квест EliteHunter запрошен.")
+        else
+            AddLog("Не удалось подойти к Elite Hunter NPC (слишком далеко).")
+        end
+
+        return
+    end
+
+    -- квест есть — ищем элитку
+    local elite = FindEliteBoss()
+    if elite then
+        AddLog("Нашёл элитного босса: " .. elite.Name .. ", начинаю бой.")
+        FightBossOnce(elite, "Elite " .. elite.Name)
+        lastEliteProgressCheck = 0
+        if AutoYama then
+            SimpleTeleport(EliteNPCPos, "Elite Hunter NPC (после боя)")
+        end
+    else
+        AddLog("Yama: квест на элиту есть, но сам босс не найден (жду спавна).")
+    end
+end
+
+---------------------
+-- ЛОГИКА TUSHITA (как раньше, с Holy Torch / факелами)
+---------------------
+local function RunTushitaLogic()
+    if not IsThirdSea() then
+        if not WarnNoThirdSeaForTushita then
+            WarnNoThirdSeaForTushita = true
+            UpdateStatus("Tushita: нужно быть в 3-м море (остров Turtle).")
+            AddLog("❌ Не вижу 3-е море — включи Auto Tushita в нужном мире.")
+        end
+        return
+    end
+
+    if HasSword("Tushita") then
+        UpdateStatus("Tushita уже есть (меч в инвентаре).")
+        EquipToolByName("Tushita")
+        return
+    end
+
+    local map = Workspace:FindFirstChild("Map")
+    if not map then
+        AddLog("❌ Map не найден.")
+        return
+    end
+
+    local turtle = map:FindFirstChild("Turtle") or map:FindFirstChild("Floating Turtle")
+    if not turtle then
+        local now = tick()
+        if now - lastTurtleTeleport > 15 then
+            lastTurtleTeleport = now
+            UpdateStatus("Tushita: лечу на Floating Turtle.")
+            AddLog("Turtle не найден в Map, телепортируюсь на Floating Turtle.")
+            SimpleTeleport(FloatingTurtlePos, "Floating Turtle")
+        end
+        return
+    end
+
+    local gate = turtle:FindFirstChild("TushitaGate")
+
+    -- 1) если нет двери → убиваем Longma
+    if not gate then
+        UpdateStatus("Tushita: убиваю Longma для открытия двери.")
+        local longma = CheckNameBoss("Longma [Lv. 2000] [Boss]")
+        if longma then
+            AddLog("Нашёл Longma, начинаю бой.")
+            FightBossOnce(longma, "Longma")
+        else
+            AddLog("Longma не найден, жду спавна.")
+        end
+        return
+    end
+
+    -- 2) дверь есть → rip_indra / Holy Torch / факелы
+    UpdateStatus("Tushita: дверь есть, работаю с rip_indra / Holy Torch / факелами.")
+
+    local indra = CheckNameBoss("rip_indra True Form [Lv. 5000] [Raid Boss]")
+    if not indra then
+        AddLog("Rip Indra не заспавнен. Жду рейд босса.")
+        return
+    end
+
+    local hasTorch = HasItemSimple("Holy Torch")
+
+    if not hasTorch then
+        AddLog("Нет Holy Torch — лечу к SecretRoom для факела.")
+        local waterfall = map:FindFirstChild("Waterfall")
+        if not waterfall then
+            AddLog("❌ Waterfall не найден.")
+            return
+        end
+
+        local secretRoom = waterfall:FindFirstChild("SecretRoom")
+        if not secretRoom or not secretRoom:FindFirstChild("Room") then
+            AddLog("❌ SecretRoom.Room не найден.")
+            return
+        end
+
+        local doorObj = secretRoom.Room:FindFirstChild("Door")
+        local hitbox
+        if doorObj then
+            if doorObj:FindFirstChild("Door") and doorObj.Door:FindFirstChild("Hitbox") then
+                hitbox = doorObj.Door.Hitbox
+            else
+                hitbox = doorObj:FindFirstChild("Hitbox")
+            end
+        end
+
+        if hitbox and hitbox:IsA("BasePart") then
+            SimpleTeleport(hitbox.CFrame * CFrame.new(0, 4, 2), "SecretRoom (Holy Torch)")
+            AddLog("Подлетел к двери SecretRoom, дальше бери Holy Torch по условиям квеста.")
+        else
+            AddLog("❌ Hitbox двери SecretRoom не найден.")
+        end
+
+        return
+    end
+
+    -- Holy Torch есть → активируем факелы
+    EquipToolByName("Holy Torch")
+    UpdateStatus("Tushita: активирую факелы на Turtle (Holy Torch).")
+
+    local torch = CheckTorch()
+    if not torch then
+        AddLog("Все факелы, похоже, уже зажжены или следующий факел не найден.")
+        return
+    end
+
+    AddLog("Нашёл неактивный факел: " .. torch.Name .. ", лечу и жму E.")
+    SimpleTeleport(torch.CFrame * CFrame.new(0, 4, 2), "QuestTorch "..torch.Name)
+
+    task.wait(0.5)
+    VirtualInputManager:SendKeyEvent(true, "E", false, game)
+    task.wait(0.1)
+    VirtualInputManager:SendKeyEvent(false, "E", false, game)
+
+    AddLog("Нажал E у факела " .. torch.Name .. ".")
+end
+
+---------------------
 -- ТИКИ КВЕСТОВ / МАСТЕРИ
 ---------------------
 spawn(function()
     while task.wait(0.4) do
         if AutoCDK then
-            if NeedMastery then
-                pcall(MasteryTick)
-            else
+    -- 0) СНАЧАЛА проверяем, получены ли сами мечи
+    -- Если нет Yama — сначала занимаемся только получением Yama
+    if not HasSword(SwordYamaName) then
+        UpdateStatus("AutoCDK: сначала получаю меч Yama")
+        RunYamaLogic()      -- функция, которую ты вставил из второго скрипта
+        return              -- выходим из pcall-итерации, на следующем тике проверится снова
+    end
+
+    -- Если Yama уже есть, но нет Tushita — занимаемся Tushita
+    if not HasSword(SwordTushitaName) then
+        UpdateStatus("AutoCDK: сначала получаю меч Tushita")
+        RunTushitaLogic()   -- функция из второго скрипта
+        return
+    end
+
+    -- 1) Если оба меча уже есть — работаем по старой логике AutoCDK
+    if NeedMastery then
+        -- твоя старая логика мастерки
+        pcall(MasteryTickYamaAndTushita)
+    else
                 if AutoYama1    then pcall(YamaQuest1Tick)    end
                 if AutoYama2    then pcall(YamaQuest2Tick)    end
                 if AutoYama3    then pcall(YamaQuest3Tick)    end
@@ -2332,8 +2844,26 @@ spawn(function()
                 if AutoTushita2 then pcall(TushitaQuest2Tick) end
                 if AutoTushita3 then pcall(TushitaQuest3Tick) end
                 if AutoCDK_Boss then pcall(RunCDKBossCycle)   end
-            end
-        end
+        -- твоя логика стадий: AF -1, 0,1,2,3 и т.д.
+        -- здесь оставляешь то, что у тебя было, НИЧЕГО не меняя
+        -- (Yama/Tushita квесты, Bones, Hallow, Trials и т.п.)
+        -- ...
+    end
+end
+
+        
+          --  if NeedMastery then
+            --    pcall(MasteryTick)
+          --  else
+           --     if AutoYama1    then pcall(YamaQuest1Tick)    end
+           --     if AutoYama2    then pcall(YamaQuest2Tick)    end
+            --    if AutoYama3    then pcall(YamaQuest3Tick)    end
+             --   if AutoTushita1 then pcall(TushitaQuest1Tick) end
+              --  if AutoTushita2 then pcall(TushitaQuest2Tick) end
+             --   if AutoTushita3 then pcall(TushitaQuest3Tick) end
+              --  if AutoCDK_Boss then pcall(RunCDKBossCycle)   end
+          --  end
+     --   end
     end
 end)
 
