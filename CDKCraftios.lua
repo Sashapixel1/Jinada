@@ -32,6 +32,10 @@ local HauntedFallback    = CFrame.new(-9515.129, 142.233, 6200.441)
 -- Soul Reaper spawn (Yama3)
 local SoulReaperSpawnCF  = CFrame.new(-9570.033203125, 315.9346923828125, 6726.89306640625)
 
+-- Алтарь CDK (крафт CDK + босс)
+local CDKAltarPos   = CFrame.new(-12361.7060546875, 603.3547973632812, -6550.5341796875)
+local CDKAfterPos   = CFrame.new(-12253.5419921875, 598.8999633789062, -6546.8388671875)
+
 -- Максимум роллов костей в Yama3 (как в AutoBones)
 local MaxRollsPerWindow  = 10
 local RollWindowDuration = 2*60*60 + 5*60
@@ -138,6 +142,10 @@ local DoorOpened     = false
 local IsTeleporting  = false
 local StopTween      = false
 local NoclipEnabled  = false
+
+-- CDK Craft+Boss (алтарь + Cursed Skeleton Boss)
+local AutoCDK_Boss   = false
+local BossIsFighting = false
 
 -- флаги квестов
 local AutoYama1      = false
@@ -1797,19 +1805,15 @@ local function TushitaQuest3Tick()
     if not AutoTushita3 or not AutoCDK then return end
 
     local af = GetCountMaterials("Alucard Fragment")
+       local af = GetCountMaterials("Alucard Fragment")
     if af >= 6 then
         AutoTushita3 = false
-        UpdateStatus("Tushita3: 6-й фрагмент получен. Готово.")
-        AutoCDK = false
-        NoclipEnabled = false
-        StopTween = true
-        if BtnCDK then
-            BtnCDK.Text = "Auto CDK: OFF"
-            BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
-        end
-        AddLog("Готово: 6 Alucard Fragment. Все квесты завершены.")
+        UpdateStatus("Tushita3: 6-й фрагмент, запускаю CDK Craft+Boss.")
+        AddLog("Tushita3: Alucard Fragment = 6, переход к CDK Craft+Boss.")
+        AutoCDK_Boss = true
         return
     end
+
 
     local dim = HeavenlyDimensionFolder()
     if not dim then
@@ -1879,6 +1883,232 @@ local function TushitaQuest3Tick()
     if T3_HeavenlyStage >= 4 then
         UpdateStatus("Tushita3: жду завершения HeavenlyDimension.")
     end
+end
+
+---------------------
+-- CDK Craft + Cursed Skeleton Boss (Alucard Fragment >= 6)
+---------------------
+
+local function IsCDKBossModel(model)
+    if not model or not model:IsA("Model") then return false end
+    return string.find(model.Name, "Cursed Skeleton Boss") ~= nil
+end
+
+local function FindNearestCDKBoss(maxDist)
+    maxDist = maxDist or 9999
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return nil end
+
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local best, bestDist = nil, maxDist
+    for _, v in ipairs(enemies:GetChildren()) do
+        if IsCDKBossModel(v)
+            and v:FindFirstChild("Humanoid")
+            and v:FindFirstChild("HumanoidRootPart")
+            and v.Humanoid.Health > 0 then
+
+            local d = (v.HumanoidRootPart.Position - hrp.Position).Magnitude
+            if d < bestDist then
+                bestDist = d
+                best     = v
+            end
+        end
+    end
+    return best
+end
+
+local function OnBossKilled()
+    AutoCDK_Boss = false
+    UpdateStatus("CDK: босс убит, крафт завершён.")
+    AddLog("Готово")  -- то, что ты просил
+
+    AutoCDK       = false
+    NoclipEnabled = false
+    StopTween     = true
+    if BtnCDK then
+        BtnCDK.Text = "Auto CDK: OFF"
+        BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    end
+end
+
+local function FightCDKBoss(target, label, maxTime)
+    maxTime = maxTime or 180
+    if not target then return end
+    if BossIsFighting then return end
+    BossIsFighting = true
+
+    local killedBoss = false
+
+    local ok, err = pcall(function()
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = target:FindFirstChild("Humanoid")
+        local tHRP = target:FindFirstChild("HumanoidRootPart")
+        if not (char and hrp and hum and tHRP) then return end
+
+        UpdateStatus(label or "CDK: Boss")
+        AddLog("Начинаю бой с CDK боссом: "..tostring(target.Name))
+
+        SimpleTeleport(tHRP.CFrame * FarmOffset, label or "CDK Boss")
+
+        local deadline      = tick() + maxTime
+        local lastPosAdjust = 0
+        local lastAttack    = 0
+        local engaged       = false
+
+        while AutoCDK and AutoCDK_Boss and target.Parent and hum.Health > 0 and tick() < deadline do
+            engaged = true
+
+            char = LocalPlayer.Character
+            hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            tHRP = target:FindFirstChild("HumanoidRootPart")
+            hum  = target:FindFirstChild("Humanoid")
+            if not (char and hrp and hum and tHRP) then break end
+
+            local dist = (tHRP.Position - hrp.Position).Magnitude
+            if dist > 2000 then
+                SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий CDK босс")
+            else
+                if tick() - lastPosAdjust > 0.05 then
+                    hrp.CFrame                 = tHRP.CFrame * FarmOffset
+                    hrp.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                    hrp.AssemblyAngularVelocity= Vector3.new(0,0,0)
+                    hrp.CanCollide             = false
+                    lastPosAdjust              = tick()
+                end
+            end
+
+            pcall(function()
+                tHRP.CanCollide   = false
+                hum.WalkSpeed     = 0
+                hum.JumpPower     = 0
+            end)
+
+            AutoHaki()
+
+            -- выбор оружия: сначала Tushita, если нет — Yama
+            EquipToolByName(SwordTushitaName)
+            if not IsToolEquipped(SwordTushitaName) then
+                EquipToolByName(SwordYamaName)
+            end
+
+            if tick() - lastAttack > 0.15 then
+                AttackModule:AttackEnemyModel(target)
+                lastAttack = tick()
+            end
+
+            RunService.Heartbeat:Wait()
+        end
+
+        if engaged then
+            hum = target:FindFirstChild("Humanoid")
+            local dead = hum and hum.Health <= 0
+            if dead or not target.Parent then
+                AddLog("✅ CDK босс убит: "..tostring(target.Name))
+                killedBoss = true
+            else
+                AddLog("⚠️ Бой с CDK боссом прерван.")
+            end
+        end
+    end)
+
+    if not ok then
+        AddLog("Ошибка FightCDKBoss: "..tostring(err))
+    end
+
+    BossIsFighting = false
+
+    if killedBoss then
+        OnBossKilled()
+    end
+end
+
+local function DoCDKAltarPhase()
+    if not AutoCDK or not AutoCDK_Boss then return end
+
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if not (char and hrp) then return end
+
+    -- 1) приоритет: если босс уже рядом с алтарём
+    local bossNear = FindNearestCDKBoss(250)
+    if bossNear then
+        UpdateStatus("CDK: босс рядом с алтарём, атакую.")
+        FightCDKBoss(bossNear, "CDK: Boss возле алтаря", 180)
+        return
+    end
+
+    -- 2) летим к алтарю
+    local dist = (hrp.Position - CDKAltarPos.Position).Magnitude
+    if dist > 120 then
+        UpdateStatus("CDK: лечу к алтарю.")
+        SimpleTeleport(CDKAltarPos, "CDK Altar")
+
+        task.wait(0.5)
+        bossNear = FindNearestCDKBoss(250)
+        if bossNear then
+            UpdateStatus("CDK: босс появился у алтаря, атакую.")
+            FightCDKBoss(bossNear, "CDK: Boss возле алтаря", 180)
+        end
+        return
+    end
+
+    -- 3) уже у алтаря, ещё раз чекаем босса
+    bossNear = FindNearestCDKBoss(250)
+    if bossNear then
+        UpdateStatus("CDK: босс рядом с алтарём, атакую.")
+        FightCDKBoss(bossNear, "CDK: Boss возле алтаря", 180)
+        return
+    end
+
+    -- 4) если босса нет – прогресс квеста + зажим E
+    UpdateStatus("CDK: взаимодействие с алтарём.")
+    AddLog("CDK: CDKQuest Progress Good/Evil + зажим E.")
+
+    pcall(function()
+        remote:InvokeServer("CDKQuest", "Progress", "Good")
+    end)
+    task.wait(1)
+    pcall(function()
+        remote:InvokeServer("CDKQuest", "Progress", "Evil")
+    end)
+    task.wait(1)
+
+    SimpleTeleport(CDKAltarPos, "CDK Altar")
+    task.wait(1.0)
+
+    -- используем твой уже существующий HoldEFor
+    HoldEFor(2)
+
+    task.wait(1.0)
+    SimpleTeleport(CDKAfterPos, "CDK After Pos")
+    AddLog("CDK: крафт/диалог у алтаря завершён, перемещение на позицию после алтаря.")
+end
+
+local function RunCDKBossCycle()
+    if not AutoCDK or not AutoCDK_Boss then return end
+
+    -- приоритет: если босс жив — бьём его
+    local bossNow = FindNearestCDKBoss(9999)
+    if bossNow then
+        UpdateStatus("CDK: Cursed Skeleton Boss обнаружен, атакую.")
+        FightCDKBoss(bossNow, "CDK: Boss", 180)
+        return
+    end
+
+    -- если босса нет – проверяем фрагменты
+    local fragments = GetCountMaterials("Alucard Fragment")
+    if fragments < 6 then
+        AddLog("CDK: фрагментов стало меньше 6, отключаю CDK Craft+Boss.")
+        AutoCDK_Boss = false
+        return
+    end
+
+    -- работаем с алтарём (он заспавнит босса)
+    DoCDKAltarPhase()
 end
 
 ---------------------
@@ -1972,16 +2202,10 @@ spawn(function()
                         AddLog("Перед Tushita3: Trial Good.")
                         CDKTrialModule.StartGoodTrial()
 
-                    elseif stage == 6 then
-                        UpdateStatus("Готово (6+ Alucard Fragment)")
-                        AddLog("Все 6 фрагментов уже есть, выключаю AutoCDK.")
-                        AutoCDK = false
-                        NoclipEnabled = false
-                        StopTween = true
-                        if BtnCDK then
-                            BtnCDK.Text = "Auto CDK: OFF"
-                            BtnCDK.BackgroundColor3 = Color3.fromRGB(60,60,60)
-                        end
+                                        elseif stage == 6 then
+                        UpdateStatus("CDK Craft+Boss (6+ Alucard Fragment)")
+                        AddLog("Все 6 фрагментов уже есть, запускаю CDK Craft+Boss.")
+                        AutoCDK_Boss = true
                     end
                 end
             end
@@ -2004,6 +2228,7 @@ spawn(function()
                 if AutoTushita1 then pcall(TushitaQuest1Tick) end
                 if AutoTushita2 then pcall(TushitaQuest2Tick) end
                 if AutoTushita3 then pcall(TushitaQuest3Tick) end
+                if AutoCDK_Boss then pcall(RunCDKBossCycle)   end
             end
         end
     end
