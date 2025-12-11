@@ -532,10 +532,10 @@ local function EquipToolByName(name)
     if toolFound then
         hum:UnequipTools()
         hum:EquipTool(toolFound)
-        AddLog("⚔️ Экипирован: "..toolFound.Name)
+        AddLog("⚔️ Экипирован: " .. toolFound.Name)
     else
         if tick() - lastEquipFailLog > 3 then
-            AddLog("⚠️ Не удалось найти оружие: "..name)
+            AddLog("⚠️ Не удалось найти оружие: " .. name)
             lastEquipFailLog = tick()
         end
     end
@@ -945,7 +945,7 @@ local function FightMobForWeapon(target, weaponName, label)
     end)
 
     if not ok then
-        AddLog("Ошибка FightMobForWeapon: "..tostring(err))
+        AddLog("Ошибка FightMobForWeapon: " .. tostring(err))
     end
 end
 
@@ -1055,8 +1055,8 @@ local function Yama2PatrolStep()
 
     Yama2LastPatrolHop = tick()
     local targetCF = Yama2PatrolPoints[idx] * FarmOffset
-    AddLog("Yama2: патруль к точке "..idx)
-    SimpleTeleport(targetCF, "Yama2 патруль "..idx)
+    AddLog("Yama2: патруль к точке " .. idx)
+    SimpleTeleport(targetCF, "Yama2 патруль " .. idx)
     Yama2PatrolHold = tick() + 5
 end
 
@@ -2909,9 +2909,8 @@ spawn(function()
             ------------------------------------------------
             -- 1) Оба меча уже есть → мастери/квесты как раньше
             ------------------------------------------------
-            if NeedMastery then
-                -- твоя функция мастери
-                MasteryTick()
+           if NeedMastery then
+    pcall(MasteryTick)
             else
                 if AutoYama1    then YamaQuest1Tick()    end
                 if AutoYama2    then YamaQuest2Tick()    end
