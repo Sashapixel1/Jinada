@@ -1349,41 +1349,39 @@ end
 
 local function HandleSoulReaperPhaseYama3()
     local map = Workspace:FindFirstChild("Map")
-    local hd  = map and map:FindFirstChild("HellDimension")
+    local hd = map and map:FindFirstChild("HellDimension")
     if hd then
+        -- Уже есть HellDimension, пусть основной цикл его обработает
         return
     end
 
     local soul, sh, sHRP = FindSoulReaper()
     if not soul then
-        AddLog("Yama3: Soul Reaper не найден, лечу к спавну.")
-        SimpleTeleport(SoulReaperSpawnCF, "Soul Reaper spawn")
+        AddLog("Yama3: Soul Reaper не найден в Workspace, лечу к его спавну.")
+        SimpleTeleport(CFrame.new(-9570.033203125, 315.9346923828125, 6726.89306640625), "Soul Reaper spawn")
         return
     end
 
     UpdateStatus("Yama3: Soul Reaper найден, подлетаю и жду урона.")
-    AddLog("Yama3: подлетаю к Soul Reaper, не атакую, жду HP <= 500, затем ещё 10 сек стою.")
+    AddLog("Yama3: подлетаю к Soul Reaper и НЕ атакую, жду, пока он снимет HP до 500 или ниже.")
 
     local prevNoclip = NoclipEnabled
-    NoclipEnabled = false
+    NoclipEnabled = false   -- позволяем ударам нормально попадать
 
+    -- один раз подлетаем близко
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     sHRP       = soul:FindFirstChild("HumanoidRootPart")
-    sh         = soul:FindFirstChild("Humanoid")
-
     if hrp and sHRP then
-        hrp.CFrame = sHRP.CFrame * CFrame.new(0,0,-6)
+        hrp.CFrame = sHRP.CFrame * CFrame.new(0, 0, -6)
     end
 
     local waitDeadline = tick() + 120
-
     while AutoYama3
-        and AutoCDK
         and soul.Parent
-        and sh
         and sh.Health > 0
-        and tick() < waitDeadline do
+        and tick() < waitDeadline
+        and not (Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("HellDimension")) do
 
         char = LocalPlayer.Character
         hrp  = char and char:FindFirstChild("HumanoidRootPart")
@@ -1394,39 +1392,33 @@ local function HandleSoulReaperPhaseYama3()
             break
         end
 
-        local mapNow = Workspace:FindFirstChild("Map")
-        local hDimNow = mapNow and mapNow:FindFirstChild("HellDimension")
-        if hDimNow then
-            AddLog("Yama3: HellDimension уже появился, жду авто-переноса.")
-            NoclipEnabled = prevNoclip
-            return
-        end
-
+        -- если нас откинуло далеко (>120), один раз снова подлетаем
         local dist = (hrp.Position - sHRP.Position).Magnitude
         if dist > 120 then
             AddLog("Yama3: меня откинуло от Soul Reaper, подлетаю обратно.")
-            hrp.CFrame = sHRP.CFrame * CFrame.new(0,0,-6)
+            hrp.CFrame = sHRP.CFrame * CFrame.new(0, 0, -6)
         end
 
+        -- никакой атаки, просто стоим
         local phum = char:FindFirstChild("Humanoid")
         if phum and phum.Health <= 500 then
-            AddLog("Yama3: HP <= 500, стою 10 секунд и жду HellDimension.")
-            UpdateStatus("Yama3: жду 10 секунд перед HellDimension.")
+            AddLog("Yama3: HP персонажа <= 500, стою на месте 5 сек и жду переноса в HellDimension.")
+            UpdateStatus("Yama3: жду авто-переноса в HellDimension (5 сек)...")
 
             local t0 = tick()
-            local hellDetected = false
-
-            while AutoYama3 and AutoCDK and tick() - t0 < 10 do
-                local m  = Workspace:FindFirstChild("Map")
-                local hD = m and m:FindFirstChild("HellDimension")
-                if hD and not hellDetected then
-                    hellDetected = true
-                    AddLog("Yama3: HellDimension появился, но тп будет после полного таймера 10 сек.")
+            while AutoYama3 and tick() - t0 < 5 do
+                local m = Workspace:FindFirstChild("Map")
+                local hDim = m and m:FindFirstChild("HellDimension")
+                if hDim then
+                    AddLog("Yama3: HellDimension появился во время ожидания, не тпшусь принудительно.")
+                    NoclipEnabled = prevNoclip
+                    return
                 end
                 task.wait(0.1)
             end
 
-            local m2  = Workspace:FindFirstChild("Map")
+            -- 5 сек прошло, проверяем HellDimension
+            local m2 = Workspace:FindFirstChild("Map")
             local hDim2 = m2 and m2:FindFirstChild("HellDimension")
             if hDim2 then
                 local torch1 = hDim2:FindFirstChild("Torch1")
@@ -1436,18 +1428,18 @@ local function HandleSoulReaperPhaseYama3()
                     fallbackCf = torch1.CFrame
                 elseif exit and exit.CFrame then
                     fallbackCf = exit.CFrame
-                elseif hDim2:IsA("Model") and hDim2.PrimaryPart then
-                    fallbackCf = hDim2.PrimaryPart.CFrame
+                elseif hDim2:IsA("Model") and hDim2:GetPrimaryPartCFrame() then
+                    fallbackCf = hDim2:GetPrimaryPartCFrame()
                 end
 
                 if fallbackCf then
-                    AddLog("Yama3: 10 секунд прошли, HellDimension есть — телепорт внутрь.")
-                    SimpleTeleport(fallbackCf, "HellDimension")
+                    AddLog("Yama3: 5 сек прошло, HellDimension есть, тп туда вручную (fallback).")
+                    SimpleTeleport(fallbackCf, "HellDimension fallback")
                 else
-                    AddLog("Yama3: HellDimension есть, но нет Torch1/Exit для тп.")
+                    AddLog("Yama3: HellDimension есть, но нет Torch1/Exit, пропускаю тп.")
                 end
             else
-                AddLog("Yama3: 10 секунд прошло, HellDimension не появился.")
+                AddLog("Yama3: 5 сек прошло, HellDimension так и не появился, возвращаюсь к обычной логике.")
             end
 
             NoclipEnabled = prevNoclip
