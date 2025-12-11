@@ -410,63 +410,7 @@ function AttackModule:AttackEnemyModel(enemyModel)
     RegisterHit:FireServer(hrp, hitTable)
 end
 
-local function FightBossOnce(target, label)
-    if not target then return end
 
-    local ok, err = pcall(function()
-        local char = LocalPlayer.Character
-        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-        local hum  = target:FindFirstChild("Humanoid")
-        local tHRP = target:FindFirstChild("HumanoidRootPart")
-        if not (char and hrp and hum and tHRP) then return end
-
-        UpdateStatus(label or ("Бой с боссом: " .. target.Name))
-        SimpleTeleport(tHRP.CFrame * FarmOffset, label or "босс")
-
-        local deadline      = tick() + 120
-        local lastPosAdjust = 0
-        local lastAttack    = 0
-
-        while AutoCDK
-          and target.Parent
-          and hum.Health > 0
-          and tick() < deadline do
-
-            char = LocalPlayer.Character
-            hrp  = char and char:FindFirstChild("HumanoidRootPart")
-            tHRP = target:FindFirstChild("HumanoidRootPart")
-            hum  = target:FindFirstChild("Humanoid")
-            if not (char and hrp and tHRP and hum) then break end
-
-            local dist = (tHRP.Position - hrp.Position).Magnitude
-            if dist > 2000 then
-                SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий босс " .. (label or target.Name))
-            else
-                if tick() - lastPosAdjust > 0.05 then
-                    hrp.CFrame = tHRP.CFrame * FarmOffset
-                    hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
-                    hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-                    hrp.CanCollide = false
-                    lastPosAdjust = tick()
-                end
-            end
-
-            AutoHaki()
-            EquipToolByName(WeaponName)
-
-            if tick() - lastAttack > 0.15 then
-                AttackModule:AttackEnemyModel(target)
-                lastAttack = tick()
-            end
-
-            RunService.Heartbeat:Wait()
-        end
-    end)
-
-    if not ok then
-        AddLog("Ошибка в FightBossOnce: " .. tostring(err))
-    end
-end
 
 ---------------------
 -- ЭКИП / ХАКИ
@@ -539,6 +483,64 @@ local function EquipToolByName(name)
             AddLog("⚠️ Не удалось найти оружие: " .. name)
             lastEquipFailLog = tick()
         end
+    end
+end
+
+local function FightBossOnce(target, label)
+    if not target then return end
+
+    local ok, err = pcall(function()
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = target:FindFirstChild("Humanoid")
+        local tHRP = target:FindFirstChild("HumanoidRootPart")
+        if not (char and hrp and hum and tHRP) then return end
+
+        UpdateStatus(label or ("Бой с боссом: " .. target.Name))
+        SimpleTeleport(tHRP.CFrame * FarmOffset, label or "босс")
+
+        local deadline      = tick() + 120
+        local lastPosAdjust = 0
+        local lastAttack    = 0
+
+        while AutoCDK
+          and target.Parent
+          and hum.Health > 0
+          and tick() < deadline do
+
+            char = LocalPlayer.Character
+            hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            tHRP = target:FindFirstChild("HumanoidRootPart")
+            hum  = target:FindFirstChild("Humanoid")
+            if not (char and hrp and tHRP and hum) then break end
+
+            local dist = (tHRP.Position - hrp.Position).Magnitude
+            if dist > 2000 then
+                SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий босс " .. (label or target.Name))
+            else
+                if tick() - lastPosAdjust > 0.05 then
+                    hrp.CFrame = tHRP.CFrame * FarmOffset
+                    hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
+                    hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                    hrp.CanCollide = false
+                    lastPosAdjust = tick()
+                end
+            end
+
+            AutoHaki()
+            EquipToolByName(WeaponName)
+
+            if tick() - lastAttack > 0.15 then
+                AttackModule:AttackEnemyModel(target)
+                lastAttack = tick()
+            end
+
+            RunService.Heartbeat:Wait()
+        end
+    end)
+
+    if not ok then
+        AddLog("Ошибка в FightBossOnce: " .. tostring(err))
     end
 end
 
