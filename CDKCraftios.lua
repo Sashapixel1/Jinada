@@ -2816,55 +2816,48 @@ end
 ---------------------
 spawn(function()
     while task.wait(0.4) do
-        if AutoCDK then
-    -- 0) СНАЧАЛА проверяем, получены ли сами мечи
-    -- Если нет Yama — сначала занимаемся только получением Yama
-    if not HasSword(SwordYamaName) then
-        UpdateStatus("AutoCDK: сначала получаю меч Yama")
-        RunYamaLogic()      -- функция, которую ты вставил из второго скрипта
-        return              -- выходим из pcall-итерации, на следующем тике проверится снова
-    end
+        local ok, err = pcall(function()
+            if not AutoCDK then
+                return
+            end
 
-    -- Если Yama уже есть, но нет Tushita — занимаемся Tushita
-    if not HasSword(SwordTushitaName) then
-        UpdateStatus("AutoCDK: сначала получаю меч Tushita")
-        RunTushitaLogic()   -- функция из второго скрипта
-        return
-    end
+            ------------------------------------------------
+            -- 0) СНАЧАЛА проверяем, получены ли сами мечи
+            ------------------------------------------------
+            if not HasSword(SwordYamaName) then
+                UpdateStatus("AutoCDK: сначала получаю меч Yama")
+                RunYamaLogic()      -- логика получения Yama
+                return              -- на этом тике больше ничего не делаем
+            end
 
-    -- 1) Если оба меча уже есть — работаем по старой логике AutoCDK
-    if NeedMastery then
-        -- твоя старая логика мастерки
-        pcall(MasteryTickYamaAndTushita)
-    else
-                if AutoYama1    then pcall(YamaQuest1Tick)    end
-                if AutoYama2    then pcall(YamaQuest2Tick)    end
-                if AutoYama3    then pcall(YamaQuest3Tick)    end
-                if AutoTushita1 then pcall(TushitaQuest1Tick) end
-                if AutoTushita2 then pcall(TushitaQuest2Tick) end
-                if AutoTushita3 then pcall(TushitaQuest3Tick) end
-                if AutoCDK_Boss then pcall(RunCDKBossCycle)   end
-        -- твоя логика стадий: AF -1, 0,1,2,3 и т.д.
-        -- здесь оставляешь то, что у тебя было, НИЧЕГО не меняя
-        -- (Yama/Tushita квесты, Bones, Hallow, Trials и т.п.)
-        -- ...
-    end
-end
+            if not HasSword(SwordTushitaName) then
+                UpdateStatus("AutoCDK: сначала получаю меч Tushita")
+                RunTushitaLogic()   -- логика получения Tushita
+                return
+            end
 
-        
-          --  if NeedMastery then
-            --    pcall(MasteryTick)
-          --  else
-           --     if AutoYama1    then pcall(YamaQuest1Tick)    end
-           --     if AutoYama2    then pcall(YamaQuest2Tick)    end
-            --    if AutoYama3    then pcall(YamaQuest3Tick)    end
-             --   if AutoTushita1 then pcall(TushitaQuest1Tick) end
-              --  if AutoTushita2 then pcall(TushitaQuest2Tick) end
-             --   if AutoTushita3 then pcall(TushitaQuest3Tick) end
-              --  if AutoCDK_Boss then pcall(RunCDKBossCycle)   end
-          --  end
-     --   end
-    --end
+            ------------------------------------------------
+            -- 1) Оба меча уже есть → мастери/квесты как раньше
+            ------------------------------------------------
+            if NeedMastery then
+                -- твоя функция мастери
+                MasteryTick()
+            else
+                if AutoYama1    then YamaQuest1Tick()    end
+                if AutoYama2    then YamaQuest2Tick()    end
+                if AutoYama3    then YamaQuest3Tick()    end
+                if AutoTushita1 then TushitaQuest1Tick() end
+                if AutoTushita2 then TushitaQuest2Tick() end
+                if AutoTushita3 then TushitaQuest3Tick() end
+                if AutoCDK_Boss then RunCDKBossCycle()   end
+            end
+        end)
+
+        if not ok then
+            AddLog("Ошибка в тиках мастери/квестов: " .. tostring(err))
+        end
+    end
 end)
 
 AddLog("AutoCDK загружен. Включай кнопку в 3-м море (Haunted Castle / Castle on the Sea / Cake Queen).")
+
