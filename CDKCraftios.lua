@@ -175,6 +175,20 @@ local lastRollAttempt = 0
 -- HeavenlyDimension (Tushita3)
 local T3_HeavenlyStage = 0
 
+-- флаги и таймеры для логики получения Yama/Tushita
+local WarnNoThirdSeaForTushita = false
+local WarnNoThirdSeaForYama    = false
+
+local lastEliteRequest         = 0
+local lastEliteProgressCheck   = 0
+local cachedEliteProgress      = 0
+
+local lastWaterfallLog         = 0
+local lastTurtleTeleport       = 0
+
+-- позиция Floating Turtle для RunTushitaLogic (можно взять любую нормальную точку суши на Turtle)
+local FloatingTurtlePos = CFrame.new(-13274.528320313, 531.82073974609, -7579.22265625)
+
 ---------------------
 -- ЛОГИ / GUI
 ---------------------
@@ -393,6 +407,64 @@ function AttackModule:AttackEnemyModel(enemyModel)
     RegisterAttack:FireServer(0)
     RegisterAttack:FireServer(1)
     RegisterHit:FireServer(hrp, hitTable)
+end
+
+local function FightBossOnce(target, label)
+    if not target then return end
+
+    local ok, err = pcall(function()
+        local char = LocalPlayer.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = target:FindFirstChild("Humanoid")
+        local tHRP = target:FindFirstChild("HumanoidRootPart")
+        if not (char and hrp and hum and tHRP) then return end
+
+        UpdateStatus(label or ("Бой с боссом: " .. target.Name))
+        SimpleTeleport(tHRP.CFrame * FarmOffset, label or "босс")
+
+        local deadline      = tick() + 120
+        local lastPosAdjust = 0
+        local lastAttack    = 0
+
+        while AutoCDK
+          and target.Parent
+          and hum.Health > 0
+          and tick() < deadline do
+
+            char = LocalPlayer.Character
+            hrp  = char and char:FindFirstChild("HumanoidRootPart")
+            tHRP = target:FindFirstChild("HumanoidRootPart")
+            hum  = target:FindFirstChild("Humanoid")
+            if not (char and hrp and tHRP and hum) then break end
+
+            local dist = (tHRP.Position - hrp.Position).Magnitude
+            if dist > 2000 then
+                SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий босс " .. (label or target.Name))
+            else
+                if tick() - lastPosAdjust > 0.05 then
+                    hrp.CFrame = tHRP.CFrame * FarmOffset
+                    hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
+                    hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
+                    hrp.CanCollide = false
+                    lastPosAdjust = tick()
+                end
+            end
+
+            AutoHaki()
+            EquipToolByName(WeaponName)
+
+            if tick() - lastAttack > 0.15 then
+                AttackModule:AttackEnemyModel(target)
+                lastAttack = tick()
+            end
+
+            RunService.Heartbeat:Wait()
+        end
+    end)
+
+    if not ok then
+        AddLog("Ошибка в FightBossOnce: " .. tostring(err))
+    end
 end
 
 ---------------------
@@ -2682,14 +2754,12 @@ local function RunYamaLogic()
     -- квест есть — ищем элитку
     local elite = FindEliteBoss()
     if elite then
-        AddLog("Нашёл элитного босса: " .. elite.Name .. ", начинаю бой.")
-        FightBossOnce(elite, "Elite " .. elite.Name)
-        lastEliteProgressCheck = 0
-        if AutoYama then
-            SimpleTeleport(EliteNPCPos, "Elite Hunter NPC (после боя)")
-        end
+    AddLog("Нашёл элитного босса: " .. elite.Name .. ", начинаю бой.")
+    FightBossOnce(elite, "Elite " .. elite.Name)
+    lastEliteProgressCheck = 0
+    SimpleTeleport(EliteNPCPos, "Elite Hunter NPC (после боя)")
     else
-        AddLog("Yama: квест на элиту есть, но сам босс не найден (жду спавна).")
+    AddLog("Yama: квест на элиту есть, но сам босс не найден (жду спавна).")
     end
 end
 
@@ -2804,9 +2874,9 @@ local function RunTushitaLogic()
     SimpleTeleport(torch.CFrame * CFrame.new(0, 4, 2), "QuestTorch "..torch.Name)
 
     task.wait(0.5)
-    VirtualInputManager:SendKeyEvent(true, "E", false, game)
+    VirtualInput:SendKeyEvent(true, "E", false, game)
     task.wait(0.1)
-    VirtualInputManager:SendKeyEvent(false, "E", false, game)
+    VirtualInput:SendKeyEvent(false, "E", false, game)
 
     AddLog("Нажал E у факела " .. torch.Name .. ".")
 end
