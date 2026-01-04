@@ -1,9 +1,7 @@
--- ✅ Race Checker with GUI Log (STABLE VERSION)
--- НЕ зависает, НЕ требует открытия инвентаря
+-- ✅ Race Checker — FINAL STABLE VERSION
+-- GUI лог + защита от тихих ошибок
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
@@ -61,11 +59,11 @@ logLabel.BackgroundTransparency = 1
 logLabel.Text = ""
 
 --------------------------------------------------
--- ЛОГ ФУНКЦИЯ (ГАРАНТИРОВАННАЯ)
+-- ЛОГ ФУНКЦИЯ (БЕЗ ОПАСНЫХ YIELD)
 --------------------------------------------------
 local function log(text)
-    logLabel.Text ..= text .. "\n"
-    RunService.Heartbeat:Wait()
+    logLabel.Text = logLabel.Text .. text .. "\n"
+    task.wait()
     logLabel.Size = UDim2.new(1,-10,0,logLabel.TextBounds.Y + 10)
     scroll.CanvasSize = UDim2.new(0,0,0,logLabel.TextBounds.Y + 20)
     scroll.CanvasPosition = Vector2.new(
@@ -75,59 +73,63 @@ local function log(text)
 end
 
 --------------------------------------------------
--- ПОИСК РАСЫ
---------------------------------------------------
-local function checkRace()
-    -- 1️⃣ Data.Race
-    local data = player:FindFirstChild("Data")
-    if data and data:FindFirstChild("Race") then
-        local race = tostring(data.Race.Value)
-        log("✔ Найдено в Data.Race: " .. race)
-        if race:find(RACE_KEYWORD) then
-            return race, "Data.Race"
-        end
-    else
-        log("✖ Data.Race не найден")
-    end
-
-    -- 2️⃣ Attribute
-    local attr = player:GetAttribute("Race")
-    if attr then
-        local race = tostring(attr)
-        log("✔ Найдено в Attribute Race: " .. race)
-        if race:find(RACE_KEYWORD) then
-            return race, "Attribute"
-        end
-    else
-        log("✖ Attribute Race отсутствует")
-    end
-
-    return nil
-end
-
---------------------------------------------------
--- ОСНОВНОЙ ЦИКЛ
+-- ОСНОВНОЙ КОД (ЗАЩИЩЁННЫЙ)
 --------------------------------------------------
 task.spawn(function()
-    log("▶ Старт поиска расы")
-    log("🔎 Ключ: " .. RACE_KEYWORD)
-    log("🔁 Попыток: " .. SCAN_ATTEMPTS)
-    log("--------------------------------")
+    local ok, err = pcall(function()
 
-    for attempt = 1, SCAN_ATTEMPTS do
-        log("🔄 Попытка #" .. attempt)
+        log("▶ Старт поиска расы")
+        log("🔎 Ключ: " .. RACE_KEYWORD)
+        log("🔁 Попыток: " .. SCAN_ATTEMPTS)
+        log("--------------------------------")
 
-        local race, source = checkRace()
-        if race then
-            log("✅ РАСА НАЙДЕНА!")
-            log("🎯 Race: " .. race)
-            log("📍 Source: " .. source)
-            return
+        for attempt = 1, SCAN_ATTEMPTS do
+            log("🔄 Попытка #" .. attempt)
+
+            local data = player:FindFirstChild("Data")
+            if data then
+                log("✔ Data найдено")
+
+                local raceValue = data:FindFirstChild("Race")
+                if raceValue then
+                    local race = tostring(raceValue.Value)
+                    log("✔ Найдено Data.Race: " .. race)
+
+                    if race:find(RACE_KEYWORD) then
+                        log("✅ РАСА НАЙДЕНА!")
+                        log("🎯 Race: " .. race)
+                        log("📍 Source: Data.Race")
+                        return
+                    end
+                else
+                    log("✖ Data.Race отсутствует")
+                end
+            else
+                log("✖ Data отсутствует")
+            end
+
+            local attrRace = player:GetAttribute("Race")
+            if attrRace then
+                log("✔ Attribute Race: " .. tostring(attrRace))
+                if tostring(attrRace):find(RACE_KEYWORD) then
+                    log("✅ РАСА НАЙДЕНА!")
+                    log("🎯 Race: " .. tostring(attrRace))
+                    log("📍 Source: Attribute")
+                    return
+                end
+            else
+                log("✖ Attribute Race отсутствует")
+            end
+
+            log("⏳ Ожидание " .. SCAN_DELAY .. " сек...\n")
+            task.wait(SCAN_DELAY)
         end
 
-        log("⏳ Ожидание " .. SCAN_DELAY .. " сек...\n")
-        task.wait(SCAN_DELAY)
-    end
+        log("❌ Раса не найдена после всех попыток")
+    end)
 
-    log("❌ Раса не найдена")
+    if not ok then
+        log("💥 ОШИБКА СКРИПТА:")
+        log(tostring(err))
+    end
 end)
