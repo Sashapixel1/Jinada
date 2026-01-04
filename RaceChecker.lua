@@ -1,10 +1,12 @@
--- ✅ Race Checker (FIXED)
--- Ищет расу через GUI инвентаря (Items / Items > Build)
--- Делает несколько попыток и логирует каждый шаг
+-- Race Checker (через getInventory, БЕЗ открытия GUI)
+-- Основано на твоём коде скана фруктов / ганов
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 --------------------------------------------------
 -- НАСТРОЙКИ
@@ -16,10 +18,9 @@ local RACE_KEYWORD = "Human"
 --------------------------------------------------
 -- UI: ЛОГ ПАНЕЛЬ
 --------------------------------------------------
-local gui = Instance.new("ScreenGui")
+local gui = Instance.new("ScreenGui", playerGui)
 gui.Name = "RaceCheckerUI"
 gui.ResetOnSpawn = false
-gui.Parent = playerGui
 
 local frame = Instance.new("Frame", gui)
 frame.Size = UDim2.new(0, 520, 0, 360)
@@ -28,7 +29,7 @@ frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
 
 local title = Instance.new("TextLabel", frame)
 title.Size = UDim2.new(1,0,0,30)
-title.Text = "Race Checker — GUI Scan"
+title.Text = "Race Checker — getInventory scan"
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
 title.TextColor3 = Color3.new(1,1,1)
@@ -54,63 +55,68 @@ logLabel.BackgroundTransparency = 1
 logLabel.Text = ""
 
 --------------------------------------------------
--- ЛОГ ФУНКЦИЯ
+-- ЛОГ
 --------------------------------------------------
-local function log(txt)
-    logLabel.Text ..= txt .. "\n"
+local function log(text)
+    logLabel.Text ..= text .. "\n"
     task.wait()
     logLabel.Size = UDim2.new(1,-10,0,logLabel.TextBounds.Y + 10)
     scroll.CanvasSize = UDim2.new(0,0,0,logLabel.TextBounds.Y + 20)
-    scroll.CanvasPosition = Vector2.new(0, math.max(0, scroll.CanvasSize.Y.Offset - scroll.AbsoluteWindowSize.Y))
+    scroll.CanvasPosition = Vector2.new(
+        0,
+        math.max(0, scroll.CanvasSize.Y.Offset - scroll.AbsoluteWindowSize.Y)
+    )
 end
 
 --------------------------------------------------
--- СКАН GUI НА RACE
+-- СКАН getInventory
 --------------------------------------------------
-local function scanForRace(root)
-    for _, obj in ipairs(root:GetDescendants()) do
-        if obj:IsA("TextLabel") or obj:IsA("TextButton") then
-            if typeof(obj.Text) == "string" and obj.Text:find(RACE_KEYWORD) then
-                return obj, obj.Text
-            end
+local function scanRaceFromInventory(invTable)
+    for i, item in ipairs(invTable) do
+        local name = item.Name or item.name or ""
+        local itemType = item.Type or item.type or "unknown"
+
+        log("   • Item #" .. i .. ": " .. tostring(name) .. " | type=" .. tostring(itemType))
+
+        if typeof(name) == "string" and name:find(RACE_KEYWORD) then
+            return name, itemType
         end
     end
     return nil
 end
 
 --------------------------------------------------
--- ОСНОВНОЙ СКАН
+-- ОСНОВНАЯ ЛОГИКА
 --------------------------------------------------
 task.spawn(function()
     log("▶ Старт поиска расы")
-    log("🔎 Ищем слово: " .. RACE_KEYWORD)
+    log("🔎 Ключевое слово: " .. RACE_KEYWORD)
     log("🔁 Попыток: " .. SCAN_ATTEMPTS)
     log("--------------------------------")
 
     for attempt = 1, SCAN_ATTEMPTS do
         log("🔄 Попытка #" .. attempt)
 
-        local foundAnyGui = false
+        local ok, invData = pcall(function()
+            return remote:InvokeServer("getInventory")
+        end)
 
-        for _, guiObj in ipairs(playerGui:GetChildren()) do
-            if guiObj:IsA("ScreenGui") then
-                foundAnyGui = true
-                log("📦 Проверка GUI: " .. guiObj.Name)
-
-                local obj, text = scanForRace(guiObj)
-                if obj then
-                    log("✅ НАЙДЕНО: " .. text)
-                    log("📍 GUI: " .. guiObj.Name)
-                    log("🎯 ИТОГОВАЯ РАСА: " .. text)
-                    return
-                end
-            end
-        end
-
-        if not foundAnyGui then
-            log("⚠ PlayerGui пока пуст")
+        if not ok then
+            log("❌ Ошибка InvokeServer(getInventory)")
+        elseif typeof(invData) ~= "table" then
+            log("❌ getInventory вернул не таблицу")
         else
-            log("❌ Race не найдена в этой попытке")
+            log("✔ getInventory получен, items: " .. #invData)
+
+            local raceName, sourceType = scanRaceFromInventory(invData)
+            if raceName then
+                log("✅ РАСА НАЙДЕНА!")
+                log("🎯 Race: " .. raceName)
+                log("📦 Source type: " .. tostring(sourceType))
+                return
+            end
+
+            log("❌ Human не найден в этом инвентаре")
         end
 
         log("⏳ Ожидание " .. SCAN_DELAY .. " сек...\n")
