@@ -554,11 +554,17 @@ local function GetInventory()
     return {}, false, ok and ("тип ответа: "..type(inv)) or tostring(inv)
 end
 
-local MaterialInventory = nil
+-- Current inventory protocol, verified in the running client:
+-- RF/GetAllItemValues -> { { ItemId = 578, Key = "Quantity", Value = 2 }, ... }
+-- Names/IDs come from Generated.Configs[*].Index.StorageKey / Index.ItemId.
+local MaterialIds = {}
+local MaterialIdLoadTime = -math.huge
+local MaterialQuantities = nil
 local MaterialScanTime = -math.huge
+local MaterialSuccessTime = -math.huge
 local MaterialScanBusy = false
-local MaterialScanError = nil
 local LastMaterialWarning = -math.huge
+local MaterialSourceLogged = false
 
 local function NormalizeMaterialName(name)
     local normalized = string.lower(tostring(name)):gsub("[^%w]", "")
@@ -566,207 +572,94 @@ local function NormalizeMaterialName(name)
     return normalized
 end
 
-local function ScanMaterialCount(inventory, materialName)
+local function GetMaterialId(materialName)
     local wanted = NormalizeMaterialName(materialName)
-    local found, count = false, nil
-    local visited = {}
-    local function accept(value)
-        if type(value) == "table" then
-            value = value.Value or value.value or value.Count or value.count
-        end
-        local n = tonumber(value)
-        if n and n == n and n >= 0 and n < math.huge and n % 1 == 0 then
-            count = math.max(count or 0, n)
-        end
-    end
-    local function scan(node, depth)
-        if type(node) ~= "table" or visited[node] or depth > 5 then return end
-        visited[node] = true
-        local name = node.Name or node.name or node.ItemName or node.DisplayName or node.Id
-        if name and NormalizeMaterialName(name) == wanted then
-            found = true
-            for _, field in ipairs({"Count", "count", "Amount", "amount", "Quantity", "quantity", "Value", "value"}) do
-                accept(node[field])
-            end
-        end
-        for key, value in pairs(node) do
-            if type(key) == "string" and NormalizeMaterialName(key) == wanted then
-                found = true
-                if type(value) == "table" then
-                    for _, field in ipairs({"Count", "count", "Amount", "amount", "Quantity", "quantity", "Value", "value"}) do
-                        accept(value[field])
+    if MaterialIds[wanted] then return MaterialIds[wanted] end
+    if tick() - MaterialIdLoadTime >= 10 then
+        MaterialIdLoadTime = tick()
+        local itemConfig = ReplicatedStorage:FindFirstChild("ItemConfig")
+        local generated = itemConfig and itemConfig:FindFirstChild("Generated")
+        local module = generated and generated:FindFirstChild("Configs")
+        if module then
+            local ok, data = pcall(require, module)
+            if ok and type(data) == "table" and type(data.Configs) == "table" then
+                for _, config in pairs(data.Configs) do
+                    local index = type(config) == "table" and config.Index
+                    if type(index) == "table" and index.IdType == "Material"
+                        and type(index.StorageKey) == "string" and tonumber(index.ItemId) then
+                        MaterialIds[NormalizeMaterialName(index.StorageKey)] = tonumber(index.ItemId)
                     end
-                else
-                    accept(value)
                 end
             end
-            if type(value) == "table" then scan(value, depth + 1) end
         end
     end
-    scan(inventory, 0)
-    -- A present item without a readable count is unknown, not zero.
-    if found then return count, true end
-    return 0, false
+    return MaterialIds[wanted]
 end
 
--- Replicated material values are independent of PlayerGui and selected items.
-local function ReadReplicatedMaterial(materialName)
-    local wanted = NormalizeMaterialName(materialName)
-    local function number(value)
-        local n = tonumber(value)
-        if n and n == n and n >= 0 and n < math.huge and n % 1 == 0 then return n end
-    end
-    for _, folderName in ipairs({"Data", "Inventory", "Materials"}) do
-        local root = LocalPlayer:FindFirstChild(folderName)
-        if root then
-            for key, value in pairs(root:GetAttributes()) do
-                if NormalizeMaterialName(key) == wanted then
-                    local n = number(value)
-                    if n ~= nil then return n end
+local function ParseItemQuantities(rows)
+    if type(rows) ~= "table" then return nil, "ответ не является таблицей" end
+    local items, validRecords = {}, false
+    for _, row in pairs(rows) do
+        if type(row) == "table" and tonumber(row.ItemId) and type(row.Key) == "string" then
+            validRecords = true
+            -- IsOwned/Mastery/Upgrade are independent properties, never quantities.
+            if row.Key == "Quantity" then
+                local value = tonumber(row.Value)
+                if not value or value ~= value or value < 0 or value >= math.huge or value % 1 ~= 0 then
+                    return nil, "неверное Quantity у ItemId="..tostring(row.ItemId)
                 end
-            end
-            for _, item in ipairs(root:GetDescendants()) do
-                if NormalizeMaterialName(item.Name) == wanted then
-                    if item:IsA("ValueBase") then
-                        local n = number(item.Value)
-                        if n ~= nil then return n end
-                    end
-                    for _, key in ipairs({"Count", "Amount", "Quantity", "Value"}) do
-                        local n = number(item:GetAttribute(key))
-                        if n ~= nil then return n end
-                        local value = item:FindFirstChild(key)
-                        if value and value:IsA("ValueBase") then
-                            n = number(value.Value)
-                            if n ~= nil then return n end
-                        end
-                    end
-                end
+                local id = tonumber(row.ItemId)
+                local uid = row.NetworkedUID or "aggregate"
+                items[id] = items[id] or {}
+                items[id][uid] = value
             end
         end
     end
-    return nil
+    if not validRecords then return nil, "пустой или неизвестный формат GetAllItemValues" end
+    local counts = {}
+    for id, instances in pairs(items) do
+        local total = 0
+        for _, quantity in pairs(instances) do total = total + quantity end
+        counts[id] = total
+    end
+    return counts
 end
 
--- Paths verified against the Dexter snapshot. Read Lua data, never UI or static item definitions.
-local PlayerDataModule = nil
-local PlayerDataLoadTime = -math.huge
-local PlayerDataReader = nil
-local PlayerDataProbeTime = -math.huge
-local MaterialSource = nil
-
-local function ReadPlayerDataMaterial(materialName)
-    local function read(callback, source)
-        local ok, data = pcall(callback)
-        if not ok or type(data) ~= "table" then return nil end
-        local count, found = ScanMaterialCount(data, materialName)
-        if found and count ~= nil then
-            if MaterialSource ~= source then
-                MaterialSource = source
-                AddLog("Материалы: источник "..source)
-            end
-            return count
+local function GetCountMaterials(materialName)
+    local id = GetMaterialId(materialName)
+    if not id then
+        if tick() - LastMaterialWarning >= 10 then
+            LastMaterialWarning = tick()
+            AddLog("Материалы: нет ItemId для "..materialName.." в ItemConfig.Generated.Configs")
         end
         return nil
     end
-    if PlayerDataReader then
-        local count = read(PlayerDataReader.callback, PlayerDataReader.source)
-        if count ~= nil then return count end
-        PlayerDataReader = nil
-    end
-    -- Unsupported APIs are probed at most once per ten seconds.
-    if tick() - PlayerDataProbeTime < 10 then return nil end
-    PlayerDataProbeTime = tick()
-    local function try(callback, source)
-        local count = read(callback, source)
-        if count ~= nil then PlayerDataReader = {callback = callback, source = source} end
-        return count
-    end
-    if not PlayerDataModule and tick() - PlayerDataLoadTime >= 10 then
-        PlayerDataLoadTime = tick()
-        local util = ReplicatedStorage:FindFirstChild("Util")
-        local module = util and util:FindFirstChild("ReplicatedPlayerData")
-        if module and module:IsA("ModuleScript") then
-            local ok, data = pcall(require, module)
-            if ok and type(data) == "table" then PlayerDataModule = data end
-        end
-    end
-    local dataModule = PlayerDataModule
-    if dataModule then
-        local count = try(function() return dataModule.Data or dataModule.Inventory or dataModule end,
-            "ReplicatedPlayerData.Data")
-        if count ~= nil then return count end
-        if type(dataModule.GetData) == "function" then
-            count = try(function() return dataModule.GetData() end, "ReplicatedPlayerData.GetData()")
-            if count ~= nil then return count end
-            count = try(function() return dataModule:GetData() end, "ReplicatedPlayerData:GetData()")
-            if count ~= nil then return count end
-        end
-        if type(dataModule.Get) == "function" then
-            for _, field in ipairs({"Inventory", "Materials"}) do
-                count = try(function() return dataModule.Get(field) end, "ReplicatedPlayerData.Get/"..field)
-                if count ~= nil then return count end
-                count = try(function() return dataModule:Get(field) end, "ReplicatedPlayerData:Get/"..field)
-                if count ~= nil then return count end
-            end
-        end
-    end
-    local modules = ReplicatedStorage:FindFirstChild("Modules")
-    local net = modules and modules:FindFirstChild("Net")
-    local readData = net and net:FindFirstChild("RF/ReadPlayerData")
-    if readData and readData:IsA("RemoteFunction") then
-        local count
-        for _, field in ipairs({"Inventory", "Materials"}) do
-            count = try(function() return readData:InvokeServer(field) end, "RF/ReadPlayerData/"..field)
-            if count ~= nil then return count end
-        end
-        count = try(function() return readData:InvokeServer() end, "RF/ReadPlayerData")
-        if count ~= nil then return count end
-    end
-    return nil
-end
-
-local LastMaterialCount = {}
-local PlayerDataScanTime = {}
-local PlayerDataScanBusy = false
-local function GetCountMaterials(materialName)
-    local replicated = ReadReplicatedMaterial(materialName)
-    if replicated ~= nil then
-        LastMaterialCount[materialName] = replicated
-        return replicated
-    end
-    if not PlayerDataScanBusy and tick() - (PlayerDataScanTime[materialName] or -math.huge) >= 1 then
-        PlayerDataScanBusy = true
-        local ok, count = pcall(ReadPlayerDataMaterial, materialName)
-        PlayerDataScanBusy = false
-        PlayerDataScanTime[materialName] = tick()
-        if ok and count ~= nil then
-            LastMaterialCount[materialName] = count
-            return count
-        end
-    elseif LastMaterialCount[materialName] ~= nil then
-        return LastMaterialCount[materialName]
-    end
     if not MaterialScanBusy and tick() - MaterialScanTime >= 1 then
         MaterialScanBusy = true
-        local inventory, ok, err = GetInventory()
-        MaterialInventory = ok and inventory or nil
-        MaterialScanError = err
         MaterialScanTime = tick()
+        local ok, counts, err = pcall(function()
+            local modules = ReplicatedStorage:FindFirstChild("Modules")
+            local net = modules and modules:FindFirstChild("Net")
+            local getValues = net and net:FindFirstChild("RF/GetAllItemValues")
+            if not getValues then return nil, "RF/GetAllItemValues не найден" end
+            return ParseItemQuantities(getValues:InvokeServer())
+        end)
         MaterialScanBusy = false
+        if ok and counts then
+            MaterialQuantities = counts
+            MaterialSuccessTime = tick()
+            if not MaterialSourceLogged then
+                MaterialSourceLogged = true
+                AddLog("Материалы: RF/GetAllItemValues, количество из Quantity по ItemId")
+            end
+        elseif tick() - LastMaterialWarning >= 10 then
+            LastMaterialWarning = tick()
+            AddLog("Материалы: "..tostring(ok and err or counts))
+        end
     end
-    local count
-    if MaterialInventory then count = ScanMaterialCount(MaterialInventory, materialName) end
-    if count ~= nil then
-        LastMaterialCount[materialName] = count
-        return count
-    end
-    if tick() - LastMaterialWarning >= 10 then
-        LastMaterialWarning = tick()
-        AddLog("Материалы: "..(MaterialScanError or "нет числового количества в записи")
-            .."; "..materialName.." не найден в ReplicatedPlayerData / RF/ReadPlayerData / getInventory.")
-    end
-    -- Retain a previously verified value during a failed request, never substitute zero.
-    return LastMaterialCount[materialName]
+    -- A failed request must not reset the quest to stage zero.
+    if not MaterialQuantities or tick() - MaterialSuccessTime > 5 then return nil end
+    return MaterialQuantities[id] or 0
 end
 
 local MasteryCache = {}
