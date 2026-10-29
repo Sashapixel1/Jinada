@@ -199,7 +199,7 @@ end
 
 local function UpdateAFLabel(count)
     if AFLabel then
-        AFLabel.Text = "Alucard Fragment: "..tostring(count or 0)
+        AFLabel.Text = "Alucard Fragment: "..(count ~= nil and tostring(count) or "?")
     end
 end
 
@@ -269,7 +269,7 @@ local function CreateMainGui()
     AFLabel.Font = Enum.Font.SourceSans
     AFLabel.TextSize = 14
     AFLabel.TextXAlignment = Enum.TextXAlignment.Left
-    AFLabel.Text = "Alucard Fragment: 0"
+    AFLabel.Text = "Alucard Fragment: ?"
     AFLabel.Parent = MainFrame
 
     MasteryLabel = Instance.new("TextLabel")
@@ -543,19 +543,72 @@ local function GetInventory()
         return remote:InvokeServer("getInventory")
     end)
     if ok and type(inv) == "table" then
-        return inv
+        return inv, true
     end
-    return {}
+    return {}, false
 end
 
-local function GetCountMaterials(MaterialName)
-    local Inventory = GetInventory()
-    for _, v in pairs(Inventory) do
-        if v.Name == MaterialName then
-            return v.Count or v.count or 0
+local MaterialInventory = nil
+local MaterialScanTime = -math.huge
+local MaterialScanBusy = false
+
+local function NormalizeMaterialName(name)
+    local normalized = string.lower(tostring(name)):gsub("[^%w]", "")
+    if normalized == "alucardfragments" then return "alucardfragment" end
+    return normalized
+end
+
+local function ScanMaterialCount(inventory, materialName)
+    local wanted = NormalizeMaterialName(materialName)
+    local found, count = false, nil
+    local visited = {}
+    local function accept(value)
+        local n = tonumber(value)
+        if n and n == n and n >= 0 and n < math.huge and n % 1 == 0 then
+            count = math.max(count or 0, n)
         end
     end
+    local function scan(node, depth)
+        if type(node) ~= "table" or visited[node] or depth > 5 then return end
+        visited[node] = true
+        local name = node.Name or node.name
+        if name and NormalizeMaterialName(name) == wanted then
+            found = true
+            for _, field in ipairs({"Count", "count", "Amount", "amount", "Quantity", "quantity", "Value", "value"}) do
+                accept(node[field])
+            end
+        end
+        for key, value in pairs(node) do
+            if type(key) == "string" and NormalizeMaterialName(key) == wanted then
+                found = true
+                if type(value) == "table" then
+                    for _, field in ipairs({"Count", "count", "Amount", "amount", "Quantity", "quantity", "Value", "value"}) do
+                        accept(value[field])
+                    end
+                else
+                    accept(value)
+                end
+            end
+            if type(value) == "table" then scan(value, depth + 1) end
+        end
+    end
+    scan(inventory, 0)
+    -- A present item without a readable count is unknown, not zero.
+    if found then return count end
     return 0
+end
+
+local function GetCountMaterials(materialName)
+    -- Share one server snapshot between the UI and quest loops.
+    if not MaterialScanBusy and tick() - MaterialScanTime >= 1 then
+        MaterialScanBusy = true
+        local inventory, ok = GetInventory()
+        MaterialInventory = ok and inventory or nil
+        MaterialScanTime = tick()
+        MaterialScanBusy = false
+    end
+    if not MaterialInventory then return nil end
+    return ScanMaterialCount(MaterialInventory, materialName)
 end
 
 local MasteryCache = {}
@@ -879,6 +932,7 @@ local function YamaQuest1Tick()
     if not AutoYama1 or not AutoCDK then return end
 
     local af = GetCountMaterials("Alucard Fragment")
+    if af == nil then return end
     if af >= 1 then
         AutoYama1 = false
         UpdateStatus("Yama1: фрагмент получен, перехожу к Yama2.")
@@ -953,6 +1007,7 @@ local function YamaQuest2Tick()
     if not AutoYama2 or not AutoCDK then return end
 
     local af = GetCountMaterials("Alucard Fragment")
+    if af == nil then return end
     if af >= 2 then
         AutoYama2 = false
         UpdateStatus("Yama2: второй фрагмент получен, перехожу к Yama3.")
@@ -1504,6 +1559,7 @@ local function YamaQuest3Tick()
     if not AutoYama3 or not AutoCDK then return end
 
     local af = GetCountMaterials("Alucard Fragment")
+    if af == nil then return end
     if af >= 3 then
         AutoYama3 = false
         UpdateStatus("Yama3: третий фрагмент получен, перехожу к Tushita.")
@@ -1583,6 +1639,7 @@ local function TushitaQuest1Tick()
     if not AutoTushita1 or not AutoCDK then return end
 
     local af = GetCountMaterials("Alucard Fragment")
+    if af == nil then return end
     if af >= 4 then
         AutoTushita1 = false
         UpdateStatus("Tushita1: фрагмент получен, перехожу к Tushita2.")
@@ -1669,6 +1726,7 @@ local function TushitaQuest2Tick()
     if not AutoTushita2 or not AutoCDK then return end
 
     local af = GetCountMaterials("Alucard Fragment")
+    if af == nil then return end
     if af >= 5 then
         AutoTushita2 = false
         UpdateStatus("Tushita2: фрагмент получен, перехожу к Tushita3.")
@@ -1826,6 +1884,7 @@ local function TushitaQuest3Tick()
     if not AutoTushita3 or not AutoCDK then return end
 
     local af = GetCountMaterials("Alucard Fragment")
+    if af == nil then return end
     if af >= 6 then
         AutoTushita3 = false
         UpdateStatus("Tushita3: 6-й фрагмент получен. Готово.")
@@ -1971,6 +2030,8 @@ end
 ---------------------
 spawn(function()
     while task.wait(1) do
+        local scannedAF = GetCountMaterials("Alucard Fragment")
+        UpdateAFLabel(scannedAF)
         if not AutoCDK then
             CurrentStage = -1
         else
@@ -1980,11 +2041,9 @@ spawn(function()
                 local tM = GetWeaponMastery(SwordTushitaName)
                 UpdateMasteryLabel(yM, tM)
             else
-                local af = GetCountMaterials("Alucard Fragment") or 0
-                UpdateAFLabel(af)
-
-                local stage = GetStageFromAF(af)
-                if stage ~= CurrentStage then
+                local af = scannedAF
+                local stage = af ~= nil and GetStageFromAF(af) or nil
+                if stage ~= nil and stage ~= CurrentStage then
                     CurrentStage = stage
                     AddLog("CDK: AF="..af.." -> стадия "..stage)
                     DisableAllQuests()
