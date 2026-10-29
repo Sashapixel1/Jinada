@@ -542,6 +542,12 @@ local function GetInventory()
     local ok, inv = pcall(function()
         return remote:InvokeServer("getInventory")
     end)
+    if ok and type(inv) == "string" then
+        local decoded, data = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(inv)
+        end)
+        if decoded then inv = data end
+    end
     if ok and type(inv) == "table" then
         return inv, true
     end
@@ -565,6 +571,9 @@ local function ScanMaterialCount(inventory, materialName)
     local found, count = false, nil
     local visited = {}
     local function accept(value)
+        if type(value) == "table" then
+            value = value.Value or value.value or value.Count or value.count
+        end
         local n = tonumber(value)
         if n and n == n and n >= 0 and n < math.huge and n % 1 == 0 then
             count = math.max(count or 0, n)
@@ -600,54 +609,51 @@ local function ScanMaterialCount(inventory, materialName)
     return 0
 end
 
--- Read only a material's own visible card/detail panel, never arbitrary UI numbers.
-local function ReadMaterialFromGui(materialName)
-    local pg = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pg then return nil end
+-- Replicated material values are independent of PlayerGui and selected items.
+local function ReadReplicatedMaterial(materialName)
     local wanted = NormalizeMaterialName(materialName)
-    local function visible(node)
-        local current = node
-        while current and current ~= pg do
-            if current:IsA("GuiObject") and not current.Visible then return false end
-            if current:IsA("ScreenGui") and not current.Enabled then return false end
-            current = current.Parent
-        end
-        return current == pg
+    local function number(value)
+        local n = tonumber(value)
+        if n and n == n and n >= 0 and n < math.huge and n % 1 == 0 then return n end
     end
-    local function readPanel(panel)
-        local descendants = panel:GetDescendants()
-        if #descendants > 120 then return nil end
-        local result
-        for _, child in ipairs(descendants) do
-            if (child:IsA("TextLabel") or child:IsA("TextButton")) and visible(child) then
-                local text = child.Text:match("^%s*(.-)%s*$")
-                if text:match("^%d+$") then
-                    local number = tonumber(text)
-                    if result ~= nil and result ~= number then return nil end
-                    result = number
+    for _, folderName in ipairs({"Data", "Inventory", "Materials"}) do
+        local root = LocalPlayer:FindFirstChild(folderName)
+        if root then
+            for key, value in pairs(root:GetAttributes()) do
+                if NormalizeMaterialName(key) == wanted then
+                    local n = number(value)
+                    if n ~= nil then return n end
                 end
             end
-        end
-        return result
-    end
-    for _, node in ipairs(pg:GetDescendants()) do
-        local isText = node:IsA("TextLabel") or node:IsA("TextButton")
-        if visible(node) and (NormalizeMaterialName(node.Name) == wanted
-            or (isText and NormalizeMaterialName(node.Text) == wanted)) then
-            local panel = node
-            for _ = 1, 3 do
-                if not panel or panel == pg or panel:IsA("ScreenGui") then break end
-                local count = readPanel(panel)
-                if count ~= nil then return count end
-                panel = panel.Parent
+            for _, item in ipairs(root:GetDescendants()) do
+                if NormalizeMaterialName(item.Name) == wanted then
+                    if item:IsA("ValueBase") then
+                        local n = number(item.Value)
+                        if n ~= nil then return n end
+                    end
+                    for _, key in ipairs({"Count", "Amount", "Quantity", "Value"}) do
+                        local n = number(item:GetAttribute(key))
+                        if n ~= nil then return n end
+                        local value = item:FindFirstChild(key)
+                        if value and value:IsA("ValueBase") then
+                            n = number(value.Value)
+                            if n ~= nil then return n end
+                        end
+                    end
+                end
             end
         end
     end
     return nil
 end
 
+local LastMaterialCount = {}
 local function GetCountMaterials(materialName)
-    -- Share one server snapshot between the UI and quest loops.
+    local replicated = ReadReplicatedMaterial(materialName)
+    if replicated ~= nil then
+        LastMaterialCount[materialName] = replicated
+        return replicated
+    end
     if not MaterialScanBusy and tick() - MaterialScanTime >= 1 then
         MaterialScanBusy = true
         local inventory, ok, err = GetInventory()
@@ -656,17 +662,19 @@ local function GetCountMaterials(materialName)
         MaterialScanTime = tick()
         MaterialScanBusy = false
     end
-    local count = nil
+    local count
     if MaterialInventory then count = ScanMaterialCount(MaterialInventory, materialName) end
-    if count ~= nil and count > 0 then return count end
-    local guiCount = ReadMaterialFromGui(materialName)
-    if guiCount ~= nil then return guiCount end
-    if count == nil and tick() - LastMaterialWarning >= 10 then
-        LastMaterialWarning = tick()
-        AddLog("Сканирование материалов: "..(MaterialScanError or "у записи нет числового количества")
-            ..". Открой Items и выбери "..materialName.." для чтения из интерфейса.")
+    if count ~= nil then
+        LastMaterialCount[materialName] = count
+        return count
     end
-    return count
+    if tick() - LastMaterialWarning >= 10 then
+        LastMaterialWarning = tick()
+        AddLog("Материалы: "..(MaterialScanError or "нет числового количества в записи")
+            .."; локального значения "..materialName.." нет. Нужна диагностика ответа getInventory.")
+    end
+    -- Retain a previously verified value during a failed request, never substitute zero.
+    return LastMaterialCount[materialName]
 end
 
 local MasteryCache = {}
