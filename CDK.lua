@@ -20,7 +20,7 @@ local SwordYamaName      = "Yama"
 local SwordTushitaName   = "Tushita"
 local MasteryTarget      = 350
 
-local TeleportSpeed      = 300
+local TeleportSpeed      = 150             -- скорость полёта, stud/сек
 local FarmOffset         = CFrame.new(0, 10, -3)
 
 -- Castle on the Sea (Elite Hunter) для Yama1
@@ -482,117 +482,51 @@ local function EquipToolByName(name)
 end
 
 ---------------------
--- ТП (с анти-откидыванием)
+-- ПОЛЁТ (без коррекции откидываний и повторных запусков)
 ---------------------
-local TeleportLocked   = false
-local LastGoodPosition = nil
-
 local function SimpleTeleport(targetCFrame, label, shouldInterrupt)
-    if not AutoCDK or StopTween or TeleportLocked or IsTeleporting then return false end
-    IsTeleporting = true
-
+    if not AutoCDK or StopTween or IsTeleporting then return false end
     local char = LocalPlayer.Character
-    if not char then
-        IsTeleporting = false
-        return
-    end
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum or hum.Health <= 0 then return false end
 
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        IsTeleporting = false
-        return
-    end
+    IsTeleporting = true
+    local distance = (hrp.Position - targetCFrame.Position).Magnitude
+    -- No upper time limit: long routes must retain the configured speed.
+    local travelTime = math.max(distance / math.max(TeleportSpeed, 1), 0.1)
+    AddLog(string.format("Полёт к %s (%.0f stud, %.0f stud/сек, t=%.1f)",
+        label or "цели", distance, TeleportSpeed, travelTime))
 
-    -- сохраняем последнюю нормальную позицию
-    LastGoodPosition = hrp.Position
-
-    local distance   = (hrp.Position - targetCFrame.Position).Magnitude
-    local travelTime = math.clamp(distance / TeleportSpeed, 0.5, 60)
-
-    AddLog(string.format("Телепорт к %s (%.0f stud, t=%.1f)", label or "цели", distance, travelTime))
-
-    local tween = TweenService:Create(
-        hrp,
-        TweenInfo.new(travelTime, Enum.EasingStyle.Linear),
-        {CFrame = targetCFrame}
-    )
-    tween:Play()
-
-    local startTick = tick()
-    local lastCheck = tick()
-
-    while tick() - startTick < travelTime do
-        if StopTween or not AutoCDK or (shouldInterrupt and shouldInterrupt()) then
-            tween:Cancel()
-            IsTeleporting = false
-            AddLog("Телепорт прерван.")
-            return
-        end
-
-        local c = LocalPlayer.Character
-        hrp = c and c:FindFirstChild("HumanoidRootPart")
-        if not c or not hrp or c ~= char then
-            tween:Cancel()
-            IsTeleporting = false
-            return
-        end
-
-        hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
-        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-        hrp.CanCollide = false
-
-        -------------------------------------------------
-        -- АНТИ-ОТКИДЫВАНИЕ: детект резкого смещения > 1000
-        -------------------------------------------------
-        if tick() - lastCheck > 0.15 then
-            lastCheck = tick()
-
-            local currentPos = hrp.Position
-            if LastGoodPosition then
-                local delta = (currentPos - LastGoodPosition).Magnitude
-                if delta > 1000 then
-                    tween:Cancel()
-                    AddLog("⚠️ Обнаружен откид на "..math.floor(delta).." stud, перезапуск ТП через 2 сек.")
-
-                    TeleportLocked = true
-                    IsTeleporting  = false
-
-                    task.delay(2, function()
-                        TeleportLocked = false
-                        if AutoCDK and not StopTween then
-                            SimpleTeleport(targetCFrame, (label or "цель").." (retry)", shouldInterrupt)
-                        end
-                    end)
-
-                    return
-                end
+    local tween
+    local ok, result = pcall(function()
+        tween = TweenService:Create(hrp,
+            TweenInfo.new(travelTime, Enum.EasingStyle.Linear),
+            {CFrame = targetCFrame})
+        tween:Play()
+        while tween.PlaybackState == Enum.PlaybackState.Playing do
+            if StopTween or not AutoCDK or LocalPlayer.Character ~= char
+                or not hrp.Parent or hum.Health <= 0
+                or (shouldInterrupt and shouldInterrupt()) then
+                AddLog("Полёт прерван.")
+                return false
             end
-
-            LastGoodPosition = currentPos
+            task.wait(0.05)
         end
-        -------------------------------------------------
+        return tween.PlaybackState == Enum.PlaybackState.Completed
+    end)
 
-        task.wait(0.05)
+    if tween and tween.PlaybackState ~= Enum.PlaybackState.Completed then
+        tween:Cancel()
     end
-
-    tween:Cancel()
-    local c2 = LocalPlayer.Character
-    if not AutoCDK or StopTween or c2 ~= char then
-        IsTeleporting = false
+    IsTeleporting = false
+    if not ok then
+        AddLog("Ошибка полёта: "..tostring(result))
         return false
     end
-    hrp = c2 and c2:FindFirstChild("HumanoidRootPart")
-    if hrp then
-        hrp.CFrame = targetCFrame
-        hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
-        hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
-        hrp.CanCollide = false
-    end
-
-    IsTeleporting = false
+    -- The tween finishes naturally; do not snap CFrame to the destination.
+    return result
 end
-
-
 
 LocalPlayer.CharacterAdded:Connect(function(char)
     IsTeleporting = false
