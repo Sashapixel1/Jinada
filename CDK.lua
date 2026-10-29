@@ -582,7 +582,7 @@ local function ScanMaterialCount(inventory, materialName)
     local function scan(node, depth)
         if type(node) ~= "table" or visited[node] or depth > 5 then return end
         visited[node] = true
-        local name = node.Name or node.name
+        local name = node.Name or node.name or node.ItemName or node.DisplayName or node.Id
         if name and NormalizeMaterialName(name) == wanted then
             found = true
             for _, field in ipairs({"Count", "count", "Amount", "amount", "Quantity", "quantity", "Value", "value"}) do
@@ -605,8 +605,8 @@ local function ScanMaterialCount(inventory, materialName)
     end
     scan(inventory, 0)
     -- A present item without a readable count is unknown, not zero.
-    if found then return count end
-    return 0
+    if found then return count, true end
+    return 0, false
 end
 
 -- Replicated material values are independent of PlayerGui and selected items.
@@ -647,12 +647,104 @@ local function ReadReplicatedMaterial(materialName)
     return nil
 end
 
+-- Paths verified against the Dexter snapshot. Read Lua data, never UI or static item definitions.
+local PlayerDataModule = nil
+local PlayerDataLoadTime = -math.huge
+local PlayerDataReader = nil
+local PlayerDataProbeTime = -math.huge
+local MaterialSource = nil
+
+local function ReadPlayerDataMaterial(materialName)
+    local function read(callback, source)
+        local ok, data = pcall(callback)
+        if not ok or type(data) ~= "table" then return nil end
+        local count, found = ScanMaterialCount(data, materialName)
+        if found and count ~= nil then
+            if MaterialSource ~= source then
+                MaterialSource = source
+                AddLog("Материалы: источник "..source)
+            end
+            return count
+        end
+        return nil
+    end
+    if PlayerDataReader then
+        local count = read(PlayerDataReader.callback, PlayerDataReader.source)
+        if count ~= nil then return count end
+        PlayerDataReader = nil
+    end
+    -- Unsupported APIs are probed at most once per ten seconds.
+    if tick() - PlayerDataProbeTime < 10 then return nil end
+    PlayerDataProbeTime = tick()
+    local function try(callback, source)
+        local count = read(callback, source)
+        if count ~= nil then PlayerDataReader = {callback = callback, source = source} end
+        return count
+    end
+    if not PlayerDataModule and tick() - PlayerDataLoadTime >= 10 then
+        PlayerDataLoadTime = tick()
+        local util = ReplicatedStorage:FindFirstChild("Util")
+        local module = util and util:FindFirstChild("ReplicatedPlayerData")
+        if module and module:IsA("ModuleScript") then
+            local ok, data = pcall(require, module)
+            if ok and type(data) == "table" then PlayerDataModule = data end
+        end
+    end
+    local dataModule = PlayerDataModule
+    if dataModule then
+        local count = try(function() return dataModule.Data or dataModule.Inventory or dataModule end,
+            "ReplicatedPlayerData.Data")
+        if count ~= nil then return count end
+        if type(dataModule.GetData) == "function" then
+            count = try(function() return dataModule.GetData() end, "ReplicatedPlayerData.GetData()")
+            if count ~= nil then return count end
+            count = try(function() return dataModule:GetData() end, "ReplicatedPlayerData:GetData()")
+            if count ~= nil then return count end
+        end
+        if type(dataModule.Get) == "function" then
+            for _, field in ipairs({"Inventory", "Materials"}) do
+                count = try(function() return dataModule.Get(field) end, "ReplicatedPlayerData.Get/"..field)
+                if count ~= nil then return count end
+                count = try(function() return dataModule:Get(field) end, "ReplicatedPlayerData:Get/"..field)
+                if count ~= nil then return count end
+            end
+        end
+    end
+    local modules = ReplicatedStorage:FindFirstChild("Modules")
+    local net = modules and modules:FindFirstChild("Net")
+    local readData = net and net:FindFirstChild("RF/ReadPlayerData")
+    if readData and readData:IsA("RemoteFunction") then
+        local count
+        for _, field in ipairs({"Inventory", "Materials"}) do
+            count = try(function() return readData:InvokeServer(field) end, "RF/ReadPlayerData/"..field)
+            if count ~= nil then return count end
+        end
+        count = try(function() return readData:InvokeServer() end, "RF/ReadPlayerData")
+        if count ~= nil then return count end
+    end
+    return nil
+end
+
 local LastMaterialCount = {}
+local PlayerDataScanTime = {}
+local PlayerDataScanBusy = false
 local function GetCountMaterials(materialName)
     local replicated = ReadReplicatedMaterial(materialName)
     if replicated ~= nil then
         LastMaterialCount[materialName] = replicated
         return replicated
+    end
+    if not PlayerDataScanBusy and tick() - (PlayerDataScanTime[materialName] or -math.huge) >= 1 then
+        PlayerDataScanBusy = true
+        local ok, count = pcall(ReadPlayerDataMaterial, materialName)
+        PlayerDataScanBusy = false
+        PlayerDataScanTime[materialName] = tick()
+        if ok and count ~= nil then
+            LastMaterialCount[materialName] = count
+            return count
+        end
+    elseif LastMaterialCount[materialName] ~= nil then
+        return LastMaterialCount[materialName]
     end
     if not MaterialScanBusy and tick() - MaterialScanTime >= 1 then
         MaterialScanBusy = true
@@ -671,7 +763,7 @@ local function GetCountMaterials(materialName)
     if tick() - LastMaterialWarning >= 10 then
         LastMaterialWarning = tick()
         AddLog("Материалы: "..(MaterialScanError or "нет числового количества в записи")
-            .."; локального значения "..materialName.." нет. Нужна диагностика ответа getInventory.")
+            .."; "..materialName.." не найден в ReplicatedPlayerData / RF/ReadPlayerData / getInventory.")
     end
     -- Retain a previously verified value during a failed request, never substitute zero.
     return LastMaterialCount[materialName]
