@@ -1910,11 +1910,11 @@ local function YamaQuest3Tick()
 end
 
 ---------------------
--- TUSHITA QUEST 1 (BoatQuest через Lux Boat Dealer)
+-- TUSHITA QUEST 1 (BoatQuest через Boat Dealer)
 ---------------------
 local Tushita1Index = 1
 
-local function FindNearestLuxuryBoatDealer(maxDist)
+local function FindNearestBoatDealer(maxDist)
     maxDist = maxDist or 200
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
@@ -1922,7 +1922,7 @@ local function FindNearestLuxuryBoatDealer(maxDist)
 
     local best, nearest = maxDist, nil
     for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name == "Luxury Boat Dealer" then
+        if obj:IsA("Model") and obj.Name == "Boat Dealer" then
             local head = obj:FindFirstChild("HumanoidRootPart")
                 or obj:FindFirstChild("Head")
                 or obj:FindFirstChildWhichIsA("BasePart")
@@ -1958,9 +1958,9 @@ local function TushitaQuest1Tick()
     UpdateStatus("Tushita1: точка "..idx)
     SimpleTeleport(TushitaQ1Points[idx], "Tushita Q1 точка "..idx)
 
-    local npc = FindNearestLuxuryBoatDealer(150)
+    local npc = FindNearestBoatDealer(150)
     if not npc then
-        AddLog("Tushita1: Luxury Boat Dealer не найден у точки "..idx)
+        AddLog("Tushita1: Boat Dealer не найден у точки "..idx)
         return
     end
 
