@@ -545,12 +545,14 @@ local function GetInventory()
     if ok and type(inv) == "table" then
         return inv, true
     end
-    return {}, false
+    return {}, false, ok and ("тип ответа: "..type(inv)) or tostring(inv)
 end
 
 local MaterialInventory = nil
 local MaterialScanTime = -math.huge
 local MaterialScanBusy = false
+local MaterialScanError = nil
+local LastMaterialWarning = -math.huge
 
 local function NormalizeMaterialName(name)
     local normalized = string.lower(tostring(name)):gsub("[^%w]", "")
@@ -598,17 +600,73 @@ local function ScanMaterialCount(inventory, materialName)
     return 0
 end
 
+-- Read only a material's own visible card/detail panel, never arbitrary UI numbers.
+local function ReadMaterialFromGui(materialName)
+    local pg = LocalPlayer:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    local wanted = NormalizeMaterialName(materialName)
+    local function visible(node)
+        local current = node
+        while current and current ~= pg do
+            if current:IsA("GuiObject") and not current.Visible then return false end
+            if current:IsA("ScreenGui") and not current.Enabled then return false end
+            current = current.Parent
+        end
+        return current == pg
+    end
+    local function readPanel(panel)
+        local descendants = panel:GetDescendants()
+        if #descendants > 120 then return nil end
+        local result
+        for _, child in ipairs(descendants) do
+            if (child:IsA("TextLabel") or child:IsA("TextButton")) and visible(child) then
+                local text = child.Text:match("^%s*(.-)%s*$")
+                if text:match("^%d+$") then
+                    local number = tonumber(text)
+                    if result ~= nil and result ~= number then return nil end
+                    result = number
+                end
+            end
+        end
+        return result
+    end
+    for _, node in ipairs(pg:GetDescendants()) do
+        local isText = node:IsA("TextLabel") or node:IsA("TextButton")
+        if visible(node) and (NormalizeMaterialName(node.Name) == wanted
+            or (isText and NormalizeMaterialName(node.Text) == wanted)) then
+            local panel = node
+            for _ = 1, 3 do
+                if not panel or panel == pg or panel:IsA("ScreenGui") then break end
+                local count = readPanel(panel)
+                if count ~= nil then return count end
+                panel = panel.Parent
+            end
+        end
+    end
+    return nil
+end
+
 local function GetCountMaterials(materialName)
     -- Share one server snapshot between the UI and quest loops.
     if not MaterialScanBusy and tick() - MaterialScanTime >= 1 then
         MaterialScanBusy = true
-        local inventory, ok = GetInventory()
+        local inventory, ok, err = GetInventory()
         MaterialInventory = ok and inventory or nil
+        MaterialScanError = err
         MaterialScanTime = tick()
         MaterialScanBusy = false
     end
-    if not MaterialInventory then return nil end
-    return ScanMaterialCount(MaterialInventory, materialName)
+    local count = nil
+    if MaterialInventory then count = ScanMaterialCount(MaterialInventory, materialName) end
+    if count ~= nil and count > 0 then return count end
+    local guiCount = ReadMaterialFromGui(materialName)
+    if guiCount ~= nil then return guiCount end
+    if count == nil and tick() - LastMaterialWarning >= 10 then
+        LastMaterialWarning = tick()
+        AddLog("Сканирование материалов: "..(MaterialScanError or "у записи нет числового количества")
+            ..". Открой Items и выбери "..materialName.." для чтения из интерфейса.")
+    end
+    return count
 end
 
 local MasteryCache = {}
