@@ -205,8 +205,9 @@ end
 
 local function UpdateMasteryLabel(yamaM, tushM)
     if MasteryLabel then
-        MasteryLabel.Text = string.format("Mastery Yama/Tushita: %d / %d (цель %d)",
-            yamaM or 0, tushM or 0, MasteryTarget)
+        MasteryLabel.Text = string.format("Mastery Yama/Tushita: %s / %s (цель %d)",
+            yamaM ~= nil and tostring(yamaM) or "?",
+            tushM ~= nil and tostring(tushM) or "?", MasteryTarget)
     end
 end
 
@@ -623,14 +624,63 @@ local function GetCountMaterials(MaterialName)
     return 0
 end
 
+local MasteryCache = {}
+local LastMasteryLoad = -math.huge
+
+local function ReadToolMastery(tool)
+    for _, key in ipairs({"Level", "Mastery", "MasteryLevel"}) do
+        local value = tool:FindFirstChild(key)
+        local number = value and value:IsA("ValueBase") and tonumber(value.Value)
+        if number and number >= 0 then return number end
+        local attribute = tool:GetAttribute(key)
+        number = tonumber(attribute)
+        if number and number >= 0 then return number end
+    end
+    return nil
+end
+
 local function GetWeaponMastery(name)
-    local inv = GetInventory()
-    for _, v in ipairs(inv) do
-        if v.Name == name then
-            return v.Mastery or v.Level or v.MasteryLevel or 0
+    local best = MasteryCache[name]
+    local function remember(value)
+        local number = tonumber(value)
+        if number and number >= 0 then
+            best = math.max(best or 0, number)
         end
     end
-    return 0
+    -- Equipped weapons live in Character; unequipped weapons live in Backpack.
+    for _, containerName in ipairs({"Character", "Backpack"}) do
+        local container = containerName == "Character" and LocalPlayer.Character
+            or LocalPlayer:FindFirstChild("Backpack")
+        if container then
+            for _, tool in ipairs(container:GetChildren()) do
+                if tool:IsA("Tool") and string.lower(tool.Name) == string.lower(name) then
+                    remember(ReadToolMastery(tool))
+                end
+            end
+        end
+    end
+    -- Inventory responses may omit mastery entirely. Missing data is not level 0.
+    if best == nil then
+        for _, item in pairs(GetInventory()) do
+            if type(item) == "table" and item.Name == name then
+                remember(item.Mastery)
+                remember(item.Level)
+                remember(item.MasteryLevel)
+            end
+        end
+    end
+    MasteryCache[name] = best
+    return best
+end
+
+local function LoadSwordForMastery(name)
+    if tick() - LastMasteryLoad < 3 then return end
+    LastMasteryLoad = tick()
+    UpdateStatus("Читаю мастери: "..name)
+    local ok, err = pcall(function()
+        remote:InvokeServer("LoadItem", name)
+    end)
+    if not ok then AddLog("Не удалось загрузить "..name..": "..tostring(err)) end
 end
 
 ---------------------
@@ -844,11 +894,12 @@ end
 local function MasteryTick()
     if not AutoCDK or not NeedMastery then return end
 
-    if not EnsureOnHauntedIsland() then return end
-
     local yamaM  = GetWeaponMastery(SwordYamaName)
     local tushM  = GetWeaponMastery(SwordTushitaName)
     UpdateMasteryLabel(yamaM, tushM)
+
+    if yamaM == nil then LoadSwordForMastery(SwordYamaName); return end
+    if tushM == nil then LoadSwordForMastery(SwordTushitaName); return end
 
     if yamaM >= MasteryTarget and tushM >= MasteryTarget then
         if not DoorOpened then
@@ -861,6 +912,16 @@ local function MasteryTick()
         end
         NeedMastery = false
         UpdateStatus("Мастери готовы, перехожу к Yama/Tushita квестам.")
+        return
+    end
+
+    if not EnsureOnHauntedIsland() then return end
+
+    local sword = yamaM < MasteryTarget and SwordYamaName or SwordTushitaName
+    local char = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not ((char and char:FindFirstChild(sword)) or (backpack and backpack:FindFirstChild(sword))) then
+        LoadSwordForMastery(sword)
         return
     end
 
