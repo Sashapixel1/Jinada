@@ -117,6 +117,7 @@ local CakeQueenIsland = CFrame.new(-709.3132934570312, 381.6005859375, -11011.39
 local CakeQueenOffset = CFrame.new(0, 20, -3)
 
 -- Финальный этап CDK после шести фрагментов.
+local CDKPrepPos = CFrame.new(-12389.3994, 603.632812, -6596.36475)
 local CDKAltarPos = CFrame.new(-12361.7060546875, 603.3547973632812, -6550.5341796875)
 local CDKAfterPos = CFrame.new(-12253.5419921875, 598.8999633789062, -6546.8388671875)
 
@@ -2356,7 +2357,7 @@ end
 ---------------------
 -- ФИНАЛ CDK: АЛТАРЬ / БОСС / ПОДТВЕРЖДЕНИЕ ПОЛУЧЕНИЯ
 ---------------------
-local CDKFinalState = {NextAltar = -math.huge, NextSwordLoad = -math.huge, RewardUntil = 0}
+local CDKFinalState = {NextAltar = -math.huge, NextSwordLoad = -math.huge, RewardUntil = 0, PrepDone = false}
 
 local function CDKFinalActive()
     return AutoCDK and AutoCDKFinal and GuiAlive and not StopTween and not UI.Closed
@@ -2476,12 +2477,12 @@ local function CDKFinalWait(seconds, char)
         and FindCDKFinalTarget(true) == nil
 end
 
-local function HoldCDKAltarE(char)
+local function HoldCDKAltarE(char, seconds)
     if not CDKFinalActive() or LocalPlayer.Character ~= char or not CDKFinalCharacter()
         or FindCDKFinalTarget(true) then return false end
     local pressed, err = pcall(function() VirtualInput:SendKeyEvent(true, "E", false, game) end)
     if not pressed then AddLog("Алтарь CDK: ошибка E: "..tostring(err)); return false end
-    local ok, held = pcall(CDKFinalWait, 2, char)
+    local ok, held = pcall(CDKFinalWait, seconds or 2, char)
     -- Always release E, including cancellation, death, errors and a newly spawned boss.
     pcall(function() VirtualInput:SendKeyEvent(false, "E", false, game) end)
     if not ok then error(held) end
@@ -2511,6 +2512,19 @@ local function CDKFinalTick()
     if tick() < CDKFinalState.NextAltar then
         UpdateStatus("Финал CDK: жду появления босса у алтаря.")
         return
+    end
+    if not CDKFinalState.PrepDone then
+        UpdateStatus("Финал CDK: подготовительный пьедестал, E на 5 секунд.")
+        if (root.Position - CDKPrepPos.Position).Magnitude > 8 then
+            if not SimpleTeleport(CDKPrepPos, "подготовительный пьедестал CDK", function()
+                return not CDKFinalActive() or LocalPlayer.Character ~= char or FindCDKFinalTarget(true) ~= nil
+            end) then return end
+        end
+        local current, prepRoot = CDKFinalCharacter()
+        if current ~= char or not prepRoot or (prepRoot.Position - CDKPrepPos.Position).Magnitude > 12 then return end
+        if not HoldCDKAltarE(char, 5) then return end
+        CDKFinalState.PrepDone = true
+        AddLog("Подготовительный пьедестал CDK активирован. Перехожу к следующему.")
     end
     if (root.Position - CDKAltarPos.Position).Magnitude > 8 then
         UpdateStatus("Финал CDK: лечу к алтарю.")
