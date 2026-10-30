@@ -25,6 +25,9 @@ local MasteryTarget      = 350
 
 local TeleportSpeed      = 150             -- скорость полёта, stud/сек
 local MinFlightHeight    = 3               -- запас над минимальным Y=2
+-- Только для исходных точек патруля Yama2 #1–5.
+local Yama2PatrolFlight = {Speed = 90, CruiseHeight = 120, Clearance = 40,
+    MaxSegmentDistance = 180, PauseBetweenSegments = 0.1}
 local FarmOffset         = CFrame.new(0, 10, -3)
 
 -- Castle on the Sea (Elite Hunter) для Yama1
@@ -44,61 +47,57 @@ local MinBonesToRoll     = 500
 local Yama2PatrolPoints = {
 
     -- === СТАРЫЕ (валидные, не в воде) ===
-    CFrame.new(-2293.2937, 38.3638916, -10241.7725),
-    CFrame.new(5249.16113, 17.3900623, 400.869446),
-    CFrame.new(-187.3301544189453, 86.23987579345703, 6013.513671875),
-    CFrame.new(2286.0078125, 73.13391876220703, -7159.80908203125),
-    CFrame.new(-12361.7060546875, 603.3547973632812, -6550.5341796875),
-    CFrame.new(-13451.46484375, 543.712890625, -6961.0029296875),
-    CFrame.new(-13274.478515625, 332.3781433105469, -7769.58056640625),
-    CFrame.new(-13680.607421875, 501.08154296875, -6991.189453125),
-    CFrame.new(-13457.904296875, 391.545654296875, -9859.177734375),
-    CFrame.new(-12256.16015625, 331.73828125, -10485.8369140625),
-    CFrame.new(-1887.8099365234375, 77.6185073852539, -12998.3505859375),
-    CFrame.new(-21.55328369140625, 80.57499694824219, -12352.3876953125),
-    CFrame.new(582.590576171875, 77.18809509277344, -12463.162109375),
-    CFrame.new(-16641.6796875, 235.7825469970703, 1031.282958984375),
-    CFrame.new(-16587.896484375, 154.21299743652344, 1533.40966796875),
-    CFrame.new(-16885.203125, 114.12911224365234, 1627.949951171875),
+    CFrame.new(-2293.2937, 38.3638916, -10241.7725), -- #1
+    CFrame.new(5249.16113, 17.3900623, 400.869446), -- #2
+    CFrame.new(-187.3301544189453, 86.23987579345703, 6013.513671875), -- #3
+    CFrame.new(2286.0078125, 73.13391876220703, -7159.80908203125), -- #4
+    CFrame.new(-12361.7060546875, 603.3547973632812, -6550.5341796875), -- #5
+    CFrame.new(-13451.46484375, 543.712890625, -6961.0029296875), -- #6
+    CFrame.new(-13274.478515625, 332.3781433105469, -7769.58056640625), -- #7
+    CFrame.new(-13680.607421875, 501.08154296875, -6991.189453125), -- #8
+    CFrame.new(-13457.904296875, 391.545654296875, -9859.177734375), -- #9
+    CFrame.new(-12256.16015625, 331.73828125, -10485.8369140625), -- #10
+    CFrame.new(-1887.8099365234375, 77.6185073852539, -12998.3505859375), -- #11
+    CFrame.new(-21.55328369140625, 80.57499694824219, -12352.3876953125), -- #12
+    CFrame.new(582.590576171875, 77.18809509277344, -12463.162109375), -- #13
+    CFrame.new(-16641.6796875, 235.7825469970703, 1031.282958984375), -- #14
+    CFrame.new(-16587.896484375, 154.21299743652344, 1533.40966796875), -- #15
+    CFrame.new(-16885.203125, 114.12911224365234, 1627.949951171875), -- #16
 
     -- === CASTLE ON THE SEA (суша) ===
-    CFrame.new(-5472.1201171875, 313.3, -2931.77),
-    CFrame.new(-4890.1103515625, 320.0, -2980.21),
-    CFrame.new(-5180.330078125, 316.7, -3400.88),
+    CFrame.new(-5472.1201171875, 313.3, -2931.77), -- #17
+    CFrame.new(-4890.1103515625, 320.0, -2980.21), -- #18
+    CFrame.new(-5180.330078125, 316.7, -3400.88), -- #19
 
     -- === HAUNTED CASTLE — все точки сухие ===
-    CFrame.new(-9515.129, 142.233, 6200.441),
-    CFrame.new(-9450.55, 144.0, 6025.11),
-    CFrame.new(-9605.98, 144.5, 6350.27),
-    CFrame.new(-9705.44, 146.2, 6150.88),
+    CFrame.new(-9515.129, 142.233, 6200.441), -- #20
+    CFrame.new(-9450.55, 144.0, 6025.11), -- #21
+    CFrame.new(-9605.98, 144.5, 6350.27), -- #22
+    CFrame.new(-9705.44, 146.2, 6150.88), -- #23
 
     -- === CAKE QUEEN ISLAND (суша) ===
-    CFrame.new(-709.31, 381.6, -11011.39),
-    CFrame.new(-580.55, 380.9, -10840.22),
-    CFrame.new(-840.77, 382.2, -11180.55),
+    CFrame.new(-709.31, 381.6, -11011.39), -- #24
+    CFrame.new(-580.55, 380.9, -10840.22), -- #25
+    CFrame.new(-840.77, 382.2, -11180.55), -- #26
 
-    -- === SEA OF TREATS (суша) ===
-    CFrame.new(2356.44, 72.8, -12890.6),
-    CFrame.new(1331.7, 72.8, -13550.2),
-    CFrame.new(920.77, 78.5, -12880.33),
-    CFrame.new(555.44, 77.2, -11980.22),
 
     -- === MANSION / HYDRA PASS AREA ===
-    CFrame.new(-12240.55, 332.0, -9850.77),
-    CFrame.new(-11980.33, 332.0, -9450.88),
-    CFrame.new(-11800.77, 332.0, -10120.55),
+    CFrame.new(-12240.55, 332.0, -9850.77), -- #31
+    CFrame.new(-11980.33, 332.0, -9450.88), -- #32
+    CFrame.new(-11800.77, 332.0, -10120.55), -- #33
 
     -- === HYDRA ISLAND (новые ТОЛЬКО суша!) ===
-    CFrame.new(-17100.55, 210.3, 1380.88),     -- центр возле мобов Forest Pirates
-    CFrame.new(-16760.77, 230.1, 1820.44),     -- верхняя платформа Hydra
-    CFrame.new(-16910.33, 198.0, 1050.22),     -- возле Gunman / Archer кемпа
+    CFrame.new(-17100.55, 210.3, 1380.88), -- #34
+    CFrame.new(-16910.33, 198.0, 1050.22), -- #36
 
     -- === FLOATING TURTLE (новые ТОЛЬКО суша!) ===
-    CFrame.new(-10943.77, 333.4, -9128.55),    -- вход в деревню
-    CFrame.new(-11320.22, 379.3, -10010.33),   -- кемп Forest Pirates
-    CFrame.new(-11600.11, 450.2, -10340.44),   -- верхняя площадка с NPC / мобами
-    CFrame.new(-11220.88, 390.8, -9600.77),    -- центр острова
+    CFrame.new(-10943.77, 333.4, -9128.55), -- #37
+    CFrame.new(-11320.22, 379.3, -10010.33), -- #38
+    CFrame.new(-11600.11, 450.2, -10340.44), -- #39
+    CFrame.new(-11220.88, 390.8, -9600.77), -- #40
 }
+-- Исходные номера сохранены для логов и адресных настроек маршрута.
+local Yama2PatrolPointIds = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 31, 32, 33, 34, 36, 37, 38, 39, 40}
 
 
 -- Tushita Q1 (BoatQuest)
@@ -753,58 +752,87 @@ end
 ---------------------
 -- ПОЛЁТ (без коррекции откидываний и повторных запусков)
 ---------------------
-local function SimpleTeleport(targetCFrame, label, shouldInterrupt)
+local function SimpleTeleport(targetCFrame, label, shouldInterrupt, profile)
     if not AutoCDK or StopTween or IsTeleporting then return false end
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum or hum.Health <= 0 then return false end
 
-    -- Both ends of a linear tween must be above the water-height floor.
     hrp.CFrame = ClampFlightCFrame(hrp.CFrame)
     targetCFrame = ClampFlightCFrame(targetCFrame)
     IsTeleporting = true
-    local distance = (hrp.Position - targetCFrame.Position).Magnitude
-    -- No upper time limit: long routes must retain the configured speed.
-    local travelTime = math.max(distance / math.max(TeleportSpeed, 1), 0.1)
-    AddLog(string.format("Полёт к %s (%.0f stud, %.0f stud/сек, t=%.1f)",
-        label or "цели", distance, TeleportSpeed, travelTime))
-
     local tween
     local ok, result = pcall(function()
-        tween = TweenService:Create(hrp,
-            TweenInfo.new(travelTime, Enum.EasingStyle.Linear),
-            {CFrame = targetCFrame})
-        tween:Play()
-        while tween.PlaybackState == Enum.PlaybackState.Playing do
-            if StopTween or not AutoCDK or LocalPlayer.Character ~= char
-                or not hrp.Parent or hum.Health <= 0
-                or (shouldInterrupt and shouldInterrupt()) then
-                AddLog("Полёт прерван.")
-                return false
+        local speed = math.max(TeleportSpeed, 1)
+        local pause = 0
+        local route = {}
+        local function appendLeg(from, goal)
+            local distance = (from.Position - goal.Position).Magnitude
+            local segments = profile and math.max(1, math.ceil(distance / math.max(profile.MaxSegmentDistance or 180, 1))) or 1
+            for index = 1, segments do
+                route[#route + 1] = segments == 1 and goal or from:Lerp(goal, index / segments)
             end
+        end
+        if profile then
+            speed = math.min(speed, math.max(profile.Speed or speed, 1))
+            pause = math.clamp(profile.PauseBetweenSegments or 0, 0, 2)
+            local start = hrp.CFrame
+            local cruiseY = math.max(MinFlightHeight, profile.CruiseHeight or MinFlightHeight,
+                start.Position.Y + (profile.Clearance or 0), targetCFrame.Position.Y + (profile.Clearance or 0))
+            local aboveStart = start + Vector3.new(0, cruiseY - start.Position.Y, 0)
+            local aboveGoal = targetCFrame + Vector3.new(0, cruiseY - targetCFrame.Position.Y, 0)
+            appendLeg(start, aboveStart)
+            appendLeg(aboveStart, aboveGoal)
+            appendLeg(aboveGoal, targetCFrame)
+            AddLog(string.format("%s: маршрут с подъёмом, Y=%.0f, скорость %.0f, участков %d",
+                label or "Полёт", cruiseY, speed, #route))
+        else
+            appendLeg(hrp.CFrame, targetCFrame)
+        end
+        local function interrupted()
+            return StopTween or not AutoCDK or LocalPlayer.Character ~= char
+                or not hrp.Parent or hum.Health <= 0 or (shouldInterrupt and shouldInterrupt())
+        end
+        local function keepAboveWater()
             if hrp.Position.Y < MinFlightHeight then
                 hrp.CFrame = ClampFlightCFrame(hrp.CFrame)
                 local velocity = hrp.AssemblyLinearVelocity
                 if velocity.Y < 0 then hrp.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z) end
             end
-            task.wait(0.05)
         end
-        if tween.PlaybackState == Enum.PlaybackState.Completed then
-            hrp.CFrame = ClampFlightCFrame(hrp.CFrame)
+        for index, goal in ipairs(route) do
+            if interrupted() then AddLog("Полёт прерван."); return false end
+            local distance = (hrp.Position - goal.Position).Magnitude
+            local travelTime = math.max(distance / speed, 0.1)
+            if not profile then
+                AddLog(string.format("Полёт к %s (%.0f stud, %.0f stud/сек, t=%.1f)",
+                    label or "цели", distance, speed, travelTime))
+            end
+            tween = TweenService:Create(hrp, TweenInfo.new(travelTime, Enum.EasingStyle.Linear), {CFrame = goal})
+            tween:Play()
+            while tween.PlaybackState == Enum.PlaybackState.Playing do
+                if interrupted() then AddLog("Полёт прерван."); return false end
+                keepAboveWater()
+                task.wait(0.05)
+            end
+            if tween.PlaybackState ~= Enum.PlaybackState.Completed then return false end
+            keepAboveWater()
+            if pause > 0 and index < #route then
+                local untilTime = tick() + pause
+                while tick() < untilTime do
+                    if interrupted() then AddLog("Полёт прерван."); return false end
+                    keepAboveWater()
+                    task.wait(0.05)
+                end
+            end
         end
-        return tween.PlaybackState == Enum.PlaybackState.Completed
+        return true
     end)
-
-    if tween and tween.PlaybackState ~= Enum.PlaybackState.Completed then
-        tween:Cancel()
-    end
+    if tween and tween.PlaybackState ~= Enum.PlaybackState.Completed then tween:Cancel() end
     IsTeleporting = false
-    if not ok then
-        AddLog("Ошибка полёта: "..tostring(result))
-        return false
-    end
-    -- The tween finishes naturally; do not snap CFrame to the destination.
+    if not ok then AddLog("Ошибка полёта: "..tostring(result)); return false end
+    -- No rollback detection, delayed retries or forced destination snaps.
     return result
 end
 
@@ -1347,11 +1375,13 @@ local function Yama2PatrolStep()
     end
 
     Yama2LastPatrolHop = tick()
+    local pointId = Yama2PatrolPointIds[idx]
     local targetCF = Yama2PatrolPoints[idx] * FarmOffset
-    AddLog("Yama2: патруль к точке "..idx)
-    SimpleTeleport(targetCF, "Yama2 патруль "..idx, function()
+    local profile = pointId <= 5 and Yama2PatrolFlight or nil
+    AddLog("Yama2: патруль к точке "..pointId)
+    SimpleTeleport(targetCF, "Yama2 патруль "..pointId, function()
         return not AutoYama2 or GetNearestHazeEnemy(1200) ~= nil
-    end)
+    end, profile)
     Yama2PatrolHold = tick() + 5
 end
 
