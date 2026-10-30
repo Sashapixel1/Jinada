@@ -100,6 +100,201 @@ local Yama2PatrolPoints = {
 local Yama2PatrolPointIds = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 31, 32, 33, 34, 36, 37, 38, 39, 40}
 
 
+-- Координаты из mob-spawns.json; наличие спавна не означает наличие HazeESP.
+local Yama2ExtraSpawns = {
+    {Name = "Baking Staff [Lv. 2250]", CFrame = CFrame.new(-1980.43701171875, 34.665008544921875, -12983.8408203125)}, -- D1
+    {Name = "Baking Staff [Lv. 2250]", CFrame = CFrame.new(-1828.801025390625, 34.665008544921875, -12699.4384765625)}, -- D2
+    {Name = "Baking Staff [Lv. 2250]", CFrame = CFrame.new(-1774.0780029296875, 34.665008544921875, -12850.4521484375)}, -- D3
+    {Name = "Baking Staff [Lv. 2250]", CFrame = CFrame.new(-1847.177978515625, 34.665008544921875, -13132.50390625)}, -- D4
+    {Name = "Baking Staff [Lv. 2250]", CFrame = CFrame.new(-1759.2860107421875, 34.665008544921875, -12994.83984375)}, -- D5
+    {Name = "Baking Staff [Lv. 2250]", CFrame = CFrame.new(-1720.8509521484375, 34.665008544921875, -13087.125)}, -- D6
+    {Name = "Cake Guard [Lv. 2225]", CFrame = CFrame.new(-1531.4110107421875, 35.21900939941406, -12132.439453125)}, -- D7
+    {Name = "Cake Guard [Lv. 2225]", CFrame = CFrame.new(-1418.510986328125, 35.21900939941406, -12255.71875)}, -- D8
+    {Name = "Cake Guard [Lv. 2225]", CFrame = CFrame.new(-1693.97998046875, 35.21900939941406, -12436.84375)}, -- D9
+    {Name = "Cake Guard [Lv. 2225]", CFrame = CFrame.new(-1471.1280517578125, 35.21900939941406, -12436.84375)}, -- D10
+    {Name = "Cake Guard [Lv. 2225]", CFrame = CFrame.new(-1736.5439453125, 35.21900939941406, -12249.060546875)}, -- D11
+    {Name = "Candy Pirate [Lv. 2400]", CFrame = CFrame.new(-1332.675048828125, 24.343002319335938, -14327.3603515625)}, -- D12
+    {Name = "Candy Pirate [Lv. 2400]", CFrame = CFrame.new(-1428.1529541015625, 36.40699768066406, -14637.896484375)}, -- D13
+    {Name = "Candy Pirate [Lv. 2400]", CFrame = CFrame.new(-1378.656982421875, 38.02400207519531, -14802.8837890625)}, -- D14
+    {Name = "Candy Pirate [Lv. 2400]", CFrame = CFrame.new(-1440.3260498046875, 32.49299621582031, -14435.9345703125)}, -- D15
+    {Name = "Candy Pirate [Lv. 2400]", CFrame = CFrame.new(-1226.7869873046875, 36.300994873046875, -14777.587890625)}, -- D16
+    {Name = "Candy Pirate [Lv. 2400]", CFrame = CFrame.new(-1255.7989501953125, 33.46699523925781, -14507.0966796875)}, -- D17
+    {Name = "Candy Rebel [Lv. 2375]", CFrame = CFrame.new(220.3780059814453, 26.582000732421875, -12913.9658203125)}, -- D18
+    {Name = "Candy Rebel [Lv. 2375]", CFrame = CFrame.new(47.923004150390625, 25.582000732421875, -13029.240234375)}, -- D19
+    {Name = "Candy Rebel [Lv. 2375]", CFrame = CFrame.new(-72.12899780273438, 25.582000732421875, -12940.32421875)}, -- D20
+    {Name = "Candy Rebel [Lv. 2375]", CFrame = CFrame.new(166.82000732421875, 25.582000732421875, -13035.345703125)}, -- D21
+    {Name = "Candy Rebel [Lv. 2375]", CFrame = CFrame.new(52.99800109863281, 26.582000732421875, -12851.67578125)}, -- D22
+    {Name = "Chocolate Bar Battler [Lv. 2325]", CFrame = CFrame.new(833.197998046875, 25.582000732421875, -12671.404296875)}, -- D23
+    {Name = "Chocolate Bar Battler [Lv. 2325]", CFrame = CFrame.new(701.31201171875, 25.582000732421875, -12708.21484375)}, -- D24
+    {Name = "Chocolate Bar Battler [Lv. 2325]", CFrame = CFrame.new(717.5150146484375, 25.582000732421875, -12557.6708984375)}, -- D25
+    {Name = "Chocolate Bar Battler [Lv. 2325]", CFrame = CFrame.new(806.958984375, 25.582000732421875, -12773.078125)}, -- D26
+    {Name = "Chocolate Bar Battler [Lv. 2325]", CFrame = CFrame.new(598.8330078125, 25.582000732421875, -12395.12109375)}, -- D27
+    {Name = "Chocolate Bar Battler [Lv. 2325]", CFrame = CFrame.new(582.8289794921875, 25.582000732421875, -12550.7041015625)}, -- D28
+    {Name = "Cocoa Warrior [Lv. 2300]", CFrame = CFrame.new(-128.6699981689453, 26.225006103515625, -12249.8134765625)}, -- D29
+    {Name = "Cocoa Warrior [Lv. 2300]", CFrame = CFrame.new(-125.00700378417969, 26.225006103515625, -12345.80859375)}, -- D30
+    {Name = "Cocoa Warrior [Lv. 2300]", CFrame = CFrame.new(167.97900390625, 26.225006103515625, -12238.8740234375)}, -- D31
+    {Name = "Cocoa Warrior [Lv. 2300]", CFrame = CFrame.new(6.332000732421875, 26.225006103515625, -12305.208984375)}, -- D32
+    {Name = "Cocoa Warrior [Lv. 2300]", CFrame = CFrame.new(34.84400939941406, 26.225006103515625, -12169.6630859375)}, -- D33
+    {Name = "Cookie Crafter [Lv. 2200]", CFrame = CFrame.new(-2423.39892578125, 37.0050048828125, -12265.7666015625)}, -- D34
+    {Name = "Cookie Crafter [Lv. 2200]", CFrame = CFrame.new(-2464.47705078125, 37.0050048828125, -12049.9326171875)}, -- D35
+    {Name = "Cookie Crafter [Lv. 2200]", CFrame = CFrame.new(-2499.1689453125, 37.0050048828125, -12165.0185546875)}, -- D36
+    {Name = "Cookie Crafter [Lv. 2200]", CFrame = CFrame.new(-2212.889892578125, 37.0050048828125, -11969.2568359375)}, -- D37
+    {Name = "Cookie Crafter [Lv. 2200]", CFrame = CFrame.new(-2246.3740234375, 37.0050048828125, -12126.94140625)}, -- D38
+    {Name = "Cookie Crafter [Lv. 2200]", CFrame = CFrame.new(-2321.7119140625, 37.0050048828125, -12216.7841796875)}, -- D39
+    {Name = "Cookie Crafter [Lv. 2200]", CFrame = CFrame.new(-2342.873046875, 37.0050048828125, -12009.23828125)}, -- D40
+    {Name = "Coral Pirate [Lv. 2625]", CFrame = CFrame.new(10824.5439453125, -2087.294677734375, 9357.2314453125)}, -- D41
+    {Name = "Coral Pirate [Lv. 2625]", CFrame = CFrame.new(10733.1787109375, -2087.297119140625, 9411.109375)}, -- D42
+    {Name = "Coral Pirate [Lv. 2625]", CFrame = CFrame.new(10646.8447265625, -2087.3017578125, 9304.1689453125)}, -- D43
+    {Name = "Coral Pirate [Lv. 2625]", CFrame = CFrame.new(10703.7099609375, -2087.296630859375, 9255.3818359375)}, -- D44
+    {Name = "Coral Pirate [Lv. 2625]", CFrame = CFrame.new(10839.4765625, -2087.299072265625, 9486.078125)}, -- D45
+    {Name = "Dragon Crew Archer [Lv. 1600]", CFrame = CFrame.new(6582.80517578125, 521.322998046875, 505.2640075683594)}, -- D46
+    {Name = "Dragon Crew Archer [Lv. 1600]", CFrame = CFrame.new(6948.4580078125, 482.8789978027344, 185.0229949951172)}, -- D47
+    {Name = "Dragon Crew Archer [Lv. 1600]", CFrame = CFrame.new(6668.76220703125, 481.37701416015625, 329.12200927734375)}, -- D48
+    {Name = "Dragon Crew Archer [Lv. 1600]", CFrame = CFrame.new(6762.4970703125, 481.37701416015625, 110.77000427246094)}, -- D49
+    {Name = "Dragon Crew Archer [Lv. 1600]", CFrame = CFrame.new(6818.5888671875, 482.8789978027344, 512.7269897460938)}, -- D50
+    {Name = "Dragon Crew Warrior [Lv. 1575]", CFrame = CFrame.new(6615.23193359375, 52.34400939941406, -978.9359741210938)}, -- D51
+    {Name = "Dragon Crew Warrior [Lv. 1575]", CFrame = CFrame.new(6709.76416015625, 52.34400939941406, -1139.030029296875)}, -- D52
+    {Name = "Dragon Crew Warrior [Lv. 1575]", CFrame = CFrame.new(6998.794921875, 53.73100280761719, -519.4089965820312)}, -- D53
+    {Name = "Dragon Crew Warrior [Lv. 1575]", CFrame = CFrame.new(6473.1640625, 52.34400939941406, -1231.7779541015625)}, -- D54
+    {Name = "Dragon Crew Warrior [Lv. 1575]", CFrame = CFrame.new(6919.080078125, 57.73100280761719, -940.8389892578125)}, -- D55
+    {Name = "Dragon Crew Warrior [Lv. 1575]", CFrame = CFrame.new(7217.787109375, 56.57000732421875, -680.75)}, -- D56
+    {Name = "Fishman Raider [Lv. 1775]", CFrame = CFrame.new(-10117.947265625, 332.6029968261719, -8174.68603515625)}, -- D57
+    {Name = "Fishman Raider [Lv. 1775]", CFrame = CFrame.new(-10523.755859375, 332.6029968261719, -8597.5888671875)}, -- D58
+    {Name = "Fishman Raider [Lv. 1775]", CFrame = CFrame.new(-10223.1142578125, 332.6029968261719, -8482.5458984375)}, -- D59
+    {Name = "Fishman Raider [Lv. 1775]", CFrame = CFrame.new(-10853.8564453125, 332.6029968261719, -8425.240234375)}, -- D60
+    {Name = "Fishman Raider [Lv. 1775]", CFrame = CFrame.new(-10603.64453125, 332.6029968261719, -8309.1259765625)}, -- D61
+    {Name = "Fishman Raider [Lv. 1775]", CFrame = CFrame.new(-10391.73828125, 332.6029968261719, -8212.2763671875)}, -- D62
+    {Name = "Forest Pirate [Lv. 1825]", CFrame = CFrame.new(-13345.5419921875, 332.22601318359375, -7630.7578125)}, -- D63
+    {Name = "Forest Pirate [Lv. 1825]", CFrame = CFrame.new(-13279.54296875, 332.22601318359375, -7897.7578125)}, -- D64
+    {Name = "Forest Pirate [Lv. 1825]", CFrame = CFrame.new(-13600.54296875, 332.22601318359375, -7741.7578125)}, -- D65
+    {Name = "Forest Pirate [Lv. 1825]", CFrame = CFrame.new(-13513.54296875, 332.22601318359375, -8008.7578125)}, -- D66
+    {Name = "Forest Pirate [Lv. 1825]", CFrame = CFrame.new(-13105.54296875, 332.22601318359375, -7705.7568359375)}, -- D67
+    {Name = "Forest Pirate [Lv. 1825]", CFrame = CFrame.new(-13651.54296875, 332.22601318359375, -7894.7578125)}, -- D68
+    {Name = "Ghost [Lv. 1500]", CFrame = CFrame.new(5307.18994140625, 10.304000854492188, 427.5159912109375)}, -- D69
+    {Name = "Ghost [Lv. 1500]", CFrame = CFrame.new(5192.47021484375, 10.304000854492188, 438.9729919433594)}, -- D70
+    {Name = "Ghost [Lv. 1500]", CFrame = CFrame.new(5253.05712890625, 10.304000854492188, 393.9670104980469)}, -- D71
+    {Name = "Ghost [Lv. 1500]", CFrame = CFrame.new(5306.24609375, 10.304000854492188, 490.10400390625)}, -- D72
+    {Name = "Ghost [Lv. 1500]", CFrame = CFrame.new(5206.94580078125, 10.304000854492188, 496.4630126953125)}, -- D73
+    {Name = "Grand Devotee [Lv. 2725]", CFrame = CFrame.new(9608.927734375, -1994.3975830078125, 9956.375)}, -- D74
+    {Name = "Grand Devotee [Lv. 2725]", CFrame = CFrame.new(9719.8828125, -1989.8616943359375, 10134.220703125)}, -- D75
+    {Name = "Head Baker [Lv. 2275]", CFrame = CFrame.new(-2251.575927734375, 51.00999450683594, -13033.3974609375)}, -- D76
+    {Name = "Head Baker [Lv. 2275]", CFrame = CFrame.new(-2263.35400390625, 51.00999450683594, -12711.3916015625)}, -- D77
+    {Name = "Head Baker [Lv. 2275]", CFrame = CFrame.new(-2389.22900390625, 51.00999450683594, -13018.3349609375)}, -- D78
+    {Name = "Head Baker [Lv. 2275]", CFrame = CFrame.new(-2369.090087890625, 51.00999450683594, -12807.921875)}, -- D79
+    {Name = "Head Baker [Lv. 2275]", CFrame = CFrame.new(-2100.705078125, 51.00999450683594, -12720.9658203125)}, -- D80
+    {Name = "Head Baker [Lv. 2275]", CFrame = CFrame.new(-2151.3779296875, 51.00999450683594, -13033.3974609375)}, -- D81
+    {Name = "High Disciple [Lv. 2700]", CFrame = CFrame.new(9854.435546875, -1995.0880126953125, 9963.9375)}, -- D82
+    {Name = "High Disciple [Lv. 2700]", CFrame = CFrame.new(9886.435546875, -1995.0880126953125, 9629.9375)}, -- D83
+    {Name = "High Disciple [Lv. 2700]", CFrame = CFrame.new(9778.435546875, -1995.0880126953125, 9876.9375)}, -- D84
+    {Name = "High Disciple [Lv. 2700]", CFrame = CFrame.new(9778.435546875, -1995.0880126953125, 9720.9375)}, -- D85
+    {Name = "High Disciple [Lv. 2700]", CFrame = CFrame.new(9835.435546875, -1995.0880126953125, 9533.9375)}, -- D86
+    {Name = "Hydra Enforcer [Lv. 1625]", CFrame = CFrame.new(4456.4228515625, 1008.4530029296875, 418.8370056152344)}, -- D87
+    {Name = "Hydra Enforcer [Lv. 1625]", CFrame = CFrame.new(4581.51904296875, 1003.1519775390625, 704.93701171875)}, -- D88
+    {Name = "Hydra Enforcer [Lv. 1625]", CFrame = CFrame.new(4462.65283203125, 1005.1019897460938, 551.0059814453125)}, -- D89
+    {Name = "Hydra Leader [Lv. 1675] [Boss]", CFrame = CFrame.new(5888.77392578125, 1020.1489868164062, -117.81500244140625)}, -- D90
+    {Name = "Ice Cream Chef [Lv. 2125]", CFrame = CFrame.new(-966.2890014648438, 64.55900573730469, -10973.5576171875)}, -- D91
+    {Name = "Ice Cream Chef [Lv. 2125]", CFrame = CFrame.new(-931.7449951171875, 64.55900573730469, -11146.73046875)}, -- D92
+    {Name = "Ice Cream Chef [Lv. 2125]", CFrame = CFrame.new(-797.031005859375, 64.55900573730469, -10790.724609375)}, -- D93
+    {Name = "Ice Cream Chef [Lv. 2125]", CFrame = CFrame.new(-1109.2869873046875, 64.55900573730469, -10931.265625)}, -- D94
+    {Name = "Ice Cream Chef [Lv. 2125]", CFrame = CFrame.new(-502.4100036621094, 64.55900573730469, -10873.794921875)}, -- D95
+    {Name = "Ice Cream Chef [Lv. 2125]", CFrame = CFrame.new(-715.4340209960938, 64.55900573730469, -10920.435546875)}, -- D96
+    {Name = "Ice Cream Commander [Lv. 2150]", CFrame = CFrame.new(-366.81298828125, 64.65299987792969, -11094.4228515625)}, -- D97
+    {Name = "Ice Cream Commander [Lv. 2150]", CFrame = CFrame.new(-657.5499877929688, 129.74099731445312, -11215.7919921875)}, -- D98
+    {Name = "Ice Cream Commander [Lv. 2150]", CFrame = CFrame.new(-675.0969848632812, 67.66700744628906, -11371.724609375)}, -- D99
+    {Name = "Ice Cream Commander [Lv. 2150]", CFrame = CFrame.new(-528.7490234375, 65.47900390625, -11348.9228515625)}, -- D100
+    {Name = "Ice Cream Commander [Lv. 2150]", CFrame = CFrame.new(-883.6300048828125, 70.14100646972656, -11485.525390625)}, -- D101
+    {Name = "Ice Cream Commander [Lv. 2150]", CFrame = CFrame.new(-770.4149780273438, 125.61100769042969, -11159.8408203125)}, -- D102
+    {Name = "Island Boy [Lv. 2475]", CFrame = CFrame.new(-16991.73046875, 12.766998291015625, -186.18299865722656)}, -- D103
+    {Name = "Island Boy [Lv. 2475]", CFrame = CFrame.new(-16883.048828125, 23.347000122070312, -250.87399291992188)}, -- D104
+    {Name = "Island Boy [Lv. 2475]", CFrame = CFrame.new(-16736.21875, 22.171005249023438, -131.7209930419922)}, -- D105
+    {Name = "Island Boy [Lv. 2475]", CFrame = CFrame.new(-16661.57421875, 57.37200927734375, -252.96299743652344)}, -- D106
+    {Name = "Island Boy [Lv. 2475]", CFrame = CFrame.new(-16905.3046875, 13.093994140625, -73.50700378417969)}, -- D107
+    {Name = "Isle Champion [Lv. 2525]", CFrame = CFrame.new(-16735.67578125, 23.34600830078125, 1110.5849609375)}, -- D108
+    {Name = "Isle Champion [Lv. 2525]", CFrame = CFrame.new(-16940.798828125, 14.1929931640625, 1070.865966796875)}, -- D109
+    {Name = "Isle Champion [Lv. 2525]", CFrame = CFrame.new(-16901.23046875, 12.451004028320312, 969.968994140625)}, -- D110
+    {Name = "Isle Champion [Lv. 2525]", CFrame = CFrame.new(-16787.3203125, 25.205001831054688, 992.1320190429688)}, -- D111
+    {Name = "Isle Champion [Lv. 2525]", CFrame = CFrame.new(-16618.74609375, 58.37800598144531, 1099.509033203125)}, -- D112
+    {Name = "Isle Outlaw [Lv. 2450]", CFrame = CFrame.new(-16433.71875, 57.22100830078125, -195.47300720214844)}, -- D113
+    {Name = "Jungle Pirate [Lv. 1900]", CFrame = CFrame.new(-11612.466796875, 335.8219909667969, -10489.4091796875)}, -- D114
+    {Name = "Jungle Pirate [Lv. 1900]", CFrame = CFrame.new(-11708.431640625, 331.875, -10700.0517578125)}, -- D115
+    {Name = "Jungle Pirate [Lv. 1900]", CFrame = CFrame.new(-11918.103515625, 332.51800537109375, -10744.08984375)}, -- D116
+    {Name = "Jungle Pirate [Lv. 1900]", CFrame = CFrame.new(-12306.3486328125, 331.0719909667969, -10352.8779296875)}, -- D117
+    {Name = "Jungle Pirate [Lv. 1900]", CFrame = CFrame.new(-11902.2734375, 331.2919921875, -10432.0673828125)}, -- D118
+    {Name = "Jungle Pirate [Lv. 1900]", CFrame = CFrame.new(-12321.3115234375, 331.43701171875, -10669.2548828125)}, -- D119
+    {Name = "Jungle Pirate [Lv. 1900]", CFrame = CFrame.new(-12142.458984375, 331.6029968261719, -10419.9111328125)}, -- D120
+    {Name = "Living Zombie [Lv. 2000]", CFrame = CFrame.new(-10170.90234375, 141.1750030517578, 6159.626953125)}, -- D121
+    {Name = "Living Zombie [Lv. 2000]", CFrame = CFrame.new(-10293.1015625, 152.9530029296875, 5960.93017578125)}, -- D122
+    {Name = "Living Zombie [Lv. 2000]", CFrame = CFrame.new(-10184.1015625, 152.9530029296875, 5741.93017578125)}, -- D123
+    {Name = "Living Zombie [Lv. 2000]", CFrame = CFrame.new(-9956.1015625, 140.9530029296875, 5966.93017578125)}, -- D124
+    {Name = "Living Zombie [Lv. 2000]", CFrame = CFrame.new(-10061.90234375, 140.1750030517578, 6038.626953125)}, -- D125
+    {Name = "Living Zombie [Lv. 2000]", CFrame = CFrame.new(-10205.1015625, 151.9530029296875, 5861.93017578125)}, -- D126
+    {Name = "Longma [Lv. 2000] [Boss]", CFrame = CFrame.new(-10156.22265625, 337.77801513671875, -9445.865234375)}, -- D127
+    {Name = "Marine Commodore [Lv. 1700]", CFrame = CFrame.new(3222.4169921875, 75.61000061035156, -7820.55712890625)}, -- D128
+    {Name = "Marine Commodore [Lv. 1700]", CFrame = CFrame.new(2685.39990234375, 75.61000061035156, -8066.0498046875)}, -- D129
+    {Name = "Marine Commodore [Lv. 1700]", CFrame = CFrame.new(2995.3798828125, 75.61000061035156, -8054.45703125)}, -- D130
+    {Name = "Marine Commodore [Lv. 1700]", CFrame = CFrame.new(2497.77490234375, 81.84700012207031, -7356.93896484375)}, -- D131
+    {Name = "Marine Commodore [Lv. 1700]", CFrame = CFrame.new(2367.907958984375, 75.61000061035156, -7794.9560546875)}, -- D132
+    {Name = "Marine Commodore [Lv. 1700]", CFrame = CFrame.new(2577.25390625, 75.61000061035156, -7739.8720703125)}, -- D133
+    {Name = "Marine Rear Admiral [Lv. 1725]", CFrame = CFrame.new(3753.5029296875, 123.91200256347656, -7403.22021484375)}, -- D134
+    {Name = "Marine Rear Admiral [Lv. 1725]", CFrame = CFrame.new(3465.18408203125, 123.91200256347656, -7181.7841796875)}, -- D135
+    {Name = "Marine Rear Admiral [Lv. 1725]", CFrame = CFrame.new(3761.81005859375, 123.91200256347656, -6823.52197265625)}, -- D136
+    {Name = "Marine Rear Admiral [Lv. 1725]", CFrame = CFrame.new(3920.06103515625, 146.2259979248047, -7175.2060546875)}, -- D137
+    {Name = "Marine Rear Admiral [Lv. 1725]", CFrame = CFrame.new(3973.738037109375, 123.91200256347656, -6931.93701171875)}, -- D138
+    {Name = "Musketeer Pirate [Lv. 1925]", CFrame = CFrame.new(-13417.6435546875, 391.3940124511719, -9962.2958984375)}, -- D139
+    {Name = "Musketeer Pirate [Lv. 1925]", CFrame = CFrame.new(-13337.8818359375, 472.06201171875, -9698.6611328125)}, -- D140
+    {Name = "Musketeer Pirate [Lv. 1925]", CFrame = CFrame.new(-13198.6435546875, 391.3940124511719, -9602.2958984375)}, -- D141
+    {Name = "Musketeer Pirate [Lv. 1925]", CFrame = CFrame.new(-13556.078125, 391.3940124511719, -9735.9443359375)}, -- D142
+    {Name = "Musketeer Pirate [Lv. 1925]", CFrame = CFrame.new(-13270.8818359375, 472.06201171875, -9860.6611328125)}, -- D143
+    {Name = "Musketeer Pirate [Lv. 1925]", CFrame = CFrame.new(-13075.6435546875, 391.3940124511719, -9890.2958984375)}, -- D144
+    {Name = "Musketeer Pirate [Lv. 1925]", CFrame = CFrame.new(-13514.8681640625, 403.40399169921875, -9866.51953125)}, -- D145
+    {Name = "Mythological Pirate [Lv. 1850]", CFrame = CFrame.new(-13320.0302734375, 519.10302734375, -6785.01806640625)}, -- D146
+    {Name = "Mythological Pirate [Lv. 1850]", CFrame = CFrame.new(-13456.0498046875, 469.4330139160156, -7039.9638671875)}, -- D147
+    {Name = "Mythological Pirate [Lv. 1850]", CFrame = CFrame.new(-13221.0302734375, 519.10302734375, -6902.01806640625)}, -- D148
+    {Name = "Mythological Pirate [Lv. 1850]", CFrame = CFrame.new(-13732.0478515625, 469.4330139160156, -6826.96484375)}, -- D149
+    {Name = "Mythological Pirate [Lv. 1850]", CFrame = CFrame.new(-13221.03125, 519.10302734375, -6689.01611328125)}, -- D150
+    {Name = "Mythological Pirate [Lv. 1850]", CFrame = CFrame.new(-13876.0478515625, 469.4330139160156, -7009.96484375)}, -- D151
+    {Name = "Ocean Prophet [Lv. 2675]", CFrame = CFrame.new(11129.7890625, -2007.7989501953125, 10051.47265625)}, -- D152
+    {Name = "Ocean Prophet [Lv. 2675]", CFrame = CFrame.new(10861.970703125, -2006.6168212890625, 10245.21484375)}, -- D153
+    {Name = "Ocean Prophet [Lv. 2675]", CFrame = CFrame.new(11003.326171875, -2007.0257568359375, 10225.0625)}, -- D154
+    {Name = "Ocean Prophet [Lv. 2675]", CFrame = CFrame.new(11111.55078125, -2007.3404541015625, 10201.5078125)}, -- D155
+    {Name = "Ocean Prophet [Lv. 2675]", CFrame = CFrame.new(10924.234375, -1998.9224853515625, 10121.0537109375)}, -- D156
+    {Name = "Peanut President [Lv. 2100]", CFrame = CFrame.new(-1874.362060546875, 37.22200012207031, -10596.576171875)}, -- D157
+    {Name = "Peanut President [Lv. 2100]", CFrame = CFrame.new(-2395.1240234375, 87.37600708007812, -10456.306640625)}, -- D158
+    {Name = "Peanut President [Lv. 2100]", CFrame = CFrame.new(-2247.47607421875, 87.322998046875, -10440.8681640625)}, -- D159
+    {Name = "Peanut President [Lv. 2100]", CFrame = CFrame.new(-1993.406005859375, 37.22200012207031, -10682.9052734375)}, -- D160
+    {Name = "Peanut President [Lv. 2100]", CFrame = CFrame.new(-1996.0699462890625, 37.22200012207031, -10496.9267578125)}, -- D161
+    {Name = "Peanut President [Lv. 2100]", CFrame = CFrame.new(-2311.987060546875, 87.322998046875, -10609.3427734375)}, -- D162
+    {Name = "Peanut Scout [Lv. 2075]", CFrame = CFrame.new(-2377.282958984375, 37.951995849609375, -10308.21875)}, -- D163
+    {Name = "Peanut Scout [Lv. 2075]", CFrame = CFrame.new(-2250.19091796875, 8.854995727539062, -9948.8388671875)}, -- D164
+    {Name = "Peanut Scout [Lv. 2075]", CFrame = CFrame.new(-2294.248046875, 37.23699951171875, -10176.12109375)}, -- D165
+    {Name = "Peanut Scout [Lv. 2075]", CFrame = CFrame.new(-2065.347900390625, 34.951995849609375, -10066.810546875)}, -- D166
+    {Name = "Peanut Scout [Lv. 2075]", CFrame = CFrame.new(-2078.091064453125, 12.854995727539062, -9997.103515625)}, -- D167
+    {Name = "Peanut Scout [Lv. 2075]", CFrame = CFrame.new(-1924.0009765625, 37.272003173828125, -10199.6630859375)}, -- D168
+    {Name = "Peanut Scout [Lv. 2075]", CFrame = CFrame.new(-1865.427001953125, 8.854995727539062, -10086.232421875)}, -- D169
+    {Name = "Pirate Millionaire [Lv. 1500]", CFrame = CFrame.new(-62.602996826171875, 55.48699951171875, 5803.47119140625)}, -- D170
+    {Name = "Pirate Millionaire [Lv. 1500]", CFrame = CFrame.new(-593.177001953125, 55.48699951171875, 5511.45703125)}, -- D171
+    {Name = "Pirate Millionaire [Lv. 1500]", CFrame = CFrame.new(-751.5700073242188, 55.48199462890625, 5637.533203125)}, -- D172
+    {Name = "Pirate Millionaire [Lv. 1500]", CFrame = CFrame.new(-543.8140258789062, 56.69200134277344, 5653.96923828125)}, -- D173
+    {Name = "Pirate Millionaire [Lv. 1500]", CFrame = CFrame.new(-232.9199981689453, 57.042999267578125, 5757.8330078125)}, -- D174
+    {Name = "Pirate Millionaire [Lv. 1500]", CFrame = CFrame.new(-118.80900573730469, 55.48699951171875, 5649.169921875)}, -- D175
+    {Name = "Pistol Billionaire [Lv. 1525]", CFrame = CFrame.new(40.05999755859375, 85.27200317382812, 6114.2978515625)}, -- D176
+    {Name = "Pistol Billionaire [Lv. 1525]", CFrame = CFrame.new(-188.14300537109375, 84.70899963378906, 6337.041015625)}, -- D177
+    {Name = "Pistol Billionaire [Lv. 1525]", CFrame = CFrame.new(-185.6929931640625, 84.70899963378906, 6103.626953125)}, -- D178
+    {Name = "Pistol Billionaire [Lv. 1525]", CFrame = CFrame.new(-54.811004638671875, 83.77000427246094, 5947.8408203125)}, -- D179
+    {Name = "Pistol Billionaire [Lv. 1525]", CFrame = CFrame.new(-739.5330200195312, 84.63400268554688, 5833.05712890625)}, -- D180
+    {Name = "Pistol Billionaire [Lv. 1525]", CFrame = CFrame.new(-903.1690063476562, 84.63400268554688, 5891.01123046875)}, -- D181
+    {Name = "Pistol Billionaire [Lv. 1525]", CFrame = CFrame.new(-666.77099609375, 84.94400024414062, 6008.337890625)}, -- D182
+    {Name = "Pistol Billionaire [Lv. 1525]", CFrame = CFrame.new(-852.8909912109375, 69.99700927734375, 6175.2958984375)}, -- D183
+    {Name = "Posessed Mummy [Lv. 2050]", CFrame = CFrame.new(-9759.3515625, 26.9530029296875, 6051.97412109375)}, -- D184
+    {Name = "Venomous Assailant [Lv. 1650]", CFrame = CFrame.new(4452.81689453125, 1220.821044921875, 698.9119873046875)}, -- D185
+    {Name = "Venomous Assailant [Lv. 1650]", CFrame = CFrame.new(4674.9267578125, 1134.8270263671875, 996.3090209960938)}, -- D186
+    {Name = "Venomous Assailant [Lv. 1650]", CFrame = CFrame.new(4443.046875, 1237.0240478515625, 335.8599853515625)}, -- D187
+}
+for i, spawn in ipairs(Yama2ExtraSpawns) do
+    table.insert(Yama2PatrolPoints, spawn.CFrame)
+    table.insert(Yama2PatrolPointIds, "D"..i.." / "..spawn.Name)
+end
+
 -- Tushita Q1 (BoatQuest)
 local TushitaQ1Points = {
     CFrame.new(-9546.990234375, 21.139892578125, 4686.1142578125),
@@ -168,6 +363,8 @@ local Yama2PatrolIndex   = 1
 local Yama2PatrolHold    = 0
 local Yama2LastPatrolHop = 0
 local Yama2IsFighting    = false
+local HazeStats = {Total = 0, Rows = {}, Order = {}, Watching = {}}
+
 
 -- Yama3 (Bones/Hallow)
 local BonesCount      = 0
@@ -195,6 +392,26 @@ local StatusLogs = {}
 local MaxLogs = 250
 local ScreenGui, MainFrame, BtnCDK
 local StatusLabel, AFLabel, LogsText, MasteryLabel
+
+-- Счётчики живут до сброса кнопкой или повторного Execute; пауза их сохраняет.
+function UI.ClearHazeWatchers()
+    for target, watch in pairs(HazeStats.Watching) do
+        for _, connection in ipairs(watch.Connections) do connection:Disconnect() end
+        HazeStats.Watching[target] = nil
+    end
+end
+
+function UI.RefreshHazeStats()
+    if UI.Closed or not UI.HazeTotal then return end
+    UI.HazeTotal.Text = "Убито HAZE: "..HazeStats.Total
+    local lines = {}
+    for _, key in ipairs(HazeStats.Order) do
+        local row = HazeStats.Rows[key]
+        table.insert(lines, row.Count.." × "..row.Name.."\n   "..row.Location)
+    end
+    UI.HazeRows.Text = #lines > 0 and table.concat(lines, "\n\n")
+        or "Пока нет подтверждённых убийств.\nДоп. маршрут: "..#Yama2ExtraSpawns.." точек спавна (D1–D"..#Yama2ExtraSpawns..")."
+end
 
 local function TrackConnection(connection)
     table.insert(UI.Connections, connection)
@@ -237,6 +454,49 @@ local function AddLog(msg)
     if #StatusLogs > MaxLogs then table.remove(StatusLogs) end
     RefreshLogs()
     print(line)
+end
+
+-- Наблюдаем только выбранную Haze-цель. Armed выставляется при атаке вблизи.
+function UI.WatchHaze(target, hum, position)
+    if HazeStats.Watching[target] then return HazeStats.Watching[target] end
+    local location, nearest = nil, math.huge
+    for i, spawn in ipairs(Yama2ExtraSpawns) do
+        local distance = (spawn.CFrame.Position - position).Magnitude
+        if distance < nearest then
+            nearest = distance
+            local p = spawn.CFrame.Position
+            location = string.format("D%d / %s · XYZ %.0f / %.0f / %.0f", i, spawn.Name, p.X, p.Y, p.Z)
+        end
+    end
+    if nearest > 600 then
+        location = string.format("XYZ %.0f / %.0f / %.0f", position.X, position.Y, position.Z)
+    end
+    local watch = {Connections = {}, Armed = false, Counted = false}
+    local name = target.Name
+    local function confirmDeath()
+        if watch.Counted or not watch.Armed or hum.Health > 0
+            or not AutoCDK or not AutoYama2 or UI.Closed then return end
+        watch.Counted = true
+        local key = name.." @ "..location
+        if not HazeStats.Rows[key] then
+            HazeStats.Rows[key] = {Name = name, Location = location, Count = 0}
+            table.insert(HazeStats.Order, key)
+        end
+        HazeStats.Rows[key].Count = HazeStats.Rows[key].Count + 1
+        HazeStats.Total = HazeStats.Total + 1
+        UI.RefreshHazeStats()
+        AddLog("HAZE убит: "..name.." / "..location.."; всего "..HazeStats.Total)
+    end
+    table.insert(watch.Connections, hum.Died:Connect(confirmDeath))
+    table.insert(watch.Connections, target.AncestryChanged:Connect(function()
+        if target.Parent then return end
+        confirmDeath() -- Удаление живого моба не является убийством.
+        for _, connection in ipairs(watch.Connections) do connection:Disconnect() end
+        HazeStats.Watching[target] = nil
+    end))
+    watch.ConfirmDeath = confirmDeath
+    HazeStats.Watching[target] = watch
+    return watch
 end
 
 local function UpdateStatus(text)
@@ -394,6 +654,31 @@ local function CreateMainGui()
     end
     UI.RenderRunning()
 
+    local hazeCard = make("Frame", {Name = "HazeCard", Size = UDim2.new(1,0,0,230),
+        LayoutOrder = 4, BackgroundColor3 = theme.Sidebar, BorderSizePixel = 0, ClipsDescendants = true}, content)
+    corner(hazeCard, 12)
+    stroke(hazeCard, theme.Border, 0.5)
+    UI.HazeTotal = label(hazeCard, "Убито HAZE: 0", UDim2.new(1,-106,0,24), UDim2.fromOffset(14,10), 14, theme.Accent, Enum.Font.GothamBold)
+    local resetHaze = button(hazeCard, "ResetHazeStats", "Сбросить", UDim2.fromOffset(82,26), UDim2.new(1,-96,0,10))
+    local hint = label(hazeCard, "Яма 2 · моб / место / убийства за этот запуск", UDim2.new(1,-28,0,30), UDim2.fromOffset(14,38), 10, theme.Muted)
+    hint.TextWrapped = true
+    UI.HazeScroll = make("ScrollingFrame", {Name = "HazeScroll", Size = UDim2.new(1,-24,1,-80),
+        Position = UDim2.fromOffset(12,72), BackgroundTransparency = 1, BorderSizePixel = 0,
+        CanvasSize = UDim2.fromOffset(0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 4,
+        ScrollBarImageColor3 = theme.Accent, ClipsDescendants = true}, hazeCard)
+    UI.HazeRows = label(UI.HazeScroll, "", UDim2.new(1,-12,0,0), UDim2.fromOffset(0,0), 12, theme.Text, Enum.Font.Code)
+    UI.HazeRows.AutomaticSize = Enum.AutomaticSize.Y
+    UI.HazeRows.TextWrapped = true
+    UI.HazeRows.TextYAlignment = Enum.TextYAlignment.Top
+    UI.HazeRows.RichText = false
+    TrackConnection(resetHaze.Activated:Connect(function()
+        UI.ClearHazeWatchers()
+        HazeStats.Total, HazeStats.Rows, HazeStats.Order = 0, {}, {}
+        UI.RefreshHazeStats()
+    end))
+    UI.RefreshHazeStats()
+
     local logsCard = make("Frame", {Name = "LogsCard", Size = UDim2.new(1,0,0,200),
         LayoutOrder = 3, BackgroundColor3 = theme.Field, BorderSizePixel = 0, ClipsDescendants = true}, content)
     corner(logsCard, 12)
@@ -515,6 +800,7 @@ local function CreateMainGui()
         end
     end
     local function stopAutomation()
+        UI.ClearHazeWatchers()
         AutoCDK = false
         NoclipEnabled = false
         StopTween = true
@@ -1377,7 +1663,7 @@ local function Yama2PatrolStep()
     Yama2LastPatrolHop = tick()
     local pointId = Yama2PatrolPointIds[idx]
     local targetCF = Yama2PatrolPoints[idx] * FarmOffset
-    local profile = pointId <= 5 and Yama2PatrolFlight or nil
+    local profile = type(pointId) == "number" and pointId <= 5 and Yama2PatrolFlight or nil
     AddLog("Yama2: патруль к точке "..pointId)
     SimpleTeleport(targetCF, "Yama2 патруль "..pointId, function()
         return not AutoYama2 or GetNearestHazeEnemy(1200) ~= nil
@@ -1391,6 +1677,7 @@ local function YamaQuest2Tick()
     local af = GetCountMaterials("Alucard Fragment")
     if af == nil then return end
     if af >= 2 then
+        UI.ClearHazeWatchers()
         AutoYama2 = false
         UpdateStatus("Yama2: второй фрагмент получен, перехожу к Yama3.")
         return
@@ -1414,6 +1701,7 @@ local function YamaQuest2Tick()
         local hum  = target:FindFirstChild("Humanoid")
         if not (char and hrp and tHRP and hum) then return end
 
+        local watch = UI.WatchHaze(target, hum, tHRP.Position)
         local fightCharacter = char
         UpdateStatus("Yama2: фарм "..target.Name)
         SimpleTeleport(tHRP.CFrame * FarmOffset, "Yama2 моб", function()
@@ -1456,12 +1744,15 @@ local function YamaQuest2Tick()
             EquipToolByName("Yama")
 
             if tick() - lastAttack > 0.15 then
+                if dist <= 60 then watch.Armed = true end
                 AttackModule:AttackEnemyModel(target)
+                watch.ConfirmDeath()
                 lastAttack = tick()
             end
 
             RunService.Heartbeat:Wait()
         end
+        watch.ConfirmDeath()
     end)
 
     if not ok then
@@ -2397,6 +2688,7 @@ local function GetStageFromAF(count)
 end
 
 local function DisableAllQuests()
+    UI.ClearHazeWatchers()
     AutoYama1,AutoYama2,AutoYama3 = false,false,false
     AutoTushita1,AutoTushita2,AutoTushita3 = false,false,false
     AutoCDKFinal = false
