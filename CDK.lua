@@ -25,6 +25,8 @@ local MasteryTarget      = 350
 
 local TeleportSpeed      = 150             -- скорость полёта, stud/сек
 local MinFlightHeight    = 3               -- запас над минимальным Y=2
+local MasteryFinishHealth = 0.20           -- стиль до 20% HP, затем нужный меч
+local SoulReaperFlight = {Speed = 90, Direct = true, MaxSegmentDistance = math.huge}
 -- Только для исходных точек патруля Yama2 #1–5.
 local Yama2PatrolFlight = {Speed = 90, CruiseHeight = 120, Clearance = 40,
     MaxSegmentDistance = 180, PauseBetweenSegments = 0.1}
@@ -1074,7 +1076,10 @@ local function SimpleTeleport(targetCFrame, label, shouldInterrupt, profile)
                 route[#route + 1] = segments == 1 and goal or from:Lerp(goal, index / segments)
             end
         end
-        if profile then
+        if profile and profile.Direct then
+            speed = math.min(speed, math.max(profile.Speed or speed, 1))
+            appendLeg(hrp.CFrame, targetCFrame)
+        elseif profile then
             speed = math.min(speed, math.max(profile.Speed or speed, 1))
             pause = math.clamp(profile.PauseBetweenSegments or 0, 0, 2)
             local start = hrp.CFrame
@@ -1280,6 +1285,23 @@ local function HasLocalTool(name)
         end
     end
     return false
+end
+
+local SwordLoadState = {Busy = false, LastAttempt = -math.huge}
+local function EnsureSwordAvailable(name)
+    if HasLocalTool(name) then return true end
+    if SwordLoadState.Busy or tick() - SwordLoadState.LastAttempt < 3 then return false end
+    SwordLoadState.Busy = true
+    SwordLoadState.LastAttempt = tick()
+    local ok, err = pcall(function() remote:InvokeServer("LoadItem", name) end)
+    SwordLoadState.Busy = false
+    if not ok then AddLog("Не удалось загрузить меч "..name..": "..tostring(err)) end
+    return HasLocalTool(name)
+end
+
+local function QuestSwordName()
+    if AutoYama1 or AutoYama2 or AutoYama3 then return SwordYamaName end
+    if AutoTushita1 or AutoTushita2 or AutoTushita3 then return SwordTushitaName end
 end
 
 local function HasOwnedWeapon(name)
@@ -1513,6 +1535,9 @@ local function FightMobForWeapon(target, weaponName, label)
         local tHRP = target:FindFirstChild("HumanoidRootPart")
         local hum  = target:FindFirstChild("Humanoid")
         if not (char and hrp and tHRP and hum) then return end
+        if not EnsureSwordAvailable(weaponName) then return end
+        local fightCharacter = char
+        local finishing = false
 
         UpdateStatus(label or ("Фарм мастери: "..weaponName.." по "..target.Name))
         SimpleTeleport(tHRP.CFrame * FarmOffset, label or "мастери моб")
@@ -1521,12 +1546,14 @@ local function FightMobForWeapon(target, weaponName, label)
         local lastPosAdjust = 0
         local lastAttack    = 0
 
-        while AutoCDK and NeedMastery and target.Parent and hum.Health > 0 and tick() < deadline do
+        while AutoCDK and NeedMastery and not StopTween and target.Parent and hum.Health > 0 and tick() < deadline do
             char = LocalPlayer.Character
             hrp  = char and char:FindFirstChild("HumanoidRootPart")
             tHRP = target:FindFirstChild("HumanoidRootPart")
             hum  = target:FindFirstChild("Humanoid")
             if not (char and hrp and tHRP and hum) then break end
+            local playerHum = char:FindFirstChildOfClass("Humanoid")
+            if char ~= fightCharacter or not playerHum or playerHum.Health <= 0 then break end
 
             local dist = (tHRP.Position - hrp.Position).Magnitude
             if dist > 2000 then
@@ -1542,9 +1569,14 @@ local function FightMobForWeapon(target, weaponName, label)
             end
 
             AutoHaki()
-            EquipToolByName(weaponName)
+            -- После достижения порога больше не возвращаемся к стилю даже при регенерации.
+            if hum.MaxHealth > 0 and hum.Health <= hum.MaxHealth * MasteryFinishHealth then finishing = true end
+            local attackWeapon = finishing and weaponName or WeaponName
+            local swordReady = EnsureSwordAvailable(weaponName)
+            if swordReady then EquipToolByName(attackWeapon) end
 
-            if tick() - lastAttack > 0.15 then
+            -- Не бьём случайным инструментом, если нужный меч/стиль ещё не экипировался.
+            if swordReady and IsToolEquipped(attackWeapon) and tick() - lastAttack > 0.15 then
                 AttackModule:AttackEnemyModel(target)
                 lastAttack = tick()
             end
@@ -2167,7 +2199,7 @@ local function HandleSoulReaperPhaseYama3()
     local soul, sh, sHRP = FindSoulReaper()
     if not soul then
         AddLog("Yama3: Soul Reaper не найден, лечу к спавну.")
-        SimpleTeleport(SoulReaperSpawnCF, "Soul Reaper spawn")
+        SimpleTeleport(SoulReaperSpawnCF, "Soul Reaper spawn", function() return not AutoYama3 end, SoulReaperFlight)
         return
     end
 
@@ -2175,16 +2207,22 @@ local function HandleSoulReaperPhaseYama3()
     AddLog("Yama3: подлетаю к Soul Reaper, не атакую, жду HP <= 500, затем ещё 10 сек стою.")
 
     local prevNoclip = NoclipEnabled
-    NoclipEnabled = false
 
     local char = LocalPlayer.Character
     local hrp  = char and char:FindFirstChild("HumanoidRootPart")
     sHRP       = soul:FindFirstChild("HumanoidRootPart")
     sh         = soul:FindFirstChild("Humanoid")
 
-    if hrp and sHRP then
-        hrp.CFrame = ClampFlightCFrame(sHRP.CFrame * CFrame.new(0,0,-6))
+    local function approachSoul()
+        if not (hrp and sHRP) then return false end
+        return SimpleTeleport(sHRP.CFrame * CFrame.new(0,0,-6), "Soul Reaper: подлёт 90 stud/сек", function()
+            local currentMap = Workspace:FindFirstChild("Map")
+            return not AutoYama3 or not soul.Parent or not sh or sh.Health <= 0
+                or (currentMap and currentMap:FindFirstChild("HellDimension") ~= nil)
+        end, SoulReaperFlight)
     end
+    if not approachSoul() then return end
+    NoclipEnabled = false -- Принимаем урон только после окончания полёта.
 
     local waitDeadline = tick() + 120
 
@@ -2215,7 +2253,9 @@ local function HandleSoulReaperPhaseYama3()
         local dist = (hrp.Position - sHRP.Position).Magnitude
         if dist > 120 then
             AddLog("Yama3: меня откинуло от Soul Reaper, подлетаю обратно.")
-            hrp.CFrame = ClampFlightCFrame(sHRP.CFrame * CFrame.new(0,0,-6))
+            NoclipEnabled = prevNoclip
+            if not approachSoul() then NoclipEnabled = prevNoclip; return end
+            NoclipEnabled = false
         end
 
         local phum = char:FindFirstChild("Humanoid")
@@ -3014,19 +3054,37 @@ local function RunTick(name, callback)
     end
 end
 
+-- Отдельный цикл работает и во время долгих боёв/ожидания волн: восстанавливает
+-- меч в слоте после возрождения, не отнимая из рук текущий стиль боя.
+spawn(function()
+    while task.wait(1) and GuiAlive do
+        if AutoCDK and not NeedMastery then
+            local sword = QuestSwordName()
+            if sword then RunTick("Загрузка квестового меча", function() EnsureSwordAvailable(sword) end) end
+        end
+    end
+end)
+
 spawn(function()
     while task.wait(0.4) and GuiAlive do
         if AutoCDK then
             if NeedMastery then
                 RunTick("MasteryTick", MasteryTick)
             else
-                if AutoYama1    then RunTick("YamaQuest1Tick", YamaQuest1Tick)    end
-                if AutoYama2    then RunTick("YamaQuest2Tick", YamaQuest2Tick)    end
-                if AutoYama3    then RunTick("YamaQuest3Tick", YamaQuest3Tick)    end
-                if AutoTushita1 then RunTick("TushitaQuest1Tick", TushitaQuest1Tick) end
-                if AutoTushita2 then RunTick("TushitaQuest2Tick", TushitaQuest2Tick) end
-                if AutoTushita3 then RunTick("TushitaQuest3Tick", TushitaQuest3Tick) end
-                if AutoCDKFinal then RunTick("CDKFinalTick", CDKFinalTick) end
+                local sword = QuestSwordName()
+                local swordReady = not sword
+                if sword then
+                    RunTick("Загрузка квестового меча", function() swordReady = EnsureSwordAvailable(sword) end)
+                end
+                if swordReady then
+                    if AutoYama1    then RunTick("YamaQuest1Tick", YamaQuest1Tick)    end
+                    if AutoYama2    then RunTick("YamaQuest2Tick", YamaQuest2Tick)    end
+                    if AutoYama3    then RunTick("YamaQuest3Tick", YamaQuest3Tick)    end
+                    if AutoTushita1 then RunTick("TushitaQuest1Tick", TushitaQuest1Tick) end
+                    if AutoTushita2 then RunTick("TushitaQuest2Tick", TushitaQuest2Tick) end
+                    if AutoTushita3 then RunTick("TushitaQuest3Tick", TushitaQuest3Tick) end
+                    if AutoCDKFinal then RunTick("CDKFinalTick", CDKFinalTick) end
+                end
             end
         end
     end
