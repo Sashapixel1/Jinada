@@ -9,7 +9,7 @@
 --        AF 3 -> Tushita1 (Trial Evil + Trial Good + BoatQuest)
 --        AF 4 -> Tushita2 (Trial Good)
 --        AF 5 -> Tushita3 (Trial Good + Cake Queen + HeavenlyDimension)
---        AF >=6 -> всё готово, AutoCDK выключается
+--        AF >=6 -> алтарь CDK + Cursed Skeleton Boss; OFF после получения меча
 --========================================================
 
 print("[AutoCDK] safe-start v2: loading")
@@ -20,6 +20,7 @@ print("[AutoCDK] safe-start v2: loading")
 local WeaponName         = "Godhuman"       -- чем бить мобов
 local SwordYamaName      = "Yama"
 local SwordTushitaName   = "Tushita"
+local SwordCDKName       = "Cursed Dual Katana"
 local MasteryTarget      = 350
 
 local TeleportSpeed      = 150             -- скорость полёта, stud/сек
@@ -102,8 +103,8 @@ local Yama2PatrolPoints = {
 -- Tushita Q1 (BoatQuest)
 local TushitaQ1Points = {
     CFrame.new(-9546.990234375, 21.139892578125, 4686.1142578125),
-    CFrame.new(-6120.0576171875, 16.455780029296875, -2250.697265625),
     CFrame.new(-9533.2392578125, 7.254445552825928, -8372.69921875),
+    CFrame.new(-6032.48486, 16.7328072, -2044.63171),
 }
 
 -- Tushita Q2
@@ -114,6 +115,10 @@ local TushitaQ2MaxMobDistance = 2000
 -- Tushita Q3 (Cake Queen + HeavenlyDimension)
 local CakeQueenIsland = CFrame.new(-709.3132934570312, 381.6005859375, -11011.396484375)
 local CakeQueenOffset = CFrame.new(0, 20, -3)
+
+-- Финальный этап CDK после шести фрагментов.
+local CDKAltarPos = CFrame.new(-12361.7060546875, 603.3547973632812, -6550.5341796875)
+local CDKAfterPos = CFrame.new(-12253.5419921875, 598.8999633789062, -6546.8388671875)
 
 -- Avoid constructing a UI while the game is still loading its initial scene.
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -151,6 +156,8 @@ local AutoYama3      = false
 local AutoTushita1   = false
 local AutoTushita2   = false
 local AutoTushita3   = false
+local AutoCDKFinal   = false
+local CDKFinalStarted = false
 
 -- мастери
 local LastMasteryCheck = 0
@@ -506,6 +513,8 @@ local function CreateMainGui()
         StopTween = true
         AutoYama1, AutoYama2, AutoYama3 = false, false, false
         AutoTushita1, AutoTushita2, AutoTushita3 = false, false, false
+        AutoCDKFinal = false
+        CurrentStage = -1
         UI.RestoreCollision()
     end
     UI.Close = function(destroyGui)
@@ -810,6 +819,7 @@ end
 -- RF/GetAllItemValues -> { { ItemId = 578, Key = "Quantity", Value = 2 }, ... }
 -- Names/IDs come from Generated.Configs[*].Index.StorageKey / Index.ItemId.
 local MaterialIds = {}
+local InventoryItemIds = {}
 local MaterialIdLoadTime = -math.huge
 local MaterialQuantities = nil
 local MaterialScanTime = -math.huge
@@ -837,9 +847,10 @@ local function GetMaterialId(materialName)
             if ok and type(data) == "table" and type(data.Configs) == "table" then
                 for _, config in pairs(data.Configs) do
                     local index = type(config) == "table" and config.Index
-                    if type(index) == "table" and index.IdType == "Material"
-                        and type(index.StorageKey) == "string" and tonumber(index.ItemId) then
-                        MaterialIds[NormalizeMaterialName(index.StorageKey)] = tonumber(index.ItemId)
+                    if type(index) == "table" and type(index.StorageKey) == "string" and tonumber(index.ItemId) then
+                        local key = NormalizeMaterialName(index.StorageKey)
+                        InventoryItemIds[key] = tonumber(index.ItemId)
+                        if index.IdType == "Material" then MaterialIds[key] = tonumber(index.ItemId) end
                     end
                 end
             end
@@ -912,6 +923,25 @@ local function GetCountMaterials(materialName)
     -- A failed request must not reset the quest to stage zero.
     if not MaterialQuantities or tick() - MaterialSuccessTime > 5 then return nil end
     return MaterialQuantities[id] or 0
+end
+
+local function HasLocalTool(name)
+    for _, container in pairs({LocalPlayer.Character, LocalPlayer:FindFirstChild("Backpack")}) do
+        if container then
+            local tool = container:FindFirstChild(name)
+            if tool and tool:IsA("Tool") then return true end
+        end
+    end
+    return false
+end
+
+local function HasOwnedWeapon(name)
+    if HasLocalTool(name) then return true end
+    -- The same verified snapshot contains sword quantities as well as materials.
+    if GetCountMaterials("Alucard Fragment") == nil then return nil end
+    local id = InventoryItemIds[NormalizeMaterialName(name)]
+    if not id or not MaterialQuantities or tick() - MaterialSuccessTime > 5 then return nil end
+    return (MaterialQuantities[id] or 0) > 0
 end
 
 local MasteryCache = {}
@@ -2190,12 +2220,9 @@ local function TushitaQuest3Tick()
     if af == nil then return end
     if af >= 6 then
         AutoTushita3 = false
-        UpdateStatus("Tushita3: 6-й фрагмент получен. Готово.")
-        AutoCDK = false
-        NoclipEnabled = false
-        StopTween = true
-        if UI.RenderRunning then UI.RenderRunning() end
-        AddLog("Готово: 6 Alucard Fragment. Все квесты завершены.")
+        CDKFinalStarted = true
+        AutoCDKFinal = true
+        UpdateStatus("6 фрагментов получены. Перехожу к алтарю и боссу CDK.")
         return
     end
 
@@ -2323,6 +2350,192 @@ end
 local function DisableAllQuests()
     AutoYama1,AutoYama2,AutoYama3 = false,false,false
     AutoTushita1,AutoTushita2,AutoTushita3 = false,false,false
+    AutoCDKFinal = false
+end
+
+---------------------
+-- ФИНАЛ CDK: АЛТАРЬ / БОСС / ПОДТВЕРЖДЕНИЕ ПОЛУЧЕНИЯ
+---------------------
+local CDKFinalState = {NextAltar = -math.huge, NextSwordLoad = -math.huge, RewardUntil = 0}
+
+local function CDKFinalActive()
+    return AutoCDK and AutoCDKFinal and GuiAlive and not StopTween and not UI.Closed
+end
+
+local function CDKFinalCharacter()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if char and root and hum and hum.Health > 0 then return char, root, hum end
+end
+
+local function FindCDKFinalTarget(bossOnly)
+    local _, root = CDKFinalCharacter()
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not root or not enemies then return nil end
+    local boss, bossDist, mob, mobDist = nil, math.huge, nil, math.huge
+    for _, candidate in ipairs(enemies:GetChildren()) do
+        if candidate:IsA("Model") then
+            local hum = candidate:FindFirstChildOfClass("Humanoid")
+            local targetRoot = candidate:FindFirstChild("HumanoidRootPart")
+            if hum and hum.Health > 0 and targetRoot then
+                local distance = (targetRoot.Position - root.Position).Magnitude
+                if candidate.Name:find("Cursed Skeleton Boss", 1, true) then
+                    if distance < bossDist then boss, bossDist = candidate, distance end
+                elseif not bossOnly and candidate.Name:find("Cursed Skeleton", 1, true)
+                    and (targetRoot.Position - CDKAfterPos.Position).Magnitude <= 600 then
+                    if distance < mobDist then mob, mobDist = candidate, distance end
+                end
+            end
+        end
+    end
+    return boss or (not bossOnly and mob or nil)
+end
+
+local function EquipCDKFinalSword()
+    for _, name in ipairs({SwordYamaName, SwordTushitaName}) do
+        if IsToolEquipped(name) then return true end
+    end
+    for _, name in ipairs({SwordYamaName, SwordTushitaName}) do
+        if HasLocalTool(name) then
+            EquipToolByName(name)
+            return IsToolEquipped(name)
+        end
+    end
+    if tick() >= CDKFinalState.NextSwordLoad then
+        CDKFinalState.NextSwordLoad = tick() + 3
+        local ok, err = pcall(function() remote:InvokeServer("LoadItem", SwordYamaName) end)
+        if not ok then AddLog("Финал CDK: не удалось загрузить Yama: "..tostring(err)) end
+    end
+    UpdateStatus("Финал CDK: загружаю Yama для боя.")
+    return false
+end
+
+local function FinishCDK()
+    AutoCDK = false
+    StopTween = true
+    NoclipEnabled = false
+    DisableAllQuests()
+    UI.RestoreCollision()
+    if UI.RenderRunning then UI.RenderRunning() end
+    UpdateStatus("Cursed Dual Katana получен!")
+    AddLog("CDK! Поздравляю")
+end
+
+local function FightCDKFinalTarget(target)
+    local char, root = CDKFinalCharacter()
+    local hum = target and target:FindFirstChildOfClass("Humanoid")
+    local targetRoot = target and target:FindFirstChild("HumanoidRootPart")
+    if not CDKFinalActive() or not (char and hum and targetRoot) or hum.Health <= 0 then return end
+    if not EquipCDKFinalSword() then return end
+    local isBoss = target.Name:find("Cursed Skeleton Boss", 1, true) ~= nil
+    local function interrupted()
+        return not CDKFinalActive() or LocalPlayer.Character ~= char or not target.Parent
+            or hum.Health <= 0 or (not isBoss and FindCDKFinalTarget(true) ~= nil)
+    end
+    UpdateStatus("Финал CDK: "..target.Name)
+    if (targetRoot.Position - root.Position).Magnitude > 50 then
+        if not SimpleTeleport(targetRoot.CFrame * FarmOffset, "финал CDK: "..target.Name, interrupted) then return end
+    end
+    local deadline, lastAttack = tick() + (isBoss and 180 or 60), -math.huge
+    while not interrupted() and tick() < deadline do
+        local current, currentRoot = CDKFinalCharacter()
+        hum = target:FindFirstChildOfClass("Humanoid")
+        targetRoot = target:FindFirstChild("HumanoidRootPart")
+        if current ~= char or not currentRoot or not hum or not targetRoot then break end
+        if (targetRoot.Position - currentRoot.Position).Magnitude > 50 then
+            if not SimpleTeleport(targetRoot.CFrame * FarmOffset, "финал CDK: сближение", interrupted) then break end
+        else
+            currentRoot.CFrame = targetRoot.CFrame * FarmOffset
+            currentRoot.AssemblyLinearVelocity = Vector3.new(0,0,0)
+            currentRoot.AssemblyAngularVelocity = Vector3.new(0,0,0)
+        end
+        if interrupted() then break end
+        AutoHaki()
+        if CDKFinalActive() and EquipCDKFinalSword() and tick() - lastAttack >= 0.15 then
+            AttackModule:AttackEnemyModel(target)
+            lastAttack = tick()
+        end
+        RunService.Heartbeat:Wait()
+    end
+    -- A vanished model may have despawned. Only a known death starts the reward wait.
+    if isBoss and hum and hum.Health <= 0 and CDKFinalActive() then
+        CDKFinalState.RewardUntil = tick() + 20
+        AddLog("Cursed Skeleton Boss побеждён. Проверяю получение Cursed Dual Katana.")
+    end
+end
+
+local function CDKFinalWait(seconds, char)
+    local deadline = tick() + seconds
+    while tick() < deadline do
+        if not CDKFinalActive() or LocalPlayer.Character ~= char
+            or not CDKFinalCharacter() or FindCDKFinalTarget(true) then return false end
+        task.wait(0.05)
+    end
+    return CDKFinalActive() and LocalPlayer.Character == char and CDKFinalCharacter() ~= nil
+        and FindCDKFinalTarget(true) == nil
+end
+
+local function HoldCDKAltarE(char)
+    if not CDKFinalActive() or LocalPlayer.Character ~= char or not CDKFinalCharacter()
+        or FindCDKFinalTarget(true) then return false end
+    local pressed, err = pcall(function() VirtualInput:SendKeyEvent(true, "E", false, game) end)
+    if not pressed then AddLog("Алтарь CDK: ошибка E: "..tostring(err)); return false end
+    local ok, held = pcall(CDKFinalWait, 2, char)
+    -- Always release E, including cancellation, death, errors and a newly spawned boss.
+    pcall(function() VirtualInput:SendKeyEvent(false, "E", false, game) end)
+    if not ok then error(held) end
+    return held
+end
+
+local function CDKFinalTick()
+    if not CDKFinalActive() then return end
+    local owned = HasOwnedWeapon(SwordCDKName)
+    if not CDKFinalActive() then return end
+    if owned == true then FinishCDK(); return end
+    local char, root = CDKFinalCharacter()
+    if not char then return end
+    -- A living boss always takes priority over altar interactions and other skeletons.
+    local target = FindCDKFinalTarget(false)
+    if target then FightCDKFinalTarget(target); return end
+    if tick() < CDKFinalState.RewardUntil then
+        UpdateStatus("Босс побеждён. Жду выдачи Cursed Dual Katana.")
+        return
+    end
+    if owned == nil then
+        UpdateStatus("Финал CDK: жду подтверждения данных инвентаря.")
+        return
+    end
+    local fragments = GetCountMaterials("Alucard Fragment")
+    if not CDKFinalStarted and (fragments == nil or fragments < 6) then return end
+    if tick() < CDKFinalState.NextAltar then
+        UpdateStatus("Финал CDK: жду появления босса у алтаря.")
+        return
+    end
+    if (root.Position - CDKAltarPos.Position).Magnitude > 8 then
+        UpdateStatus("Финал CDK: лечу к алтарю.")
+        if not SimpleTeleport(CDKAltarPos, "алтарь CDK", function()
+            return not CDKFinalActive() or LocalPlayer.Character ~= char or FindCDKFinalTarget(true) ~= nil
+        end) then return end
+    end
+    if not CDKFinalActive() or LocalPlayer.Character ~= char or FindCDKFinalTarget(true) then return end
+    local _, arrivedRoot = CDKFinalCharacter()
+    if not arrivedRoot or (arrivedRoot.Position - CDKAltarPos.Position).Magnitude > 12 then return end
+    CDKFinalState.NextAltar = tick() + 12
+    UpdateStatus("Финал CDK: взаимодействую с алтарём.")
+    for _, side in ipairs({"Good", "Evil"}) do
+        if not CDKFinalActive() or FindCDKFinalTarget(true) then return end
+        local ok, err = pcall(function() remote:InvokeServer("CDKQuest", "Progress", side) end)
+        if not ok then AddLog("Алтарь CDK: "..tostring(err)); return end
+        if not CDKFinalWait(1, char) then return end
+    end
+    if not HoldCDKAltarE(char) then return end
+    if not CDKFinalWait(1, char) then return end
+    if SimpleTeleport(CDKAfterPos, "позиция после алтаря CDK", function()
+        return not CDKFinalActive() or LocalPlayer.Character ~= char or FindCDKFinalTarget(true) ~= nil
+    end) then
+        AddLog("Алтарь CDK активирован. Жду Cursed Skeleton Boss и выдачи меча.")
+    end
 end
 
 ---------------------
@@ -2342,10 +2555,10 @@ spawn(function()
                 UpdateMasteryLabel(yM, tM)
             else
                 local af = scannedAF
-                local stage = af ~= nil and GetStageFromAF(af) or nil
+                local stage = CDKFinalStarted and 6 or (af ~= nil and GetStageFromAF(af) or nil)
                 if stage ~= nil and stage ~= CurrentStage then
                     CurrentStage = stage
-                    AddLog("CDK: AF="..af.." -> стадия "..stage)
+                    AddLog("CDK: AF="..tostring(af).." -> стадия "..stage)
                     DisableAllQuests()
                     StopTween = true
                     task.wait(0.2)
@@ -2391,12 +2604,10 @@ spawn(function()
                         CDKTrialModule.StartGoodTrial()
 
                     elseif stage == 6 then
-                        UpdateStatus("Готово (6+ Alucard Fragment)")
-                        AddLog("Все 6 фрагментов уже есть, выключаю AutoCDK.")
-                        AutoCDK = false
-                        NoclipEnabled = false
-                        StopTween = true
-                        if UI.RenderRunning then UI.RenderRunning() end
+                        CDKFinalStarted = true
+                        AutoCDKFinal = true
+                        UpdateStatus("Финал CDK: алтарь и Cursed Skeleton Boss.")
+                        AddLog("6 фрагментов есть. Продолжаю до получения Cursed Dual Katana.")
                     end
                 end
             end
@@ -2428,6 +2639,7 @@ spawn(function()
                 if AutoTushita1 then RunTick("TushitaQuest1Tick", TushitaQuest1Tick) end
                 if AutoTushita2 then RunTick("TushitaQuest2Tick", TushitaQuest2Tick) end
                 if AutoTushita3 then RunTick("TushitaQuest3Tick", TushitaQuest3Tick) end
+                if AutoCDKFinal then RunTick("CDKFinalTick", CDKFinalTick) end
             end
         end
     end
