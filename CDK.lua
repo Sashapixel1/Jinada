@@ -24,6 +24,7 @@ local SwordCDKName       = "Cursed Dual Katana"
 local MasteryTarget      = 350
 
 local TeleportSpeed      = 150             -- скорость полёта, stud/сек
+local MinFlightHeight    = 3               -- запас над минимальным Y=2
 local FarmOffset         = CFrame.new(0, 10, -3)
 
 -- Castle on the Sea (Elite Hunter) для Yama1
@@ -179,6 +180,12 @@ local lastRollAttempt = 0
 
 -- HeavenlyDimension (Tushita3)
 local T3_HeavenlyStage = 0
+
+local function ClampFlightCFrame(target)
+    local lift = MinFlightHeight - target.Position.Y
+    if lift > 0 then return target + Vector3.new(0, lift, 0) end
+    return target
+end
 
 ---------------------
 -- ME TERMINAL / GUI
@@ -753,6 +760,9 @@ local function SimpleTeleport(targetCFrame, label, shouldInterrupt)
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum or hum.Health <= 0 then return false end
 
+    -- Both ends of a linear tween must be above the water-height floor.
+    hrp.CFrame = ClampFlightCFrame(hrp.CFrame)
+    targetCFrame = ClampFlightCFrame(targetCFrame)
     IsTeleporting = true
     local distance = (hrp.Position - targetCFrame.Position).Magnitude
     -- No upper time limit: long routes must retain the configured speed.
@@ -773,7 +783,15 @@ local function SimpleTeleport(targetCFrame, label, shouldInterrupt)
                 AddLog("Полёт прерван.")
                 return false
             end
+            if hrp.Position.Y < MinFlightHeight then
+                hrp.CFrame = ClampFlightCFrame(hrp.CFrame)
+                local velocity = hrp.AssemblyLinearVelocity
+                if velocity.Y < 0 then hrp.AssemblyLinearVelocity = Vector3.new(velocity.X, 0, velocity.Z) end
+            end
             task.wait(0.05)
+        end
+        if tween.PlaybackState == Enum.PlaybackState.Completed then
+            hrp.CFrame = ClampFlightCFrame(hrp.CFrame)
         end
         return tween.PlaybackState == Enum.PlaybackState.Completed
     end)
@@ -1187,7 +1205,7 @@ local function FightMobForWeapon(target, weaponName, label)
                 SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий моб мастери")
             else
                 if tick() - lastPosAdjust > 0.05 then
-                    hrp.CFrame = tHRP.CFrame * FarmOffset
+                    hrp.CFrame = ClampFlightCFrame(tHRP.CFrame * FarmOffset)
                     hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
                     hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
                     hrp.CanCollide = false
@@ -1396,7 +1414,7 @@ local function YamaQuest2Tick()
                 end)
             else
                 if tick() - lastPosAdjust > 0.05 then
-                    hrp.CFrame = tHRP.CFrame * FarmOffset
+                    hrp.CFrame = ClampFlightCFrame(tHRP.CFrame * FarmOffset)
                     hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
                     hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
                     hrp.CanCollide = false
@@ -1574,7 +1592,7 @@ local function FarmBonesOnceYama3()
                 SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий скелет")
             else
                 if tick() - lastPosAdjust > 0.05 then
-                    hrp.CFrame = tHRP.CFrame * FarmOffset
+                    hrp.CFrame = ClampFlightCFrame(tHRP.CFrame * FarmOffset)
                     hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
                     hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
                     hrp.CanCollide = false
@@ -1666,7 +1684,7 @@ local function FarmHellMobsOnce()
                     if dist > 2000 then
                         SimpleTeleport(tHRP.CFrame * FarmOffset, "Hell mob (далеко)")
                     else
-                        hrp.CFrame = tHRP.CFrame * FarmOffset
+                        hrp.CFrame = ClampFlightCFrame(tHRP.CFrame * FarmOffset)
                         hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
                         hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
                         hrp.CanCollide = false
@@ -1786,7 +1804,7 @@ local function HandleSoulReaperPhaseYama3()
     sh         = soul:FindFirstChild("Humanoid")
 
     if hrp and sHRP then
-        hrp.CFrame = sHRP.CFrame * CFrame.new(0,0,-6)
+        hrp.CFrame = ClampFlightCFrame(sHRP.CFrame * CFrame.new(0,0,-6))
     end
 
     local waitDeadline = tick() + 120
@@ -1818,7 +1836,7 @@ local function HandleSoulReaperPhaseYama3()
         local dist = (hrp.Position - sHRP.Position).Magnitude
         if dist > 120 then
             AddLog("Yama3: меня откинуло от Soul Reaper, подлетаю обратно.")
-            hrp.CFrame = sHRP.CFrame * CFrame.new(0,0,-6)
+            hrp.CFrame = ClampFlightCFrame(sHRP.CFrame * CFrame.new(0,0,-6))
         end
 
         local phum = char:FindFirstChild("Humanoid")
@@ -2002,7 +2020,7 @@ local function TushitaQuest1Tick()
         or npc:FindFirstChildWhichIsA("BasePart")
 
     if head then
-        hrp.CFrame = head.CFrame * CFrame.new(0,0,-3)
+        hrp.CFrame = ClampFlightCFrame(head.CFrame * CFrame.new(0,0,-3))
     end
 
     local ok1, res1 = pcall(function()
@@ -2110,7 +2128,7 @@ local function TushitaQuest2Tick()
                 SimpleTeleport(tHRP.CFrame * FarmOffset, "далёкий моб Tushita Q2")
             else
                 if tick() - lastPosAdjust > 0.05 then
-                    hrp.CFrame = tHRP.CFrame * FarmOffset
+                    hrp.CFrame = ClampFlightCFrame(tHRP.CFrame * FarmOffset)
                     hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
                     hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
                     hrp.CanCollide = false
@@ -2190,7 +2208,7 @@ local function FightMobSimple(target, label, offsetCF)
                 SimpleTeleport(tHRP.CFrame * offsetCF, "далёкий моб")
             else
                 if tick() - lastPosAdjust > 0.05 then
-                    hrp.CFrame = tHRP.CFrame * offsetCF
+                    hrp.CFrame = ClampFlightCFrame(tHRP.CFrame * offsetCF)
                     hrp.AssemblyLinearVelocity  = Vector3.new(0,0,0)
                     hrp.AssemblyAngularVelocity = Vector3.new(0,0,0)
                     hrp.CanCollide = false
@@ -2447,7 +2465,7 @@ local function FightCDKFinalTarget(target)
         if (targetRoot.Position - currentRoot.Position).Magnitude > 50 then
             if not SimpleTeleport(targetRoot.CFrame * FarmOffset, "финал CDK: сближение", interrupted) then break end
         else
-            currentRoot.CFrame = targetRoot.CFrame * FarmOffset
+            currentRoot.CFrame = ClampFlightCFrame(targetRoot.CFrame * FarmOffset)
             currentRoot.AssemblyLinearVelocity = Vector3.new(0,0,0)
             currentRoot.AssemblyAngularVelocity = Vector3.new(0,0,0)
         end
