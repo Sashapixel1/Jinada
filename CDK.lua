@@ -290,9 +290,21 @@ local Yama2ExtraSpawns = {
     {Name = "Venomous Assailant [Lv. 1650]", CFrame = CFrame.new(4674.9267578125, 1134.8270263671875, 996.3090209960938)}, -- D186
     {Name = "Venomous Assailant [Lv. 1650]", CFrame = CFrame.new(4443.046875, 1237.0240478515625, 335.8599853515625)}, -- D187
 }
-for i, spawn in ipairs(Yama2ExtraSpawns) do
+-- Точки со скриншота перенесены в основной маршрут перед остальными D-точками.
+-- Справочник спавнов остаётся неизменным для определения места убийства.
+local Yama2MainSpawnIds = {60, 49, 47, 48}
+local Yama2MainSpawnSet = {}
+for _, i in ipairs(Yama2MainSpawnIds) do
+    local spawn = Yama2ExtraSpawns[i]
+    Yama2MainSpawnSet[i] = true
     table.insert(Yama2PatrolPoints, spawn.CFrame)
     table.insert(Yama2PatrolPointIds, "D"..i.." / "..spawn.Name)
+end
+for i, spawn in ipairs(Yama2ExtraSpawns) do
+    if not Yama2MainSpawnSet[i] then
+        table.insert(Yama2PatrolPoints, spawn.CFrame)
+        table.insert(Yama2PatrolPointIds, "D"..i.." / "..spawn.Name)
+    end
 end
 
 -- Tushita Q1 (BoatQuest)
@@ -376,6 +388,8 @@ local lastRollAttempt = 0
 
 -- HeavenlyDimension (Tushita3)
 local T3_HeavenlyStage = 0
+local T3_HeavenlyWaitSince = nil
+local T3_HeavenlyInstance = nil
 
 local function ClampFlightCFrame(target)
     local lift = MinFlightHeight - target.Position.Y
@@ -410,7 +424,7 @@ function UI.RefreshHazeStats()
         table.insert(lines, row.Count.." × "..row.Name.."\n   "..row.Location)
     end
     UI.HazeRows.Text = #lines > 0 and table.concat(lines, "\n\n")
-        or "Пока нет подтверждённых убийств.\nДоп. маршрут: "..#Yama2ExtraSpawns.." точек спавна (D1–D"..#Yama2ExtraSpawns..")."
+        or "Пока нет подтверждённых убийств.\nКарта: "..#Yama2ExtraSpawns.." спавнов; 4 перенесены в основной патруль."
 end
 
 local function TrackConnection(connection)
@@ -1965,11 +1979,64 @@ end
 ---------------------
 -- HELL DIMENSION (Yama3): удержание E = 2 сек + мобы
 ---------------------
-local function HoldEFor(seconds)
+local function HoldEFor(seconds, active)
     AddLog("Зажимаю E на "..tostring(seconds).." сек.")
-    VirtualInput:SendKeyEvent(true, "E", false, game)
-    task.wait(seconds)
-    VirtualInput:SendKeyEvent(false, "E", false, game)
+    local ok, completed = pcall(function()
+        VirtualInput:SendKeyEvent(true, "E", false, game)
+        local deadline = tick() + seconds
+        while tick() < deadline do
+            if active and not active() then return false end
+            task.wait(math.min(0.1, deadline - tick()))
+        end
+        return not active or active()
+    end)
+    pcall(function() VirtualInput:SendKeyEvent(false, "E", false, game) end)
+    return ok and completed
+end
+
+-- После E поднимаемся на 30 stud от текущей позиции и держим высоту до волны.
+local function LightDimensionTorch(dim, torch, questActive, isMob, completedAF, offset)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local function active()
+        local map = Workspace:FindFirstChild("Map")
+        return AutoCDK and questActive() and not StopTween and GuiAlive
+            and LocalPlayer.Character == char and root and root.Parent
+            and hum and hum.Health > 0 and map and dim.Parent == map and torch.Parent == dim
+    end
+    if not active() then return false end
+    if not SimpleTeleport(torch.CFrame * (offset or CFrame.new()), "Dimension: факел", function()
+        return not active()
+    end) then return false end
+    if not HoldEFor(2, active) then return false end
+    local hover = ClampFlightCFrame(root.CFrame + Vector3.new(0,30,0))
+    if not SimpleTeleport(hover, "Dimension: подъём на 30", function() return not active() end) then
+        return false
+    end
+    local nextScan = 0
+    UpdateStatus(dim.Name..": жду мобов на высоте +30.")
+    while active() do
+        if tick() >= nextScan then
+            nextScan = tick() + 1
+            local af = GetCountMaterials("Alucard Fragment")
+            if af and af >= completedAF then return false end
+        end
+        root.CFrame = hover
+        root.AssemblyLinearVelocity = Vector3.new(0,0,0)
+        root.AssemblyAngularVelocity = Vector3.new(0,0,0)
+        local enemies = Workspace:FindFirstChild("Enemies")
+        if enemies then
+            for _, mob in ipairs(enemies:GetChildren()) do
+                local mobHum = mob:FindFirstChild("Humanoid")
+                local mobRoot = mob:FindFirstChild("HumanoidRootPart")
+                if mobHum and mobHum.Health > 0 and mobRoot and isMob(mob)
+                    and (mobRoot.Position - torch.Position).Magnitude <= 500 then return true end
+            end
+        end
+        RunService.Heartbeat:Wait()
+    end
+    return false
 end
 
 local function IsHellMob(v)
@@ -2044,28 +2111,19 @@ local function HandleHellDimensionYama3()
 
     if Torch1 then
         AddLog("Yama3 Hell: Torch1 -> E на 2 сек, затем мобы.")
-        SimpleTeleport(Torch1.CFrame, "Hell Torch1")
-        task.wait(0.3)
-        HoldEFor(2)
-        task.wait(0.3)
+        if not LightDimensionTorch(hd, Torch1, function() return AutoYama3 end, IsHellMob, 3) then return end
         FarmHellMobsOnce()
     end
 
     if Torch2 then
         AddLog("Yama3 Hell: Torch2 -> E на 2 сек, затем мобы.")
-        SimpleTeleport(Torch2.CFrame, "Hell Torch2")
-        task.wait(0.3)
-        HoldEFor(2)
-        task.wait(0.3)
+        if not LightDimensionTorch(hd, Torch2, function() return AutoYama3 end, IsHellMob, 3) then return end
         FarmHellMobsOnce()
     end
 
     if Torch3 then
         AddLog("Yama3 Hell: Torch3 -> E на 2 сек, затем мобы.")
-        SimpleTeleport(Torch3.CFrame, "Hell Torch3")
-        task.wait(0.3)
-        HoldEFor(2)
-        task.wait(0.3)
+        if not LightDimensionTorch(hd, Torch3, function() return AutoYama3 end, IsHellMob, 3) then return end
         FarmHellMobsOnce()
     end
 
@@ -2568,6 +2626,8 @@ local function TushitaQuest3Tick()
 
     local dim = HeavenlyDimensionFolder()
     if not dim then
+        T3_HeavenlyInstance = nil
+        T3_HeavenlyStage, T3_HeavenlyWaitSince = 0, nil
         local boss = FindCakeQueen()
         if boss then
             -- после убийства Cake Queen просто ждём 5 сек, игра сама переносит в HeavenlyDimension
@@ -2581,66 +2641,29 @@ local function TushitaQuest3Tick()
         return
     end
 
-    local torch1 = dim:FindFirstChild("Torch1")
-    local torch2 = dim:FindFirstChild("Torch2")
-    local torch3 = dim:FindFirstChild("Torch3")
-    local exit   = dim:FindFirstChild("Exit")
-
-    -- Каждый факел: E на 2 сек, потом мобы, потом следующий
-    if T3_HeavenlyStage == 0 and torch1 then
-        UpdateStatus("Tushita3: Torch1.")
-        SimpleTeleport(torch1.CFrame * CFrame.new(0,5,0), "Torch1")
-        HoldEFor(2)
-        local enemies = Workspace:FindFirstChild("Enemies")
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if enemies and root then
-            for _, mob in ipairs(enemies:GetChildren()) do
-                local mobRoot = mob:FindFirstChild("HumanoidRootPart")
-                if mobRoot and (mobRoot.Position - root.Position).Magnitude <= 500 then
-                    FightMobSimple(mob, "Tushita3: бой у факела")
-                end
-            end
-        end
-        T3_HeavenlyStage = 1
-        return
+    if T3_HeavenlyInstance ~= dim then
+        T3_HeavenlyInstance = dim
+        T3_HeavenlyStage, T3_HeavenlyWaitSince = 0, nil
     end
+    local exit = dim:FindFirstChild("Exit")
 
-    if T3_HeavenlyStage == 1 and torch2 then
-        UpdateStatus("Tushita3: Torch2.")
-        SimpleTeleport(torch2.CFrame * CFrame.new(0,5,0), "Torch2")
-        HoldEFor(2)
+    if T3_HeavenlyStage < 3 then
+        local index = T3_HeavenlyStage + 1
+        local torch = dim:FindFirstChild("Torch"..index)
+        if not torch then return end
+        UpdateStatus("Tushita3: Torch"..index..".")
+        if not LightDimensionTorch(dim, torch, function() return AutoTushita3 end,
+            function() return true end, 6, CFrame.new(0,5,0)) then return end
         local enemies = Workspace:FindFirstChild("Enemies")
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if enemies and root then
+        if enemies then
             for _, mob in ipairs(enemies:GetChildren()) do
                 local mobRoot = mob:FindFirstChild("HumanoidRootPart")
-                if mobRoot and (mobRoot.Position - root.Position).Magnitude <= 500 then
+                if mobRoot and (mobRoot.Position - torch.Position).Magnitude <= 500 then
                     FightMobSimple(mob, "Tushita3: бой у факела")
                 end
             end
         end
-        T3_HeavenlyStage = 2
-        return
-    end
-
-    if T3_HeavenlyStage == 2 and torch3 then
-        UpdateStatus("Tushita3: Torch3.")
-        SimpleTeleport(torch3.CFrame * CFrame.new(0,5,0), "Torch3")
-        HoldEFor(2)
-        local enemies = Workspace:FindFirstChild("Enemies")
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if enemies and root then
-            for _, mob in ipairs(enemies:GetChildren()) do
-                local mobRoot = mob:FindFirstChild("HumanoidRootPart")
-                if mobRoot and (mobRoot.Position - root.Position).Magnitude <= 500 then
-                    FightMobSimple(mob, "Tushita3: бой у факела")
-                end
-            end
-        end
-        T3_HeavenlyStage = 3
+        if AutoCDK and AutoTushita3 and not StopTween then T3_HeavenlyStage = index end
         return
     end
 
@@ -2655,13 +2678,22 @@ local function TushitaQuest3Tick()
         end
         if exit then
             UpdateStatus("Tushita3: лечу к Exit.")
-            SimpleTeleport(exit.CFrame * CFrame.new(0,5,0), "Exit")
-            T3_HeavenlyStage = 4
+            if SimpleTeleport(exit.CFrame * CFrame.new(0,5,0), "Exit") then
+                T3_HeavenlyStage = 4
+                T3_HeavenlyWaitSince = tick()
+            end
         end
         return
     end
 
     if T3_HeavenlyStage >= 4 then
+        T3_HeavenlyWaitSince = T3_HeavenlyWaitSince or tick()
+        if tick() - T3_HeavenlyWaitSince >= 60 then
+            T3_HeavenlyStage, T3_HeavenlyWaitSince = 0, nil
+            AddLog("HeavenlyDimension: минута ожидания истекла. Повторяю все факелы и бои.")
+            UpdateStatus("Tushita3: повторный проход факелов.")
+            return
+        end
         UpdateStatus("Tushita3: жду завершения HeavenlyDimension.")
     end
 end
@@ -2953,7 +2985,8 @@ spawn(function()
                     elseif stage == 5 then
                         UpdateStatus("Tushita Quest 3")
                         AutoTushita3 = true
-                        T3_HeavenlyStage = 0
+                        T3_HeavenlyStage, T3_HeavenlyWaitSince = 0, nil
+                        T3_HeavenlyInstance = nil
                         AddLog("Перед Tushita3: Trial Good.")
                         CDKTrialModule.StartGoodTrial()
 
